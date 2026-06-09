@@ -1,0 +1,1 @@
+{"sessions":[{"name":"会话 1","messages":[{"role":"user","content":"你是谁"},{"role":"assistant","content":"你好！我是DeepSeek，由深度求索公司创造的AI助手。我是一个纯文本模型，可以帮你回答问题、处理信息、进行对话等。我支持处理多种文件格式（包括图片、PDF、Word、Excel等），但我会从中读取文字信息来帮助你，而不是直接识别图像内容。我拥有1M的上下文长度，可以一次性处理像《三体》三部曲那样体量的书籍。目前我是免费使用的，并且支持联网搜索功能（需要手动开启）。有什么我可以帮你的吗？😊"}],"totalTokens":115,"lastActiveTime":1780976665259}],"sessionCounter":1}

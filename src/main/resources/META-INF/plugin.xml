@@ -1,0 +1,80 @@
+<idea-plugin>
+    <id>com.deepseek.plugin</id>
+    <name>DeepSeek AI Assistant</name>
+    <vendor url="https://github.com/lvesDi005/DeepSeek-AI-CodeHelper">lvesDi005</vendor>
+
+    <description><![CDATA[
+        <h2>DeepSeek AI Assistant for IntelliJ IDEA</h2>
+        <ul>
+          <li><b>Code Completion</b> — AI-powered inline suggestions as you type</li>
+          <li><b>Chat Panel</b> — Ask anything in a side-panel chat window</li>
+          <li><b>Agent Actions</b> — Right-click to Ask / Explain / Generate / Review / Optimize</li>
+        </ul>
+        <br>
+        <p>Configure your API Key in <b>Settings → Tools → DeepSeek AI</b>.</p>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.java</depends>
+
+    <!-- Application-level services -->
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Settings -->
+        <applicationConfigurable
+            parentId="tools"
+            instance="com.deepseek.plugin.settings.DeepSeekSettingsConfigurable"
+            id="com.deepseek.plugin.settings.DeepSeekSettingsConfigurable"
+            displayName="DeepSeek AI CodeHelper"/>
+
+        <!-- Application Service -->
+        <applicationService
+            serviceImplementation="com.deepseek.plugin.settings.DeepSeekSettings"/>
+
+        <!-- Chat Tool Window -->
+        <toolWindow
+            id="DeepSeek AI CodeHelper"
+            anchor="right"
+            icon="com.deepseek.plugin.icons.PluginIcons.TOOLWINDOW"
+            factoryClass="com.deepseek.plugin.chat.ChatToolWindowFactory"/>
+
+        <!-- Code Completion -->
+        <completion.contributor
+            language="any"
+            implementationClass="com.deepseek.plugin.completion.DeepSeekCompletionContributor"
+            order="last"/>
+
+        <!-- Notification group -->
+        <notificationGroup
+            id="DeepSeek AI CodeHelper"
+            displayType="BALLOON"/>
+    </extensions>
+
+    <!-- Right-click context menu actions -->
+    <actions>
+        <group id="DeepSeekAI.AgentGroup" text="DeepSeek AI" icon="com.deepseek.plugin.icons.PluginIcons.ACTION"
+               popup="true" description="DeepSeek AI Agent actions">
+            <action id="DeepSeekAI.Ask"
+                    class="com.deepseek.plugin.agent.AskAction"
+                    text="Ask DeepSeek"
+                    description="Ask DeepSeek about the selected code"/>
+            <action id="DeepSeekAI.Explain"
+                    class="com.deepseek.plugin.agent.ExplainAction"
+                    text="Explain Code"
+                    description="Explain the selected code in detail"/>
+            <action id="DeepSeekAI.Generate"
+                    class="com.deepseek.plugin.agent.GenerateAction"
+                    text="Generate Code"
+                    description="Generate code based on the selection or description"/>
+            <action id="DeepSeekAI.Review"
+                    class="com.deepseek.plugin.agent.ReviewAction"
+                    text="Review Code"
+                    description="Code review with suggestions"/>
+            <action id="DeepSeekAI.Optimize"
+                    class="com.deepseek.plugin.agent.OptimizeAction"
+                    text="Optimize Code"
+                    description="Optimize the selected code for performance and readability"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </group>
+    </actions>
+</idea-plugin>

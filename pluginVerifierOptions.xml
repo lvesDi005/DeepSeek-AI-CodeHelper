@@ -1,0 +1,13 @@
+<plugin-verifier-options>
+    <!--
+        Suppress deprecation warnings from bundled third-party libraries
+        (OkHttp 4.12.0, Gson 2.11.0, Okio).
+        These are NOT from our plugin code — they're internal implementation
+        details of the libraries and don't affect plugin functionality.
+        The JetBrains Marketplace accepts plugins with these as non-blocking warnings.
+    -->
+    <ignored-problems>
+        <ignored-problem>scheduled-for-removal</ignored-problem>
+        <ignored-problem>deprecation</ignored-problem>
+    </ignored-problems>
+</plugin-verifier-options>
