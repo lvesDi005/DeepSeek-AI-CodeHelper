@@ -772,18 +772,43 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
      */
     private fun wrapWithWidthConstraint(
         component: JComponent,
-        weight: Double = 1.0
+        weight: Double = 0.75
     ): JPanel {
-        val wrapper = JPanel(GridBagLayout()).apply { isOpaque = false }
+        val wrapper = object : JPanel(GridBagLayout()) {
+            override fun getMaximumSize(): Dimension {
+                val parentW = parent?.width ?: 600
+                val maxW = (parentW.toDouble() * weight).toInt().coerceAtLeast(100)
+                return Dimension(maxW, super.getMaximumSize().height)
+            }
+        }.apply { isOpaque = false }
+
         val msgConstraints = GridBagConstraints().apply {
             fill = GridBagConstraints.BOTH
-            weightx = weight
+            weightx = 1.0
             gridwidth = GridBagConstraints.REMAINDER
             anchor = GridBagConstraints.WEST
         }
         wrapper.add(component, msgConstraints)
         return wrapper
     }
+/*    private fun wrapWithWidthConstraint(
+        component: JComponent,
+        maxWidth: Int = 400
+    ): JPanel {
+        // 开启自动换行（如果是文本组件）
+        if (component is JTextArea) {
+            component.lineWrap = true
+            component.wrapStyleWord = true
+        }
+
+        val wrapper = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            // 限制 wrapper 的最大宽度，内容会自动换行
+            maximumSize = Dimension(maxWidth, Short.MAX_VALUE.toInt())
+            add(component, BorderLayout.CENTER)
+        }
+        return wrapper
+    }*/
 
     /**
      * Add a simple text label (system messages, tokens, errors).
