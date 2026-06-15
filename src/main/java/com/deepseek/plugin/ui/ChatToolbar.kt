@@ -1,67 +1,63 @@
 package com.deepseek.plugin.ui
 
-import com.intellij.ui.JBColor
+import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.ActionPlaces
+import com.intellij.openapi.actionSystem.ActionToolbar
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.Presentation
+import com.intellij.openapi.actionSystem.impl.ActionButton
 import com.intellij.util.ui.JBUI
-import java.awt.Cursor
 import java.awt.FlowLayout
-import java.awt.Font
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
-import javax.swing.Box
-import javax.swing.JButton
 import javax.swing.JPanel
-import javax.swing.JSeparator
-import javax.swing.SwingConstants
+import javax.swing.border.CompoundBorder
 
 /**
- * A compact toolbar at the top of the chat panel with action buttons.
+ * A compact toolbar at the top of the chat panel with IntelliJ-style action buttons.
  *
- * Layout:
+ * Layout (right-aligned):
  * ┌──────────────────────────────────────┐
- * │                        [👀 用量] [⏰ 历史] │
+ * │                              [≡] [⏱] │
  * └──────────────────────────────────────┘
- * ────────────────────────────────────────  ← JSeparator
  *
- * @param onShowUsage  Called when the usage button is clicked.
+ * @param onShowUsage   Called when the usage button is clicked.
  * @param onShowHistory Called when the history button is clicked.
  */
 class ChatToolbar(
     onShowUsage: () -> Unit,
     onShowHistory: () -> Unit
-) : JPanel(FlowLayout(FlowLayout.RIGHT, 2, 0)) {
+) : JPanel(FlowLayout(FlowLayout.RIGHT, 0, 0)) {
 
     init {
-        border = JBUI.Borders.empty(1, 4, 1, 4)
+        border = CompoundBorder(
+            JBUI.Borders.empty(1, 4, 1, 4),
+            JBUI.Borders.empty()
+        )
         isOpaque = false
 
-        add(createToolButton("👀", "用量查看", onShowUsage))
-        add(createToolButton("⏰", "会话历史", onShowHistory))
+        add(createActionButton(
+            icon = AllIcons.Actions.Profile,
+            tooltip = "用量查看",
+            onClick = onShowUsage
+        ))
+        add(createActionButton(
+            icon = AllIcons.Actions.Find,
+            tooltip = "会话历史",
+            onClick = onShowHistory
+        ))
     }
 
-    private fun createToolButton(text: String, tooltip: String, action: () -> Unit): JButton {
-        return object : JButton(text) {
-            override fun getToolTipLocation(e: MouseEvent?): java.awt.Point? {
-                return java.awt.Point(0, height + 2)
-            }
-        }.apply {
-            this.toolTipText = tooltip
-            isBorderPainted = false
-            isContentAreaFilled = false
-            isFocusPainted = false
-            font = font.deriveFont(13f)
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            margin = JBUI.emptyInsets()
-            border = JBUI.Borders.empty(3, 6, 3, 6)
-            addActionListener { action() }
-            addMouseListener(object : MouseAdapter() {
-                override fun mouseEntered(e: MouseEvent) {
-                    isOpaque = true
-                    background = JBColor(0xE8E8E8, 0x4A4A4A)
-                }
-                override fun mouseExited(e: MouseEvent) {
-                    isOpaque = false
-                }
-            })
+    private fun createActionButton(icon: javax.swing.Icon, tooltip: String, onClick: () -> Unit): JPanel {
+        val presentation = Presentation().apply {
+            this.icon = icon
+            this.description = tooltip
         }
+        val action = object : AnAction() {
+            override fun actionPerformed(e: AnActionEvent) {
+                onClick()
+            }
+        }
+        val button = ActionButton(action, presentation, ActionPlaces.TOOLBAR, ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE)
+        return button.withTooltip(tooltip)
     }
 }

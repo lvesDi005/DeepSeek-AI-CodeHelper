@@ -1,5 +1,12 @@
 package com.deepseek.plugin.ui
 
+import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.ActionPlaces
+import com.intellij.openapi.actionSystem.ActionToolbar
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.Presentation
+import com.intellij.openapi.actionSystem.impl.ActionButton
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
@@ -9,15 +16,12 @@ import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.Color
-import java.awt.Cursor
 import java.awt.Dimension
+import java.awt.FlowLayout
 import java.awt.Font
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
 import javax.swing.Box
-import javax.swing.JButton
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.Timer
@@ -42,10 +46,8 @@ class CodeBlockCard(
 ) : JPanel(BorderLayout()) {
 
     init {
-        border = JBUI.Borders.customLine(JBColor(0xCCCCCC, 0x555555), 1)
-
-        val bgColor = JBColor(0xF5F5F5, 0x2B2B2B)
-        background = bgColor
+        border = JBUI.Borders.customLine(JBColor(0xE0E0E0, 0x444444), 1)
+        background = JBColor(0xF8F8F8, 0x2B2B2B)
 
         // ── Header bar ──
         add(createHeader(language, showInsertButton), BorderLayout.NORTH)
@@ -71,21 +73,17 @@ class CodeBlockCard(
         header.add(langLabel, BorderLayout.WEST)
 
         // Buttons (right)
-        val actionsPanel = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 2, 0))
+        val actionsPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 2, 0))
         actionsPanel.isOpaque = false
 
-        val copyBtn = createToolButton("\uD83D\uDCCB", "复制代码")
-        copyBtn.addActionListener {
+        val copyBtn = createActionButton(AllIcons.Actions.Copy, "复制代码") {
             copyToClipboard(code)
-            flashTooltip(copyBtn, "已复制!")
         }
         actionsPanel.add(copyBtn)
 
         if (showInsert) {
-            val insertBtn = createToolButton("\uD83D\uDCC4", "插入到光标位置")
-            insertBtn.addActionListener {
+            val insertBtn = createActionButton(AllIcons.Actions.Edit, "插入到光标位置") {
                 insertCodeAtCursor(project, code)
-                flashTooltip(insertBtn, "已插入!")
             }
             actionsPanel.add(Box.createHorizontalStrut(4))
             actionsPanel.add(insertBtn)
@@ -104,7 +102,7 @@ class CodeBlockCard(
             isEditable = false
             lineWrap = false
             font = JBUI.Fonts.create("Monospaced", 12)
-            background = JBColor(0xFAFAFA, 0x1E1E1E)
+            background = JBColor(0xFCFCFC, 0x1E1E1E)
             foreground = JBColor(0x333333, 0xD4D4D4)
             caretColor = foreground
             margin = JBUI.insets(8)
@@ -127,30 +125,18 @@ class CodeBlockCard(
     // Helpers
     // ================================================================
 
-    private fun createToolButton(text: String, tooltip: String): JButton {
-        return object : JButton(text) {
-            override fun getToolTipLocation(e: MouseEvent?): java.awt.Point? {
-                return java.awt.Point(0, height + 2)
-            }
-        }.apply {
-            this.toolTipText = tooltip
-            isBorderPainted = false
-            isContentAreaFilled = false
-            isFocusPainted = false
-            font = font.deriveFont(12f)
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            margin = JBUI.emptyInsets()
-            border = JBUI.Borders.empty(2, 4, 2, 4)
-            addMouseListener(object : MouseAdapter() {
-                override fun mouseEntered(e: MouseEvent) {
-                    background = JBColor(0xDDDDDD, 0x4A4A4A)
-                    isOpaque = true
-                }
-                override fun mouseExited(e: MouseEvent) {
-                    isOpaque = false
-                }
-            })
+    private fun createActionButton(icon: javax.swing.Icon, tooltip: String, onClick: () -> Unit): JPanel {
+        val presentation = Presentation().apply {
+            this.icon = icon
+            this.description = tooltip
         }
+        val action = object : AnAction() {
+            override fun actionPerformed(e: AnActionEvent) {
+                onClick()
+            }
+        }
+        val button = ActionButton(action, presentation, ActionPlaces.TOOLBAR, ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE)
+        return button.withTooltip(tooltip)
     }
 
     private fun copyToClipboard(text: String) {
@@ -158,7 +144,7 @@ class CodeBlockCard(
         clipboard.setContents(StringSelection(text), null)
     }
 
-    private fun flashTooltip(btn: JButton, msg: String) {
+    private fun flashTooltip(btn: javax.swing.JComponent, msg: String) {
         val orig = btn.toolTipText
         btn.toolTipText = msg
         Timer(1500) { btn.toolTipText = orig }.apply {

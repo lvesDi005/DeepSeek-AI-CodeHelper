@@ -19,6 +19,8 @@ class DeepSeekSettingsConfigurable : Configurable {
     private var completionMinPrefixField: JBTextField? = null
     private var maxContextLinesField: JBTextField? = null
     private var completionEnabledCheckbox: JCheckBox? = null
+    private var stepFunApiKeyField: JBPasswordField? = null
+    private var stepFunModelField: JBTextField? = null
 
     override fun getDisplayName(): String = "DeepSeek AI CodeHelper"
 
@@ -37,7 +39,7 @@ class DeepSeekSettingsConfigurable : Configurable {
                         columns = 30
                         text = settings.model
                     }).component as JBTextField
-                    comment("deepseek-chat or deepseek-reasoner")
+                    comment("deepseek-v4-flash or deepseek-v4-pro")
                 }
                 row("Max Tokens:") {
                     maxTokensField = cell(JBTextField().apply {
@@ -65,7 +67,7 @@ class DeepSeekSettingsConfigurable : Configurable {
                         columns = 30
                         text = settings.completionModel
                     }).component as JBTextField
-                    comment("Leave empty to use main model above. Try: deepseek-chat")
+                    comment("Leave empty to use main model above. Try: deepseek-v4-flash")
                 }
                 row("Max Completion Tokens:") {
                     completionMaxTokensField = cell(JBTextField().apply {
@@ -95,6 +97,23 @@ class DeepSeekSettingsConfigurable : Configurable {
                     }).component as JBTextField
                 }
             }
+
+            group("StepFun Image Parsing") {
+                row("API Key:") {
+                    stepFunApiKeyField = cell(JBPasswordField().apply {
+                        columns = 50
+                        text = settings.stepFunApiKey
+                    }).component as JBPasswordField
+                    comment("Get your key at <a href='https://platform.stepfun.com'>platform.stepfun.com</a>")
+                }
+                row("Model:") {
+                    stepFunModelField = cell(JBTextField().apply {
+                        columns = 30
+                        text = settings.stepFunModel
+                    }).component as JBTextField
+                    comment("step-1o-turbo-vision (vision language model)")
+                }
+            }
         }
     }
 
@@ -109,11 +128,13 @@ class DeepSeekSettingsConfigurable : Configurable {
                 || completionMinPrefixField?.text?.toIntOrNull() != settings.completionMinPrefix
                 || maxContextLinesField?.text?.toIntOrNull() != settings.maxContextLines
                 || completionDelayField?.text?.toLongOrNull() != settings.completionDelayMs
+                || stepFunApiKeyField?.password?.let { String(it) } != settings.stepFunApiKey
+                || stepFunModelField?.text != settings.stepFunModel
     }
 
     override fun apply() {
         settings.apiKey = apiKeyField?.password?.let { String(it) } ?: ""
-        settings.model = modelField?.text ?: "deepseek-chat"
+        settings.model = modelField?.text ?: "deepseek-v4-flash"
         settings.maxTokens = maxTokensField?.text?.toIntOrNull() ?: 4096
         settings.temperature = temperatureField?.text?.toDoubleOrNull() ?: 0.7
         settings.completionEnabled = completionEnabledCheckbox?.isSelected ?: true
@@ -122,6 +143,8 @@ class DeepSeekSettingsConfigurable : Configurable {
         settings.completionMinPrefix = completionMinPrefixField?.text?.toIntOrNull() ?: 2
         settings.maxContextLines = maxContextLinesField?.text?.toIntOrNull() ?: 30
         settings.completionDelayMs = completionDelayField?.text?.toLongOrNull() ?: 500
+        settings.stepFunApiKey = stepFunApiKeyField?.password?.let { String(it) } ?: ""
+        settings.stepFunModel = stepFunModelField?.text ?: "step-1o-turbo-vision"
     }
 
     override fun reset() {
@@ -135,5 +158,7 @@ class DeepSeekSettingsConfigurable : Configurable {
         completionMinPrefixField?.text = settings.completionMinPrefix.toString()
         maxContextLinesField?.text = settings.maxContextLines.toString()
         completionDelayField?.text = settings.completionDelayMs.toString()
+        stepFunApiKeyField?.text = settings.stepFunApiKey
+        stepFunModelField?.text = settings.stepFunModel
     }
 }

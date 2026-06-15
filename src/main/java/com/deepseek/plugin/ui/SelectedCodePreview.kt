@@ -1,17 +1,18 @@
 package com.deepseek.plugin.ui
 
+import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.ActionPlaces
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.Presentation
+import com.intellij.openapi.actionSystem.impl.ActionButton
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
-import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
-import javax.swing.Box
-import javax.swing.JButton
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.border.CompoundBorder
@@ -61,34 +62,23 @@ class SelectedCodePreview(
         val infoLabel = JLabel("$fileName: $startLine-$endLine")
         infoLabel.font = infoLabel.font.deriveFont(Font.BOLD, 11f)
         infoLabel.foreground = JBColor(0x1A73E8, 0x64B5F6)
-        infoLabel.icon = com.intellij.icons.AllIcons.FileTypes.Any_type
+        infoLabel.icon = AllIcons.FileTypes.Any_type
         header.add(infoLabel, BorderLayout.WEST)
 
         // Dismiss button (right)
-        val dismissBtn = object : JButton("\u2715") {
-            override fun getToolTipLocation(e: MouseEvent?): java.awt.Point? {
-                return java.awt.Point(0, height + 2)
-            }
-        }.apply {
-            toolTipText = "移除选中代码引用"
-            isBorderPainted = false
-            isContentAreaFilled = false
-            isFocusPainted = false
-            font = font.deriveFont(11f)
-            foreground = JBColor(0x888888, 0xAAAAAA)
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            margin = JBUI.emptyInsets()
-            border = JBUI.Borders.empty(2, 4, 2, 4)
-            addActionListener { onDismiss() }
-            addMouseListener(object : MouseAdapter() {
-                override fun mouseEntered(e: MouseEvent) {
-                    foreground = JBColor(0x333333, 0xFFFFFF)
+        val dismissBtn = ActionButton(
+            object : AnAction(null, null, AllIcons.Actions.Close) {
+                override fun actionPerformed(e: AnActionEvent) {
+                    onDismiss()
                 }
-                override fun mouseExited(e: MouseEvent) {
-                    foreground = JBColor(0x888888, 0xAAAAAA)
-                }
-            })
-        }
+            },
+            Presentation().apply {
+                this.icon = AllIcons.Actions.Close
+                this.description = "移除选中代码引用"
+            },
+            ActionPlaces.TOOLBAR,
+            Dimension(16, 16)
+        ).withTooltip("移除选中代码引用")
 
         val actionsPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 0, 0))
         actionsPanel.isOpaque = false

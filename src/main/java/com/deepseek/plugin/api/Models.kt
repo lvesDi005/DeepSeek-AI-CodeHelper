@@ -5,7 +5,7 @@ import com.google.gson.annotations.SerializedName
 // --- Request models ---
 
 data class ChatRequest(
-    val model: String = "deepseek-chat",
+    val model: String = "deepseek-v4-flash",
     val messages: List<ChatMessage>,
     val temperature: Double = 0.7,
     @SerializedName("max_tokens") val maxTokens: Int = 4096,
@@ -52,7 +52,7 @@ data class Usage(
 // --- FIM Completion models ---
 
 data class FimRequest(
-    val model: String = "deepseek-chat",
+    val model: String = "deepseek-v4-flash",
     val prompt: String,
     val suffix: String? = null,
     @SerializedName("max_tokens") val maxTokens: Int = 256,

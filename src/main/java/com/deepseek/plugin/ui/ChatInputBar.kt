@@ -4,13 +4,9 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
-import java.awt.Font
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
-import java.awt.Cursor
 import javax.swing.Box
 import javax.swing.BoxLayout
-import javax.swing.JButton
+import javax.swing.JComponent
 import javax.swing.JPanel
 
 /**
@@ -23,23 +19,22 @@ import javax.swing.JPanel
  * ├──────────────────────────────┤
  * │  [text input area]           │
  * ├──────────────────────────────┤
- * │  📎 upload  [ stop ] [Send] │
+ * │  ⬆ upload   [ ⏸ ] [ ▶ ]    │
  * └──────────────────────────────┘
  *
  * @param inputScrollPane   The scroll pane wrapping the text input area.
  * @param selectedCodePanel Panel shown above input when code is selected (nullable).
  * @param fileAttachmentPanel Panel shown above input for attached files (nullable).
  * @param uploadButton  Button to open file chooser.
- * @param stopButton    Button to stop streaming.
- * @param sendButton    Primary send button.
+ * @param sendStopButton Combined send/stop button — shows ▶ when idle, ⏸ during streaming.
  */
 class ChatInputBar(
     inputScrollPane: JBScrollPane,
     selectedCodePanel: JPanel?,
     fileAttachmentPanel: JPanel?,
-    uploadButton: JButton,
-    stopButton: JButton,
-    sendButton: JButton
+    modeSelector: JComponent?,
+    uploadButton: JComponent,
+    sendStopButton: JComponent
 ) : JPanel(BorderLayout()) {
 
     init {
@@ -59,14 +54,15 @@ class ChatInputBar(
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             border = JBUI.Borders.compound(
                 JBUI.Borders.customLine(JBColor.border(), 1, 0, 0, 0),
-                JBUI.Borders.empty(4, 4, 4, 4)
+                JBUI.Borders.empty(6, 8, 6, 8)
             )
+            if (modeSelector != null) {
+                add(modeSelector)
+                add(Box.createHorizontalStrut(10))
+            }
             add(uploadButton)
             add(Box.createHorizontalGlue())
-            add(stopButton)
-            add(Box.createHorizontalStrut(6))
-            add(sendButton)
-            add(Box.createHorizontalStrut(4))
+            add(sendStopButton)
         }
         add(buttonBar, BorderLayout.SOUTH)
     }

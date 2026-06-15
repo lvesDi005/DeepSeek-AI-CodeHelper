@@ -1,19 +1,21 @@
 package com.deepseek.plugin.ui
 
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.ActionPlaces
+import com.intellij.openapi.actionSystem.ActionToolbar
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.Presentation
+import com.intellij.openapi.actionSystem.impl.ActionButton
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
-import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
 import javax.swing.BorderFactory
 import javax.swing.Box
 import javax.swing.BoxLayout
-import javax.swing.JButton
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.SwingConstants
@@ -91,30 +93,19 @@ class FileAttachmentPreview(
         card.add(infoPanel, BorderLayout.CENTER)
 
         // Remove button (right)
-        val removeBtn = object : JButton("\u2715") {
-            override fun getToolTipLocation(e: MouseEvent?): java.awt.Point? {
-                return java.awt.Point(-width, height + 2)
-            }
-        }.apply {
-            toolTipText = "移除 ${file.name}"
-            isBorderPainted = false
-            isContentAreaFilled = false
-            isFocusPainted = false
-            font = font.deriveFont(9f)
-            foreground = JBColor(0xAAAAAA, 0x888888)
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            margin = JBUI.emptyInsets()
-            border = JBUI.Borders.empty(2, 4, 2, 4)
-            addActionListener { onRemove(index) }
-            addMouseListener(object : MouseAdapter() {
-                override fun mouseEntered(e: MouseEvent) {
-                    foreground = JBColor(0x333333, 0xFFFFFF)
+        val removeBtn = ActionButton(
+            object : AnAction(AllIcons.Actions.Close) {
+                override fun actionPerformed(e: AnActionEvent) {
+                    onRemove(index)
                 }
-                override fun mouseExited(e: MouseEvent) {
-                    foreground = JBColor(0xAAAAAA, 0x888888)
-                }
-            })
-        }
+            },
+            Presentation().apply {
+                this.icon = AllIcons.Actions.Close
+                this.description = "移除 ${file.name}"
+            },
+            ActionPlaces.TOOLBAR,
+            Dimension(16, 16)
+        ).withTooltip("移除 ${file.name}")
 
         val actionsPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 0, 0))
         actionsPanel.isOpaque = false

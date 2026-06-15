@@ -211,14 +211,20 @@ class QuestionNavSidebar : JPanel(null) {
                 JBScrollPane::class.java, data.component
             ) as? JBScrollPane ?: return@invokeLater
 
-            // The component is nested inside a wrapper panel (from wrapWithWidthConstraint).
-            // Use the wrapper's y-coordinate (relative to the view = messagesPanel).
-            val wrapper = data.component.parent ?: return@invokeLater
+            // Walk up the component tree to find the direct child of the viewport view
+            // (the component whose y is relative to messagesPanel)
+            val viewportView = scrollPane.viewport.view
+            var target: java.awt.Component = data.component
+            while (target.parent != null && target.parent != viewportView) {
+                target = target.parent
+            }
+            if (target.parent != viewportView) return@invokeLater
+
             val r = Rectangle(
                 0,
-                wrapper.y,
-                wrapper.width.coerceAtLeast(1),
-                wrapper.height.coerceAtLeast(1)
+                target.y,
+                target.width.coerceAtLeast(1),
+                target.height.coerceAtLeast(1)
             )
             scrollPane.viewport.scrollRectToVisible(r)
             flashHighlight(data.component)

@@ -1,0 +1,215 @@
+package com.deepseek.plugin.api
+
+import com.deepseek.plugin.settings.DeepSeekSettings
+import com.google.gson.Gson
+import com.google.gson.JsonParser
+import com.google.gson.annotations.SerializedName
+import okhttp3.Call
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.util.Base64
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+
+/**
+ * 支持图片解析的 StepFun API 客户端.
+ *
+ * 使用 StepFun 的 step-1o-turbo-vision 视觉语言模型将图片解析为文本描述,
+ * 然后将描述文本注入到 DeepSeek Chat 的上下文中.
+ */
+class StepFunApiClient {
+
+    companion object {
+        private const val BASE_URL = "https://api.stepfun.com/v1"
+        private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
+        private val gson = Gson()
+    }
+
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .build()
+
+    /** 追踪当前正在执行的 HTTP Call，用于强制取消 */
+    private val currentCall = AtomicReference<Call?>(null)
+
+    /**
+     * 强制取消当前正在执行的图片解析请求（如果有）。
+     * OkHttp 的 [Call.cancel] 会使 [Call.execute] 立即抛出 IOException("Canceled")。
+     */
+    fun cancelCurrentCall() {
+        currentCall.getAndSet(null)?.cancel()
+    }
+
+    // ── 请求/响应模型 ──
+
+    data class ContentPart(
+        val type: String,  // "text" | "image_url"
+        val text: String? = null,
+        @SerializedName("image_url") val imageUrl: ImageUrl? = null
+    )
+
+    data class ImageUrl(
+        val url: String  // base64 data URI or HTTP URL
+    )
+
+    data class VisionMessage(
+        val role: String,
+        val content: List<ContentPart>
+    )
+
+    data class VisionRequest(
+        val model: String,
+        val messages: List<VisionMessage>,
+        @SerializedName("max_tokens") val maxTokens: Int = 4096,
+        val stream: Boolean = false
+    )
+
+    data class VisionChoice(
+        val index: Int,
+        val message: VisionResponseMessage?,
+        @SerializedName("finish_reason") val finishReason: String? = null
+    )
+
+    data class VisionResponseMessage(
+        val role: String? = null,
+        val content: String? = null
+    )
+
+    data class VisionResponse(
+        val id: String? = null,
+        val `object`: String? = null,
+        val created: Long? = null,
+        val model: String? = null,
+        val choices: List<VisionChoice>? = null,
+        val usage: Usage? = null
+    )
+
+    // ── 公开方法 ──
+
+    /**
+     * 解析单张图片文件, 返回文本描述.
+     *
+     * @param imagePath 图片文件的绝对路径
+     * @param prompt    可选的提示词, 默认要求模型详细描述图片
+     * @return 图片的文本描述, 失败时返回错误信息
+     */
+    fun parseImage(imagePath: String, prompt: String = "请详细描述这张图片中的内容"): Result<String> {
+        val settings = DeepSeekSettings.instance
+        if (settings.stepFunApiKey.isBlank()) {
+            return Result.failure(IOException("StepFun API Key 未配置，请在 Settings → Tools → DeepSeek AI 中设置"))
+        }
+
+        // 读取图片并转为 base64 data URI
+        val dataUri = readImageAsBase64(imagePath)
+            ?: return Result.failure(IOException("无法读取图片文件: $imagePath"))
+
+        val request = VisionRequest(
+            model = settings.stepFunModel,
+            messages = listOf(
+                VisionMessage(
+                    role = "user",
+                    content = listOf(
+                        ContentPart(type = "text", text = prompt),
+                        ContentPart(type = "image_url", imageUrl = ImageUrl(url = dataUri))
+                    )
+                )
+            ),
+            maxTokens = 4096
+        )
+
+        val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
+        val httpRequest = Request.Builder()
+            .url("$BASE_URL/chat/completions")
+            .header("Authorization", "Bearer ${settings.stepFunApiKey}")
+            .header("Content-Type", "application/json")
+            .post(body)
+            .build()
+
+        val call = client.newCall(httpRequest)
+        currentCall.set(call)
+        return try {
+            val response = call.execute()
+            val responseBody = response.body?.string() ?: ""
+            if (!response.isSuccessful) {
+                val errMsg = tryParseError(responseBody, response.code)
+                Result.failure(IOException("StepFun API error ${response.code}: $errMsg"))
+            } else {
+                val visionResp = gson.fromJson(responseBody, VisionResponse::class.java)
+                val content = visionResp.choices?.firstOrNull()?.message?.content ?: ""
+                if (content.isBlank()) {
+                    Result.failure(IOException("StepFun 返回了空内容"))
+                } else {
+                    Result.success(content.trim())
+                }
+            }
+        } catch (e: IOException) {
+            Result.failure(e)
+        } finally {
+            currentCall.set(null)
+        }
+    }
+
+    /**
+     * 批量解析多张图片, 返回每张图片的描述列表.
+     * 每张图片独立调用 API.
+     */
+    fun parseImages(imagePaths: List<String>): List<Pair<String, String>> {
+        val results = mutableListOf<Pair<String, String>>()
+        for (path in imagePaths) {
+            val fileName = Paths.get(path).fileName.toString()
+            val result = parseImage(path)
+            val description = result.getOrElse { e -> "[图片解析失败: ${e.message}]" }
+            results.add(fileName to description)
+        }
+        return results
+    }
+
+    // ── 内部方法 ──
+
+    /**
+     * 读取图片文件并转换为 base64 data URI 字符串.
+     * 支持 PNG, JPEG, GIF, BMP, WEBP 等常见格式.
+     */
+    private fun readImageAsBase64(imagePath: String): String? {
+        return try {
+            val bytes = Files.readAllBytes(Paths.get(imagePath))
+            val base64 = Base64.getEncoder().encodeToString(bytes)
+            val mimeType = detectMimeType(imagePath)
+            "data:$mimeType;base64,$base64"
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 根据文件扩展名检测 MIME 类型.
+     */
+    private fun detectMimeType(fileName: String): String {
+        val ext = fileName.substringAfterLast('.', "").lowercase()
+        return when (ext) {
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "gif" -> "image/gif"
+            "bmp" -> "image/bmp"
+            "webp" -> "image/webp"
+            "svg" -> "image/svg+xml"
+            else -> "image/png" // 默认
+        }
+    }
+
+    private fun tryParseError(body: String, code: Int): String {
+        return try {
+            val json = JsonParser.parseString(body).asJsonObject
+            json.getAsJsonObject("error")?.get("message")?.asString ?: "HTTP $code"
+        } catch (_: Exception) {
+            "HTTP $code"
+        }
+    }
+}

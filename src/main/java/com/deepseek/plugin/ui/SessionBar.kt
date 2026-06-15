@@ -1,14 +1,16 @@
 package com.deepseek.plugin.ui
 
+import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.ActionPlaces
+import com.intellij.openapi.actionSystem.ActionToolbar
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.Presentation
+import com.intellij.openapi.actionSystem.impl.ActionButton
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
-import java.awt.Cursor
 import java.awt.FlowLayout
-import java.awt.Font
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
 import javax.swing.Box
-import javax.swing.JButton
 import javax.swing.JComboBox
 import javax.swing.JPanel
 
@@ -17,9 +19,8 @@ import javax.swing.JPanel
  *
  * Layout:
  * ┌──────────────────────────────────────────────┐
- * │ [▼ 会话 1] [+ 新建] [🗑 清除所有]     [清除本会话] │
+ * │ [▼ 会话 1]  [+]  [🗑]              [✕]      │
  * └──────────────────────────────────────────────┘
- * ────────────────────────────────────────────────  ← JSeparator
  *
  * @param sessionComboBox   The combo box with session names.
  * @param onNewSession      Called when "新建会话" is clicked.
@@ -34,48 +35,47 @@ class SessionBar(
 ) : JPanel(BorderLayout()) {
 
     init {
-        border = JBUI.Borders.empty(2, 4, 2, 4)
+        border = JBUI.Borders.empty(3, 6, 3, 6)
 
         // Left: session combo + new session + clear all
-        val leftPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
+        val leftPanel = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
             isOpaque = false
             add(sessionComboBox)
-            add(createSessionButton("+ 新建会话", onNewSession))
+            add(Box.createHorizontalStrut(4))
+            add(createActionButton(
+                icon = AllIcons.General.Add,
+                tooltip = "新建会话",
+                onClick = onNewSession
+            ))
             add(Box.createHorizontalStrut(2))
-            add(createSessionButton("🗑 清除所有", onClearAll))
+            add(createActionButton(
+                icon = AllIcons.Actions.GC,
+                tooltip = "清除所有会话",
+                onClick = onClearAll
+            ))
         }
         add(leftPanel, BorderLayout.WEST)
 
         // Right: clear current session
-        add(createSessionButton("清除本会话", onClearCurrent).apply {
-            foreground = java.awt.Color(180, 80, 80)
-        }, BorderLayout.EAST)
+        val clearBtn = createActionButton(
+            icon = AllIcons.Actions.Close,
+            tooltip = "清除当前会话",
+            onClick = onClearCurrent
+        )
+        add(clearBtn, BorderLayout.EAST)
     }
 
-    private fun createSessionButton(text: String, onClick: () -> Unit): JButton {
-        return object : JButton(text) {
-            override fun getToolTipLocation(e: MouseEvent?): java.awt.Point? {
-                return java.awt.Point(0, height + 2)
-            }
-        }.apply {
-            this.toolTipText = text
-            isBorderPainted = false
-            isContentAreaFilled = false
-            isFocusPainted = false
-            font = font.deriveFont(Font.PLAIN, 11f)
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            margin = JBUI.emptyInsets()
-            border = JBUI.Borders.empty(4, 8, 4, 8)
-            addActionListener { onClick() }
-            addMouseListener(object : MouseAdapter() {
-                override fun mouseEntered(e: MouseEvent) {
-                    isOpaque = true
-                    background = com.intellij.ui.JBColor(0xE0E0E0, 0x4A4A4A)
-                }
-                override fun mouseExited(e: MouseEvent) {
-                    isOpaque = false
-                }
-            })
+    private fun createActionButton(icon: javax.swing.Icon, tooltip: String, onClick: () -> Unit): JPanel {
+        val presentation = Presentation().apply {
+            this.icon = icon
+            this.description = tooltip
         }
+        val action = object : AnAction() {
+            override fun actionPerformed(e: AnActionEvent) {
+                onClick()
+            }
+        }
+        val button = ActionButton(action, presentation, ActionPlaces.TOOLBAR, ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE)
+        return button.withTooltip(tooltip)
     }
 }

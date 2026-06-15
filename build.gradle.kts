@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.deepseek.plugin"
-version = "2.0.1"
+version = "2.1.0"
 
 repositories {
     mavenCentral()
@@ -16,7 +16,7 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        create("IC", "2025.1")
+        create("IC", "2024.3")
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
         bundledPlugin("com.intellij.java")
     }
@@ -39,10 +39,27 @@ intellijPlatform {
             <p>Configure your DeepSeek API Key in <b>Settings → Tools → DeepSeek AI</b>.</p>
         """.trimIndent()
         ideaVersion {
-            sinceBuild = "251"
-            untilBuild = "253.*"
+            sinceBuild = "241"
+            untilBuild = "263.*"
         }
         changeNotes = """
+            <h3>v2.1.0</h3>
+            <ul>
+              <li>Version update dialog — automatically shows the changelog when the plugin is updated to a new version</li>
+              <li>Various bug fixes and stability improvements</li>
+              <li>The plugin is backward compatible with IDEA versions down to 24.1.x and also down to 26.3.x.</li>
+            </ul>
+            <h3>v2.0.2</h3>
+            <ul>
+              <li>Added Agent mode — switch between "💬 问答" and "🤖 Agent" via a dropdown at the bottom of the chat panel</li>
+              <li>In Agent mode, AI automatically scans the project directory, locates target files, and performs create/modify/delete operations based on user requests</li>
+              <li>Recursively collects project source files (skipping .git/build/target/node_modules etc.) as context for the AI</li>
+              <li>AI outputs structured <code>&lt;file path="..."&gt;</code> tags to specify file operations</li>
+              <li>Path traversal protection — canonical path validation ensures all writes stay within the project root</li>
+              <li>User confirmation dialog — shows the full list of pending file operations before applying them</li>
+              <li>Multi-turn conversation support in Agent mode — maintains full message history across consecutive requests</li>
+              <li>Send button label changes to "Execute (Ctrl+Enter)" when Agent mode is active</li>
+            </ul>
             <h3>v2.0.1</h3>
             <ul>
               <li>Major UI refactoring — ChatPanel split into modular components (MessageBubble, ChatInputBar, ChatToolbar, SessionBar)</li>
@@ -146,11 +163,11 @@ val filterOkhttpLib by tasks.registering {
 
 tasks {
     withType<JavaCompile> {
-        sourceCompatibility = "21"
-        targetCompatibility = "21"
+        sourceCompatibility = "17"
+        targetCompatibility = "17"
     }
     withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-        kotlinOptions.jvmTarget = "21"
+        kotlinOptions.jvmTarget = "17"
     }
 
     // Third-party deps are placed in lib/ by IntelliJ Platform Gradle Plugin 2.x automatically.
