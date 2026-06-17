@@ -57,6 +57,21 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * HTML changelog content displayed in the update dialog.
          */
         private val CHANGELOG_HTML = """
+            <h3>v2.2.1</h3>
+            <ul>
+              <li>🎨 VSCode industrial dark-themed input panel — 4-layer vertical layout with notification bar, toolbar, resizable input area, and status bar</li>
+              <li>📏 Auto-resizing text input area — grows up to 12 lines, scrolls beyond, with drag-to-resize handle</li>
+              <li>💡 Placeholder hints and inline @-file reference with yellow highlighting</li>
+              <li>🏷️ Compact selected-code badge — shows file name and line range without code snippet</li>
+              <li>🖼️ IntelliJ native icons for attachment upload and UI actions</li>
+              <li>🎭 Refined color scheme with 3-layer gray hierarchy, blue/yellow accent colors</li>
+            </ul>
+            <h3>v2.2.0</h3>
+            <ul>
+              <li>🔀 Multi-provider support — switch between DeepSeek and Agnes 2.0 Flash in the settings panel</li>
+              <li>🧠 Agnes 2.0 Flash integration — configurable API key, model name, and base URL for text analysis</li>
+              <li>⚙️ Settings UI updated — API Provider selector and Agnes-specific configuration section added</li>
+            </ul>
             <h3>v2.1.0</h3>
             <ul>
               <li>🎨 New welcome screen — a beautiful landing page with quick tips and keyboard shortcuts when the chat panel is empty</li>

@@ -21,18 +21,28 @@ class DeepSeekSettingsConfigurable : Configurable {
     private var completionEnabledCheckbox: JCheckBox? = null
     private var stepFunApiKeyField: JBPasswordField? = null
     private var stepFunModelField: JBTextField? = null
+    private var providerComboBox: com.intellij.openapi.ui.ComboBox<String>? = null
+    private var agnesApiKeyField: JBPasswordField? = null
+    private var agnesModelField: JBTextField? = null
+    private var agnesBaseUrlField: JBTextField? = null
 
     override fun getDisplayName(): String = "DeepSeek AI CodeHelper"
 
     override fun createComponent(): JComponent {
         return panel {
             group("API Configuration") {
+                row("API Provider:") {
+                    providerComboBox = comboBox<String>(listOf("deepseek", "agnes"))
+                        .apply { component.selectedItem = settings.provider }
+                        .component
+                    comment("deepseek = DeepSeek API, agnes = Agnes 2.0 Flash")
+                }
                 row("API Key:") {
                     apiKeyField = cell(JBPasswordField().apply {
                         columns = 50
                         text = settings.apiKey
                     }).component as JBPasswordField
-                    comment("Get your key at <a href='https://platform.deepseek.com/api_keys'>platform.deepseek.com</a>")
+                    comment("DeepSeek: <a href='https://platform.deepseek.com/api_keys'>platform.deepseek.com</a>")
                 }
                 row("Model:") {
                     modelField = cell(JBTextField().apply {
@@ -53,6 +63,30 @@ class DeepSeekSettingsConfigurable : Configurable {
                         text = settings.temperature.toString()
                     }).component as JBTextField
                     comment("0.0 - 2.0")
+                }
+            }
+
+            group("Agnes 2.0 Flash") {
+                row("API Key:") {
+                    agnesApiKeyField = cell(JBPasswordField().apply {
+                        columns = 50
+                        text = settings.agnesApiKey
+                    }).component as JBPasswordField
+                    comment("Get key at <a href='https://platform.agnes-ai.com'>platform.agnes-ai.com</a>")
+                }
+                row("Model:") {
+                    agnesModelField = cell(JBTextField().apply {
+                        columns = 30
+                        text = settings.agnesModel
+                    }).component as JBTextField
+                    comment("agnes-2.0-flash")
+                }
+                row("Base URL:") {
+                    agnesBaseUrlField = cell(JBTextField().apply {
+                        columns = 40
+                        text = settings.agnesBaseUrl
+                    }).component as JBTextField
+                    comment("https://apihub.agnes-ai.com/v1")
                 }
             }
 
@@ -130,6 +164,10 @@ class DeepSeekSettingsConfigurable : Configurable {
                 || completionDelayField?.text?.toLongOrNull() != settings.completionDelayMs
                 || stepFunApiKeyField?.password?.let { String(it) } != settings.stepFunApiKey
                 || stepFunModelField?.text != settings.stepFunModel
+                || providerComboBox?.selectedItem != settings.provider
+                || agnesApiKeyField?.password?.let { String(it) } != settings.agnesApiKey
+                || agnesModelField?.text != settings.agnesModel
+                || agnesBaseUrlField?.text != settings.agnesBaseUrl
     }
 
     override fun apply() {
@@ -145,6 +183,10 @@ class DeepSeekSettingsConfigurable : Configurable {
         settings.completionDelayMs = completionDelayField?.text?.toLongOrNull() ?: 500
         settings.stepFunApiKey = stepFunApiKeyField?.password?.let { String(it) } ?: ""
         settings.stepFunModel = stepFunModelField?.text ?: "step-1o-turbo-vision"
+        settings.provider = providerComboBox?.selectedItem as? String ?: "deepseek"
+        settings.agnesApiKey = agnesApiKeyField?.password?.let { String(it) } ?: ""
+        settings.agnesModel = agnesModelField?.text ?: "Agnes-2.0-Flash"
+        settings.agnesBaseUrl = agnesBaseUrlField?.text ?: "https://apihub.agnes-ai.com/v1"
     }
 
     override fun reset() {
@@ -160,5 +202,9 @@ class DeepSeekSettingsConfigurable : Configurable {
         completionDelayField?.text = settings.completionDelayMs.toString()
         stepFunApiKeyField?.text = settings.stepFunApiKey
         stepFunModelField?.text = settings.stepFunModel
+        providerComboBox?.selectedItem = settings.provider
+        agnesApiKeyField?.text = settings.agnesApiKey
+        agnesModelField?.text = settings.agnesModel
+        agnesBaseUrlField?.text = settings.agnesBaseUrl
     }
 }

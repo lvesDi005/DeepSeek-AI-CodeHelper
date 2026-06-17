@@ -19,6 +19,7 @@ import com.deepseek.plugin.ui.SelectedCodePreview
 import com.deepseek.plugin.ui.SessionBar
 import com.deepseek.plugin.ui.UsageDialog
 import com.deepseek.plugin.ui.WelcomePanel
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
@@ -36,6 +37,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.*
 import com.intellij.util.ui.JBUI
+import kotlin.math.ceil
 import okhttp3.sse.EventSource
 import java.awt.BasicStroke
 import java.awt.BorderLayout
@@ -44,6 +46,7 @@ import java.awt.Color
 import java.awt.Component
 import java.awt.Cursor
 import java.awt.Dimension
+import java.awt.FlowLayout
 import java.awt.Font
 import java.awt.Graphics
 import java.awt.Graphics2D
@@ -55,6 +58,7 @@ import java.awt.event.*
 import java.awt.geom.Ellipse2D
 import javax.swing.*
 import javax.swing.text.DefaultCaret
+import javax.swing.text.DefaultHighlighter
 import javax.swing.Timer
 
 enum class ChatMode {
@@ -90,7 +94,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
     )
 
     private var selectedContext: SelectedContext? = null
-    private val selectedCodePreviewPanel = JPanel(BorderLayout()).apply {
+    private val selectedCodePreviewPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 2)).apply {
         isVisible = false
     }
 
@@ -172,23 +176,217 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         messagesScrollPane.repaint()
     }
 
-    private val inputArea = JBTextArea(4, 0).apply {
-        lineWrap = true
-        wrapStyleWord = true
-        font = JBUI.Fonts.create("Monospaced", 13)
-        addKeyListener(object : KeyAdapter() {
-            override fun keyPressed(e: KeyEvent) {
-                if (e.keyCode == KeyEvent.VK_ENTER && e.isControlDown && !isStreaming) {
-                    e.consume()
-                    sendMessage()
+    private inner class AutoResizingTextArea(rows: Int, cols: Int) : JBTextArea(rows, cols) {
+        private var minHeight: Int = 0
+        private var maxHeight: Int = 0
+        private val placeholderText = "欢迎使用, 请输入内容并Ctrl+Enter发送消息"
+        private val refHighlightPainter = DefaultHighlighter.DefaultHighlightPainter(
+            JBColor(Color(0xFFF176), Color(0x8D6E00))
+        )
+        private val refPattern = Regex("@[\\w.\\-/]+")
+        private var suppressingPopup = false
+
+        init {
+            lineWrap = true
+            wrapStyleWord = true
+            font = JBUI.Fonts.create("Monospaced", 13)
+            margin = JBUI.insets(8, 10)
+
+            // Ctrl+Enter to send
+            addKeyListener(object : KeyAdapter() {
+                override fun keyPressed(e: KeyEvent) {
+                    if (e.keyCode == KeyEvent.VK_ENTER && e.isControlDown && !isStreaming) {
+                        e.consume()
+                        sendMessage()
+                    }
+                }
+            })
+
+            // Auto-resize + @-highlight + @-trigger on content changes
+            document.addDocumentListener(object : javax.swing.event.DocumentListener {
+                override fun insertUpdate(e: javax.swing.event.DocumentEvent?) {
+                    adjustHeight()
+                    refreshHighlights()
+                    if (!suppressingPopup) checkAtTrigger()
+                }
+                override fun removeUpdate(e: javax.swing.event.DocumentEvent?) {
+                    adjustHeight()
+                    refreshHighlights()
+                }
+                override fun changedUpdate(e: javax.swing.event.DocumentEvent?) {
+                    adjustHeight()
+                    refreshHighlights()
+                }
+            })
+
+            // Recalculate when the component is resized (e.g. panel splitter moved)
+            addComponentListener(object : ComponentAdapter() {
+                override fun componentResized(e: ComponentEvent?) { adjustHeight() }
+            })
+        }
+
+        /** Show file-reference popup when "@" is typed at word start. */
+        private fun checkAtTrigger() {
+            val text = text
+            val pos = caretPosition
+            if (pos <= 0) return
+            if (pos > text.length) return
+            val charBefore = text[pos - 1]
+            if (charBefore != '@') return
+            // Check it's at word start (preceded by space or start of line)
+            if (pos >= 2 && text[pos - 2].isLetterOrDigit()) return
+            showFileRefPopup(pos)
+        }
+
+        private fun showFileRefPopup(atPos: Int) {
+            // Build file list from project root
+            val projectDir = project.basePath ?: return
+            val baseFile = java.io.File(projectDir)
+            val entries = baseFile.listFiles()?.filter { it.isFile || it.isDirectory }?.sortedBy { it.name } ?: return
+
+            val listModel = DefaultListModel<String>()
+            val allEntries = entries.map { it.name + if (it.isDirectory) "/" else "" }
+            allEntries.forEach { listModel.addElement(it) }
+
+            val list = JList(listModel).apply {
+                font = font.deriveFont(12f)
+                foreground = JBColor(Color(0x333333), Color(0xCCCCCC))
+                background = JBColor(Color(0xFFFFFF), Color(0x2B2B2B))
+                selectionBackground = JBColor(Color(0xE3F2FD), Color(0x264F78))
+                fixedCellHeight = 22
+            }
+
+            val popup = JPopupMenu().apply {
+                isOpaque = true
+                border = JBUI.Borders.compound(
+                    JBUI.Borders.customLine(JBColor(Color(0xC0C0C0), Color(0x555555)), 1),
+                    JBUI.Borders.empty(2)
+                )
+                background = list.background
+                layout = BorderLayout()
+                val scrollPane = JBScrollPane(list).apply {
+                    preferredSize = Dimension(260, minOf(entries.size, 10) * 22 + 4)
+                    border = JBUI.Borders.empty()
+                    isOpaque = false
+                }
+                add(scrollPane, BorderLayout.CENTER)
+            }
+
+            list.addMouseListener(object : MouseAdapter() {
+                override fun mouseClicked(e: MouseEvent) {
+                    if (e.clickCount >= 2) {
+                        val selected = list.selectedValue
+                        if (selected != null) insertRef(selected, atPos, popup)
+                    }
+                }
+            })
+
+            list.addKeyListener(object : KeyAdapter() {
+                override fun keyPressed(e: KeyEvent) {
+                    if (e.keyCode == KeyEvent.VK_ENTER) {
+                        e.consume()
+                        val selected = list.selectedValue
+                        if (selected != null) insertRef(selected, atPos, popup)
+                    } else if (e.keyCode == KeyEvent.VK_ESCAPE) {
+                        popup.isVisible = false
+                    }
+                }
+            })
+
+            // Position popup ABOVE the @ character
+            try {
+                val caretRect = modelToView(atPos)
+                val popupH = minOf(entries.size, 10) * 22 + 4 + 8 // list + border + padding
+                val pt = java.awt.Point(
+                    maxOf(0, caretRect.x - 4),
+                    caretRect.y - popupH - 4
+                )
+                SwingUtilities.convertPointToScreen(pt, this)
+                popup.setLocation(pt)
+                popup.isVisible = true
+                list.requestFocusInWindow()
+            } catch (_: Exception) { /* bounds not ready */ }
+        }
+
+        private fun insertRef(entry: String, atPos: Int, popup: JPopupMenu) {
+            popup.isVisible = false
+            suppressingPopup = true
+            val text = text
+            val before = text.substring(0, atPos - 1) // remove '@'
+            val after = text.substring(atPos)
+            this.text = "$before@$entry $after"
+            caretPosition = atPos - 1 + entry.length + 2 // after inserted ref + space
+            suppressingPopup = false
+            requestFocusInWindow()
+            refreshHighlights()
+        }
+
+        /** Highlight all @references in the text with yellow painter. */
+        private fun refreshHighlights() {
+            highlighter.removeAllHighlights()
+            for (match in refPattern.findAll(text)) {
+                try {
+                    highlighter.addHighlight(match.range.first, match.range.last + 1, refHighlightPainter)
+                } catch (_: Exception) { /* ignore invalid ranges */ }
+            }
+        }
+
+        override fun addNotify() {
+            super.addNotify()
+            val fm = getFontMetrics(font)
+            val lineH = fm.height
+            minHeight = lineH * 4 + 10
+            maxHeight = lineH * 12 + 10
+            // Defer first height adjustment until layout is complete
+            SwingUtilities.invokeLater { adjustHeight() }
+        }
+
+        override fun getScrollableTracksViewportHeight(): Boolean = false
+
+        override fun paintComponent(g: Graphics) {
+            super.paintComponent(g)
+            // Draw placeholder when empty and not focused
+            if (text.isEmpty() && !hasFocus()) {
+                val g2 = g.create() as Graphics
+                try {
+                    g2.color = JBColor(Color(0xAAAAAA), Color(0x666666))
+                    g2.font = font.deriveFont(Font.PLAIN, 12f)
+                    val fm = g2.fontMetrics
+                    val x = insets.left + 2
+                    val y = insets.top + fm.ascent + 2
+                    g2.drawString(placeholderText, x, y)
+                } finally {
+                    g2.dispose()
                 }
             }
-        })
+        }
+
+        private fun adjustHeight() {
+            if (minHeight <= 0 || maxHeight <= 0) return
+            val fm = getFontMetrics(font)
+            val lineH = fm.height
+            // Wait until the component has a meaningful width
+            if (width <= 0) return
+            // Approximate line count from text wrapping
+            val lines = if (text.isEmpty()) 1 else {
+                val avail = maxOf(1, width - 8)
+                text.split('\n').sumOf { word ->
+                    maxOf(1, ceil(fm.stringWidth(word).toDouble() / avail).toInt())
+                }
+            }
+            val h = (lineH * lines + 10).coerceIn(minHeight, maxHeight)
+            if (h != height) {
+                preferredSize = Dimension(preferredSize.width, h)
+                revalidate()
+            }
+        }
     }
+
+    private val inputArea = AutoResizingTextArea(4, 0)
 
     // ── Combined send/stop button ──
 
-    private val sendStopButton = JButton("发送 (Ctrl+Enter)").apply {
+    private val sendStopButton = JButton("\u25B6 发送 (Ctrl+Enter)").apply {
         toolTipText = "发送消息"
         addActionListener { if (isStreaming) stopStreaming() else sendMessage() }
     }
@@ -334,10 +532,8 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
                     fileName = context.fileName,
                     startLine = context.startLine,
                     endLine = context.endLine,
-                    snippet = context.snippet,
                     onDismiss = { setSelectedContext(null) }
-                ),
-                BorderLayout.CENTER
+                )
             )
             selectedCodePreviewPanel.isVisible = true
         } else {
@@ -351,8 +547,11 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
     // ===== File attachment management =====
 
     private fun createUploadButton(): JComponent {
-        return JButton("上传").apply {
+        return JButton(AllIcons.Actions.Upload).apply {
             toolTipText = "上传文件"
+            isOpaque = false
+            isContentAreaFilled = false
+            border = JBUI.Borders.empty(2, 6)
             addActionListener { openFileChooser() }
         }
     }
@@ -699,8 +898,20 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
 
         inputArea.text = ""
 
-        // Build user message: prepend file context + selected code context
+        // Build user message: prepend file context + selected code context + @file references
         val fileContext = buildFileContext()
+        val projectDir = project.basePath?.let { java.io.File(it) }
+        val refPattern = Regex("@([\\w.\\-/]+)")
+        val refs = refPattern.findAll(text).map { it.groupValues[1] }.toList()
+        val refContext = refs.mapNotNull { refName ->
+            projectDir?.let { dir ->
+                val file = dir.resolve(refName)
+                if (file.isFile && file.exists()) {
+                    val content = file.readText().take(3000) // limit context size
+                    "## @$refName\n```\n$content\n```"
+                } else null
+            }
+        }
         val finalText = buildString {
             if (fileContext.isNotEmpty()) {
                 append(fileContext)
@@ -713,7 +924,12 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
                 appendLine("```")
                 appendLine()
             }
-            append(text)
+            if (refContext.isNotEmpty()) {
+                appendLine(refContext.joinToString("\n\n"))
+                appendLine()
+            }
+            // Replace @references in the display text with plain names
+            append(text.replace(refPattern) { it.groupValues[1] })
         }
         // Clear the preview cards
         setSelectedContext(null)
@@ -731,7 +947,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         currentSession().lastActiveTime = System.currentTimeMillis()
         saveSessions() // Save immediately so user messages are never lost
         isStreaming = true
-        sendStopButton.text = "停止"
+        sendStopButton.text = "■ 停止"
         sendStopButton.toolTipText = "停止"
 
         // Prepare a temporary streaming area
@@ -773,7 +989,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
                     }
                     saveSessions()
                     isStreaming = false
-                    sendStopButton.text = "发送 (Ctrl+Enter)"
+                    sendStopButton.text = "▶ 发送 (Ctrl+Enter)"
                     sendStopButton.toolTipText = "发送消息"
                     currentEventSource = null
                     scrollToBottom()
@@ -785,7 +1001,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
                     streamBuffer.setLength(0)
                     addMessageLabel("[ERROR] ${error.message}")
                     isStreaming = false
-                    sendStopButton.text = "发送 (Ctrl+Enter)"
+                    sendStopButton.text = "▶ 发送 (Ctrl+Enter)"
                     sendStopButton.toolTipText = "发送消息"
                     currentEventSource = null
                     scrollToBottom()
@@ -919,7 +1135,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         val messages = listOf(ChatMessage("system", systemPrompt)) + messageHistory.toList()
 
         isStreaming = true
-        sendStopButton.text = "停止"
+        sendStopButton.text = "■ 停止"
         sendStopButton.toolTipText = "停止"
 
         // Stream AI's thinking
@@ -966,7 +1182,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
                     }
                     saveSessions()
                     isStreaming = false
-                    sendStopButton.text = "发送 (Ctrl+Enter)"
+                    sendStopButton.text = "▶ 发送 (Ctrl+Enter)"
                     sendStopButton.toolTipText = "发送消息"
                     currentEventSource = null
                     scrollToBottom()
@@ -978,7 +1194,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
                     streamBuffer.setLength(0)
                     addMessageLabel("[ERROR] ${error.message}")
                     isStreaming = false
-                    sendStopButton.text = "发送 (Ctrl+Enter)"
+                    sendStopButton.text = "▶ 发送 (Ctrl+Enter)"
                     sendStopButton.toolTipText = "发送消息"
                     currentEventSource = null
                     scrollToBottom()
@@ -1171,7 +1387,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         currentEventSource?.cancel()
         currentEventSource = null
         isStreaming = false
-        sendStopButton.text = "发送 (Ctrl+Enter)"
+        sendStopButton.text = "▶ 发送 (Ctrl+Enter)"
         sendStopButton.toolTipText = "发送消息"
         removeStreamingArea()
         streamBuffer.setLength(0)

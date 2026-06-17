@@ -2,7 +2,6 @@
     <id>com.deepseek.plugin</id>
     <name>DeepSeek AI Assistant</name>
     <vendor url="https://github.com/lvesDi005/DeepSeek-AI-CodeHelper">lvesDi005</vendor>
-
     <description><![CDATA[
         <h2>DeepSeek AI Assistant for IntelliJ IDEA</h2>
         <ul>

@@ -15,7 +15,6 @@ import java.util.concurrent.TimeUnit
 class DeepSeekApiClient {
 
     companion object {
-        private const val BASE_URL = "https://api.deepseek.com/v1"
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
         private val gson = Gson()
     }
@@ -25,6 +24,32 @@ class DeepSeekApiClient {
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
+
+    // ── Provider 辅助 ──
+
+    /** 根据当前 provider 获取 base URL */
+    private fun baseUrl(settings: DeepSeekSettings): String {
+        return when (settings.provider) {
+            "agnes" -> settings.agnesBaseUrl.trimEnd('/')
+            else -> "https://api.deepseek.com/v1"
+        }
+    }
+
+    /** 根据当前 provider 获取 API Key */
+    private fun apiKey(settings: DeepSeekSettings): String {
+        return when (settings.provider) {
+            "agnes" -> settings.agnesApiKey
+            else -> settings.apiKey
+        }
+    }
+
+    /** 根据当前 provider 获取模型名 */
+    private fun model(settings: DeepSeekSettings): String {
+        return when (settings.provider) {
+            "agnes" -> settings.agnesModel.ifBlank { "agnes-2.0-flash" }
+            else -> settings.model
+        }
+    }
 
     // ============ 非流式调用 (Agent Actions) ============
 
@@ -43,7 +68,7 @@ class DeepSeekApiClient {
 
     private fun chatSync(settings: DeepSeekSettings, messages: List<ChatMessage>): Result<String> {
         val request = ChatRequest(
-            model = settings.model,
+            model = model(settings),
             messages = messages,
             temperature = settings.temperature,
             maxTokens = settings.maxTokens,
@@ -53,8 +78,8 @@ class DeepSeekApiClient {
         val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
 
         val httpRequest = Request.Builder()
-            .url("$BASE_URL/chat/completions")
-            .header("Authorization", "Bearer ${settings.apiKey}")
+            .url("${baseUrl(settings)}/chat/completions")
+            .header("Authorization", "Bearer ${apiKey(settings)}")
             .header("Content-Type", "application/json")
             .post(body)
             .build()
@@ -85,7 +110,7 @@ class DeepSeekApiClient {
     ): EventSource {
         val settings = DeepSeekSettings.instance
         val request = ChatRequest(
-            model = settings.model,
+            model = model(settings),
             messages = messages,
             temperature = settings.temperature,
             maxTokens = settings.maxTokens,
@@ -95,8 +120,8 @@ class DeepSeekApiClient {
         val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
 
         val httpRequest = Request.Builder()
-            .url("$BASE_URL/chat/completions")
-            .header("Authorization", "Bearer ${settings.apiKey}")
+            .url("${baseUrl(settings)}/chat/completions")
+            .header("Authorization", "Bearer ${apiKey(settings)}")
             .header("Content-Type", "application/json")
             .post(body)
             .build()
@@ -165,7 +190,7 @@ class DeepSeekApiClient {
         val prompt = buildFimPrompt(prefix, suffix, language, fileContext)
 
         val request = FimRequest(
-            model = settings.completionModel.ifBlank { settings.model },
+            model = settings.completionModel.ifBlank { model(settings) },
             prompt = prompt,
             suffix = suffix,
             maxTokens = settings.completionMaxTokens,
@@ -177,8 +202,8 @@ class DeepSeekApiClient {
         val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
 
         val httpRequest = Request.Builder()
-            .url("$BASE_URL/completions")
-            .header("Authorization", "Bearer ${settings.apiKey}")
+            .url("${baseUrl(settings)}/completions")
+            .header("Authorization", "Bearer ${apiKey(settings)}")
             .header("Content-Type", "application/json")
             .post(body)
             .build()
@@ -224,7 +249,7 @@ class DeepSeekApiClient {
         val settings = DeepSeekSettings.instance
 
         val request = FimRequest(
-            model = settings.completionModel.ifBlank { settings.model },
+            model = settings.completionModel.ifBlank { model(settings) },
             prompt = prefix,
             suffix = suffix,
             maxTokens = settings.completionMaxTokens,
@@ -234,8 +259,8 @@ class DeepSeekApiClient {
         val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
 
         val httpRequest = Request.Builder()
-            .url("$BASE_URL/completions")
-            .header("Authorization", "Bearer ${settings.apiKey}")
+            .url("${baseUrl(settings)}/completions")
+            .header("Authorization", "Bearer ${apiKey(settings)}")
             .header("Content-Type", "application/json")
             .post(body)
             .build()

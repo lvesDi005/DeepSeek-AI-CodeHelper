@@ -41,5 +41,5 @@ object PluginVersion {
         return FALLBACK
     }
 
-    private const val FALLBACK = "2.1.0"
+    private const val FALLBACK = "2.2.1"
 }

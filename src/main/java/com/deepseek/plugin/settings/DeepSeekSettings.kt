@@ -21,6 +21,14 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
     var completionMinPrefix: Int = 2           // 最少输入字符数才触发补全
     var maxContextLines: Int = 30              // 补全时发送的最大上下文行数
 
+    // API Provider 选择: "deepseek" | "agnes"
+    var provider: String = "deepseek"
+
+    // Agnes 2.0 Flash 配置
+    var agnesApiKey: String = ""
+    var agnesModel: String = "agnes-2.0-flash"
+    var agnesBaseUrl: String = "https://apihub.agnes-ai.com/v1"
+
     // StepFun 图片解析配置
     var stepFunApiKey: String = ""
     var stepFunModel: String = "step-1o-turbo-vision"
