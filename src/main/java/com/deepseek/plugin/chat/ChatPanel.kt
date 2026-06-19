@@ -2,8 +2,10 @@ package com.deepseek.plugin.chat
 
 import com.deepseek.plugin.api.ChatMessage
 import com.deepseek.plugin.api.DeepSeekApiClient
+import com.deepseek.plugin.api.DeepSeekPluginException
 import com.deepseek.plugin.api.StepFunApiClient
 import com.deepseek.plugin.api.Usage
+import com.deepseek.plugin.chat.ChatState
 import com.deepseek.plugin.context.ProjectContextProvider
 import com.deepseek.plugin.store.SessionStore
 import com.deepseek.plugin.settings.DeepSeekSettings
@@ -56,6 +58,7 @@ import java.awt.Rectangle
 import java.awt.RenderingHints
 import java.awt.event.*
 import java.awt.geom.Ellipse2D
+import java.util.concurrent.atomic.AtomicReference
 import javax.swing.*
 import javax.swing.text.DefaultCaret
 import javax.swing.text.DefaultHighlighter
@@ -80,10 +83,20 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
     private val sessionStore = SessionStore(project.basePath)
     private val sessions = mutableListOf<ChatSession>()
     private var currentSessionIndex = 0
-    private var currentEventSource: EventSource? = null
-    private var isStreaming = false
+    /** 线程安全的聊天状态机 — 替代 isStreaming + currentEventSource + streamBuffer + streamingBubble + … */
+    private val chatState = AtomicReference<ChatState>(ChatState.Idle)
     private var sessionCounter = 1
     private var currentMode = ChatMode.Q_A
+
+    /** P3: 虚拟化滚动—当前会话中可见的第一条消息索引（从尾部算） */
+    private var visibleStartIndex = 0
+    /** P3: 虚拟化滚动—每个批次渲染的最大消息数 */
+    private val VISIBLE_BATCH_SIZE = 30
+
+    /** 防抖保存定时器：500ms 内多次调用只触发一次磁盘写入 */
+    private val saveTimer = Timer(500) {
+        SwingUtilities.invokeLater { doSaveSessions() }
+    }.apply { isRepeats = false }
 
     // ── Selected code preview state ──
     private data class SelectedContext(
@@ -112,14 +125,9 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         isVisible = false
     }
 
-    // ── Streaming buffer ──
-    private val streamBuffer = StringBuilder()
-    private var streamScrollPane: JBScrollPane? = null
-    private var streamTextArea: JBTextArea? = null
-    private var streamingBubble: MessageBubble? = null
-    /** Timer that drives the "思考中..." spinner animation while waiting for the first token. */
-    private var thinkingTimer: Timer? = null
-    private var firstTokenArrived = false
+    // ── Streaming state (迁移到 ChatState 状态机) ──
+    /** 用于 EDT 上判断是否正在流式 — 由 chatState 驱动 */
+    private val isStreaming: Boolean get() = chatState.get() is ChatState.Streaming
 
     // ── UI Components ──
 
@@ -127,28 +135,22 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
 
     /** Vertical panel that holds all rendered messages. */
     private val messagesPanel = JPanel().apply {
-        // GridBagLayout reliably fills width with the right constraints
         layout = GridBagLayout()
     }
 
-    /** GridBagConstraints: each child fills its row horizontally. */
+    /** Transparent filler that expands to fill empty vertical space below messages. */
+    private val verticalFiller = JPanel().apply { isOpaque = false }
+
+    /** GridBagConstraints for a message row — fills cell completely, no vertical gaps. */
     private val fillWidthConstraints = GridBagConstraints().apply {
-        fill = GridBagConstraints.HORIZONTAL
+        fill = GridBagConstraints.BOTH
         weightx = 1.0
         gridwidth = GridBagConstraints.REMAINDER
-        anchor = GridBagConstraints.WEST
-    }
-
-    /** Constraints for vertical spacers — no horizontal fill. */
-    private val spacerConstraints = GridBagConstraints().apply {
-        fill = GridBagConstraints.NONE
-        weightx = 0.0
-        gridwidth = GridBagConstraints.REMAINDER
-        anchor = GridBagConstraints.WEST
     }
 
     private val messagesScrollPane = JBScrollPane(messagesPanel).apply {
         verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_ALWAYS
+        horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
         border = JBUI.Borders.empty()
     }
 
@@ -176,217 +178,11 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         messagesScrollPane.repaint()
     }
 
-    private inner class AutoResizingTextArea(rows: Int, cols: Int) : JBTextArea(rows, cols) {
-        private var minHeight: Int = 0
-        private var maxHeight: Int = 0
-        private val placeholderText = "欢迎使用, 请输入内容并Ctrl+Enter发送消息"
-        private val refHighlightPainter = DefaultHighlighter.DefaultHighlightPainter(
-            JBColor(Color(0xFFF176), Color(0x8D6E00))
-        )
-        private val refPattern = Regex("@[\\w.\\-/]+")
-        private var suppressingPopup = false
-
-        init {
-            lineWrap = true
-            wrapStyleWord = true
-            font = JBUI.Fonts.create("Monospaced", 13)
-            margin = JBUI.insets(8, 10)
-
-            // Ctrl+Enter to send
-            addKeyListener(object : KeyAdapter() {
-                override fun keyPressed(e: KeyEvent) {
-                    if (e.keyCode == KeyEvent.VK_ENTER && e.isControlDown && !isStreaming) {
-                        e.consume()
-                        sendMessage()
-                    }
-                }
-            })
-
-            // Auto-resize + @-highlight + @-trigger on content changes
-            document.addDocumentListener(object : javax.swing.event.DocumentListener {
-                override fun insertUpdate(e: javax.swing.event.DocumentEvent?) {
-                    adjustHeight()
-                    refreshHighlights()
-                    if (!suppressingPopup) checkAtTrigger()
-                }
-                override fun removeUpdate(e: javax.swing.event.DocumentEvent?) {
-                    adjustHeight()
-                    refreshHighlights()
-                }
-                override fun changedUpdate(e: javax.swing.event.DocumentEvent?) {
-                    adjustHeight()
-                    refreshHighlights()
-                }
-            })
-
-            // Recalculate when the component is resized (e.g. panel splitter moved)
-            addComponentListener(object : ComponentAdapter() {
-                override fun componentResized(e: ComponentEvent?) { adjustHeight() }
-            })
-        }
-
-        /** Show file-reference popup when "@" is typed at word start. */
-        private fun checkAtTrigger() {
-            val text = text
-            val pos = caretPosition
-            if (pos <= 0) return
-            if (pos > text.length) return
-            val charBefore = text[pos - 1]
-            if (charBefore != '@') return
-            // Check it's at word start (preceded by space or start of line)
-            if (pos >= 2 && text[pos - 2].isLetterOrDigit()) return
-            showFileRefPopup(pos)
-        }
-
-        private fun showFileRefPopup(atPos: Int) {
-            // Build file list from project root
-            val projectDir = project.basePath ?: return
-            val baseFile = java.io.File(projectDir)
-            val entries = baseFile.listFiles()?.filter { it.isFile || it.isDirectory }?.sortedBy { it.name } ?: return
-
-            val listModel = DefaultListModel<String>()
-            val allEntries = entries.map { it.name + if (it.isDirectory) "/" else "" }
-            allEntries.forEach { listModel.addElement(it) }
-
-            val list = JList(listModel).apply {
-                font = font.deriveFont(12f)
-                foreground = JBColor(Color(0x333333), Color(0xCCCCCC))
-                background = JBColor(Color(0xFFFFFF), Color(0x2B2B2B))
-                selectionBackground = JBColor(Color(0xE3F2FD), Color(0x264F78))
-                fixedCellHeight = 22
-            }
-
-            val popup = JPopupMenu().apply {
-                isOpaque = true
-                border = JBUI.Borders.compound(
-                    JBUI.Borders.customLine(JBColor(Color(0xC0C0C0), Color(0x555555)), 1),
-                    JBUI.Borders.empty(2)
-                )
-                background = list.background
-                layout = BorderLayout()
-                val scrollPane = JBScrollPane(list).apply {
-                    preferredSize = Dimension(260, minOf(entries.size, 10) * 22 + 4)
-                    border = JBUI.Borders.empty()
-                    isOpaque = false
-                }
-                add(scrollPane, BorderLayout.CENTER)
-            }
-
-            list.addMouseListener(object : MouseAdapter() {
-                override fun mouseClicked(e: MouseEvent) {
-                    if (e.clickCount >= 2) {
-                        val selected = list.selectedValue
-                        if (selected != null) insertRef(selected, atPos, popup)
-                    }
-                }
-            })
-
-            list.addKeyListener(object : KeyAdapter() {
-                override fun keyPressed(e: KeyEvent) {
-                    if (e.keyCode == KeyEvent.VK_ENTER) {
-                        e.consume()
-                        val selected = list.selectedValue
-                        if (selected != null) insertRef(selected, atPos, popup)
-                    } else if (e.keyCode == KeyEvent.VK_ESCAPE) {
-                        popup.isVisible = false
-                    }
-                }
-            })
-
-            // Position popup ABOVE the @ character
-            try {
-                val caretRect = modelToView(atPos)
-                val popupH = minOf(entries.size, 10) * 22 + 4 + 8 // list + border + padding
-                val pt = java.awt.Point(
-                    maxOf(0, caretRect.x - 4),
-                    caretRect.y - popupH - 4
-                )
-                SwingUtilities.convertPointToScreen(pt, this)
-                popup.setLocation(pt)
-                popup.isVisible = true
-                list.requestFocusInWindow()
-            } catch (_: Exception) { /* bounds not ready */ }
-        }
-
-        private fun insertRef(entry: String, atPos: Int, popup: JPopupMenu) {
-            popup.isVisible = false
-            suppressingPopup = true
-            val text = text
-            val before = text.substring(0, atPos - 1) // remove '@'
-            val after = text.substring(atPos)
-            this.text = "$before@$entry $after"
-            caretPosition = atPos - 1 + entry.length + 2 // after inserted ref + space
-            suppressingPopup = false
-            requestFocusInWindow()
-            refreshHighlights()
-        }
-
-        /** Highlight all @references in the text with yellow painter. */
-        private fun refreshHighlights() {
-            highlighter.removeAllHighlights()
-            for (match in refPattern.findAll(text)) {
-                try {
-                    highlighter.addHighlight(match.range.first, match.range.last + 1, refHighlightPainter)
-                } catch (_: Exception) { /* ignore invalid ranges */ }
-            }
-        }
-
-        override fun addNotify() {
-            super.addNotify()
-            val fm = getFontMetrics(font)
-            val lineH = fm.height
-            minHeight = lineH * 4 + 10
-            maxHeight = lineH * 12 + 10
-            // Defer first height adjustment until layout is complete
-            SwingUtilities.invokeLater { adjustHeight() }
-        }
-
-        override fun getScrollableTracksViewportHeight(): Boolean = false
-
-        override fun paintComponent(g: Graphics) {
-            super.paintComponent(g)
-            // Draw placeholder when empty and not focused
-            if (text.isEmpty() && !hasFocus()) {
-                val g2 = g.create() as Graphics
-                try {
-                    g2.color = JBColor(Color(0xAAAAAA), Color(0x666666))
-                    g2.font = font.deriveFont(Font.PLAIN, 12f)
-                    val fm = g2.fontMetrics
-                    val x = insets.left + 2
-                    val y = insets.top + fm.ascent + 2
-                    g2.drawString(placeholderText, x, y)
-                } finally {
-                    g2.dispose()
-                }
-            }
-        }
-
-        private fun adjustHeight() {
-            if (minHeight <= 0 || maxHeight <= 0) return
-            val fm = getFontMetrics(font)
-            val lineH = fm.height
-            // Wait until the component has a meaningful width
-            if (width <= 0) return
-            // Approximate line count from text wrapping
-            val lines = if (text.isEmpty()) 1 else {
-                val avail = maxOf(1, width - 8)
-                text.split('\n').sumOf { word ->
-                    maxOf(1, ceil(fm.stringWidth(word).toDouble() / avail).toInt())
-                }
-            }
-            val h = (lineH * lines + 10).coerceIn(minHeight, maxHeight)
-            if (h != height) {
-                preferredSize = Dimension(preferredSize.width, h)
-                revalidate()
-            }
-        }
-    }
-
-    private val inputArea = AutoResizingTextArea(4, 0)
+    private val inputArea = AutoResizingTextArea(4, 0, project, { sendMessage() }, { isStreaming })
 
     // ── Combined send/stop button ──
 
-    private val sendStopButton = JButton("\u25B6 发送 (Ctrl+Enter)").apply {
+    private val sendStopButton = JButton("\u25B6 发送 (Enter)").apply {
         toolTipText = "发送消息"
         addActionListener { if (isStreaming) stopStreaming() else sendMessage() }
     }
@@ -420,7 +216,6 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
                 onShowUsage = { showUsageDialog() },
                 onShowHistory = { showHistoryDialog() }
             ))
-            add(JSeparator())
             add(SessionBar(
                 sessionComboBox = sessionComboBox,
                 onNewSession = { createNewSession() },
@@ -439,27 +234,36 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
             add(JSeparator())
         }
 
-        val bottomPanel = ChatInputBar(
-            inputScrollPane = JBScrollPane(inputArea),
-            selectedCodePanel = selectedCodePreviewPanel,
-            fileAttachmentPanel = fileAttachmentPanel,
-            modeSelector = createModeDropdown(),
-            uploadButton = createUploadButton(),
-            sendStopButton = sendStopButton
-        )
-
         // Wrap messages container — anchor dots are embedded per-message
         val messagesWithNav = JPanel(BorderLayout()).apply {
             isOpaque = false
             add(messageContainer, BorderLayout.CENTER)
         }
 
+        // Create splitPane first so ChatInputBar can reference it in the resize callback
         val splitPane = JSplitPane(JSplitPane.VERTICAL_SPLIT).apply {
             topComponent = messagesWithNav
-            bottomComponent = bottomPanel
             resizeWeight = 0.75
             dividerSize = 3
+            isContinuousLayout = true
         }
+
+        val bottomPanel = ChatInputBar(
+            inputScrollPane = JBScrollPane(inputArea),
+            selectedCodePanel = selectedCodePreviewPanel,
+            fileAttachmentPanel = fileAttachmentPanel,
+            modeSelector = createModeDropdown(),
+            uploadButton = createUploadButton(),
+            sendStopButton = sendStopButton,
+            onResizeRequest = { deltaY ->
+                val newLoc = splitPane.dividerLocation + deltaY
+                splitPane.dividerLocation = newLoc.coerceIn(
+                    splitPane.minimumDividerLocation,
+                    splitPane.maximumDividerLocation
+                )
+            }
+        )
+        splitPane.bottomComponent = bottomPanel
 
         add(topPanel, BorderLayout.NORTH)
         add(splitPane, BorderLayout.CENTER)
@@ -815,15 +619,51 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
             return
         }
         showMessages()
+        ensureMessagesFiller()
         addMessageLabel("=== ${session.name} ===")
-        for (msg in session.messages) {
+
+        // P3: 虚拟化 — 只渲染最近 VISIBLE_BATCH_SIZE 条消息
+        val total = session.messages.size
+        visibleStartIndex = maxOf(0, total - VISIBLE_BATCH_SIZE)
+        renderMessageRange(session, visibleStartIndex, total)
+
+        saveSessions()
+        scrollToBottom()
+    }
+
+    /**
+     * P3: 渲染指定范围内的消息（左闭右开）。
+     * 如果前面还有未渲染的消息，在顶部添加"加载更多"按钮。
+     */
+    private fun renderMessageRange(session: ChatSession, start: Int, end: Int) {
+        val messages = session.messages
+        // 如果起始不是 0，在顶部插入"加载更多"按钮
+        if (start > 0) {
+            val loadMoreBtn = JButton("▲ 加载更早消息 (${start} 条)").apply {
+                isOpaque = false
+                foreground = JBColor(0x1A73E8, 0x64B5F6)
+                font = font.deriveFont(Font.PLAIN, 11f)
+                border = JBUI.Borders.empty(4, 0)
+                addActionListener {
+                    messagesPanel.removeAll()
+                    userMessages.clear()
+                    val newStart = maxOf(0, start - VISIBLE_BATCH_SIZE)
+                    visibleStartIndex = newStart
+                    addMessageLabel("=== ${session.name} ===")
+                    renderMessageRange(session, newStart, end)
+                    scrollToBottom()
+                }
+            }
+            messagesPanel.add(loadMoreBtn, fillWidthConstraints)
+            messagesPanel.add(Box.createVerticalStrut(4), fillWidthConstraints)
+        }
+        for (i in start until end) {
+            val msg = messages[i]
             when (msg.role) {
                 "user" -> renderUserMessage(msg.content)
                 "assistant" -> renderAssistantMessage(msg.content)
             }
         }
-        saveSessions()
-        scrollToBottom()
     }
 
     // ===== Usage dialog =====
@@ -946,68 +786,80 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         messageHistory.add(ChatMessage("user", enrichedText))
         currentSession().lastActiveTime = System.currentTimeMillis()
         saveSessions() // Save immediately so user messages are never lost
-        isStreaming = true
+
+        // ── 准备流式渲染区域 ──
+        removeMessagesFiller()
+        val streamBubble = MessageBubble(project, MessageBubble.Role.STREAMING)
+        val streamTextArea = createStreamingArea(streamBubble)
         sendStopButton.text = "■ 停止"
         sendStopButton.toolTipText = "停止"
 
-        // Prepare a temporary streaming area
-        streamBuffer.setLength(0)
-        val streamingArea = createStreamingArea()
-        streamTextArea = streamingArea.first
-        streamScrollPane = streamingArea.second
-
-        currentEventSource = client.chatStream(
-            messages = messageHistory.toList(),
-            onToken = { token ->
-                ApplicationManager.getApplication().invokeLater {
-                    if (!firstTokenArrived) {
-                        firstTokenArrived = true
-                        thinkingTimer?.stop()
-                        thinkingTimer = null
-                        streamBuffer.setLength(0)
-                        streamTextArea?.text = ""
-                    }
-                    streamBuffer.append(token)
-                    streamTextArea?.append(token)
-                    scrollToBottom()
-                }
-            },
-            onComplete = { fullResponse, usage ->
-                ApplicationManager.getApplication().invokeLater {
-                    // Remove the temporary streaming component
-                    removeStreamingArea()
-                    streamBuffer.setLength(0)
-
-                    messageHistory.add(ChatMessage("assistant", fullResponse))
-                    renderAssistantMessage(fullResponse)
-
-                    usage?.let {
-                        currentSession().totalTokens += it.totalTokens
-                        addMessageLabel(
-                            "── Token: ${it.totalTokens} (P:${it.promptTokens} C:${it.completionTokens})"
-                        )
-                    }
-                    saveSessions()
-                    isStreaming = false
-                    sendStopButton.text = "▶ 发送 (Ctrl+Enter)"
-                    sendStopButton.toolTipText = "发送消息"
-                    currentEventSource = null
-                    scrollToBottom()
-                }
-            },
-            onError = { error ->
-                ApplicationManager.getApplication().invokeLater {
-                    removeStreamingArea()
-                    streamBuffer.setLength(0)
-                    addMessageLabel("[ERROR] ${error.message}")
-                    isStreaming = false
-                    sendStopButton.text = "▶ 发送 (Ctrl+Enter)"
-                    sendStopButton.toolTipText = "发送消息"
-                    currentEventSource = null
-                    scrollToBottom()
-                }
+        // 先声明回调（引用 streamBubble 而非 eventSource），再启动流式请求
+        val onTokenBlock: (String) -> Unit = { token ->
+            ApplicationManager.getApplication().invokeLater {
+                streamTextArea.append(token)
+                scrollToBottom()
             }
+        }
+
+        val onCompleteBlock: (String, Usage?) -> Unit = { fullResponse, usage ->
+            ApplicationManager.getApplication().invokeLater {
+                val oldState = chatState.getAndSet(ChatState.Idle)
+                if (oldState is ChatState.Streaming) {
+                    oldState.eventSource.cancel()
+                    removeStreamingArea(oldState)
+                }
+
+                messageHistory.add(ChatMessage("assistant", fullResponse))
+                renderAssistantMessage(fullResponse)
+
+                usage?.let {
+                    currentSession().totalTokens += it.totalTokens
+                    addMessageLabel(
+                        "── Token: ${it.totalTokens} (P:${it.promptTokens} C:${it.completionTokens})"
+                    )
+                }
+                saveSessions()
+                sendStopButton.text = "▶ 发送 (Enter)"
+                sendStopButton.toolTipText = "发送消息"
+                ensureMessagesFiller()
+                scrollToBottom()
+            }
+        }
+
+        val onErrorBlock: (Throwable) -> Unit = { error ->
+            ApplicationManager.getApplication().invokeLater {
+                val oldState = chatState.getAndSet(ChatState.Idle)
+                if (oldState is ChatState.Streaming) {
+                    oldState.eventSource.cancel()
+                    removeStreamingArea(oldState)
+                }
+
+                val pluginErr = DeepSeekPluginException(
+                    message = error.message ?: "API 调用失败",
+                    cause = error,
+                    userMessage = "⚠️ API 错误: ${error.message}"
+                )
+                addMessageLabel("[ERROR] ${pluginErr.userMessage}")
+                sendStopButton.text = "▶ 发送 (Enter)"
+                sendStopButton.toolTipText = "发送消息"
+                ensureMessagesFiller()
+                scrollToBottom()
+            }
+        }
+
+        val eventSource = client.chatStream(
+            messages = messageHistory.toList(),
+            onToken = onTokenBlock,
+            onComplete = onCompleteBlock,
+            onError = onErrorBlock
         )
+
+        // 设置为流式状态
+        chatState.set(ChatState.Streaming(
+            eventSource = eventSource,
+            bubble = streamBubble
+        ))
     }
 
     // ==================================================================
@@ -1103,12 +955,24 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         val projectStructure = buildProjectStructure()
 
         // System prompt for agent mode (with current project structure)
+        val sourceRoots = getSourceRootPaths()
+        val sourceRootsHint = if (sourceRoots.isNotEmpty()) {
+            "项目的源码根目录有：\n" + sourceRoots.joinToString("\n") { "- $it" }
+        } else ""
+
         val systemPrompt = buildString {
             appendLine("你是 DeepSeek AI 代码助手，处于 Agent 模式。你的任务是理解用户的请求，自动分析当前项目结构，并对项目中的文件进行创建、修改或删除操作。")
             appendLine()
             appendLine("## 项目结构")
             appendLine(projectStructure)
             appendLine()
+            if (sourceRootsHint.isNotEmpty()) {
+                appendLine("## 项目源码根目录")
+                appendLine(sourceRootsHint)
+                appendLine()
+                appendLine("**重要：创建新文件时必须使用上述已存在的源码根目录之一，不要创建新的源码根目录。**")
+                appendLine()
+            }
             appendLine("## 输出格式")
             appendLine("对于每个需要创建或修改的文件，请使用以下格式：")
             appendLine()
@@ -1124,83 +988,92 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
             appendLine("## 规则")
             appendLine("1. 所有路径都是相对于项目根目录的")
             appendLine("2. 对于已有的文件，如果需要修改，请包含完整的文件内容（不要省略）")
-            appendLine("3. 创建新文件时根据项目结构和语言风格保持一致性")
-            appendLine("4. 如果请求不明确，询问确认而不是猜测")
-            appendLine("5. 对于复杂改动，先解释你的计划，再输出文件内容")
-            appendLine("6. 优先使用项目中已存在的框架、模式和编码风格")
-            appendLine("7. 输出文件修改后，简要总结你做了什么改动")
+            appendLine("3. [重要] 创建新文件时，必须先确认文件所属的包/模块在项目中**已有对应的目录**，然后将文件放在该目录下，严禁创建新的一级源码目录")
+            appendLine("4. 如果项目中已经存在同名的包路径，优先使用已有的路径，不要另建新路径")
+            appendLine("5. 如果请求不明确，询问确认而不是猜测")
+            appendLine("6. 对于复杂改动，先解释你的计划，再输出文件内容")
+            appendLine("7. 优先使用项目中已存在的框架、模式和编码风格")
+            appendLine("8. 输出文件修改后，简要总结你做了什么改动")
         }
 
         // Build messages: system prompt + full conversation history
         val messages = listOf(ChatMessage("system", systemPrompt)) + messageHistory.toList()
 
-        isStreaming = true
+        // ── 准备流式渲染区域 ──
+        removeMessagesFiller()
+        val streamBubble = MessageBubble(project, MessageBubble.Role.STREAMING)
+        val streamTextArea = createStreamingArea(streamBubble)
         sendStopButton.text = "■ 停止"
         sendStopButton.toolTipText = "停止"
 
-        // Stream AI's thinking
-        streamBuffer.setLength(0)
-        val (textArea, _) = createStreamingArea()
-        streamTextArea = textArea
-
-        currentEventSource = client.chatStream(
-            messages = messages,
-            onToken = { token ->
-                ApplicationManager.getApplication().invokeLater {
-                    if (!firstTokenArrived) {
-                        firstTokenArrived = true
-                        thinkingTimer?.stop()
-                        thinkingTimer = null
-                        streamBuffer.setLength(0)
-                        streamTextArea?.text = ""
-                    }
-                    streamBuffer.append(token)
-                    streamTextArea?.append(token)
-                    scrollToBottom()
-                }
-            },
-            onComplete = { fullResponse, usage ->
-                ApplicationManager.getApplication().invokeLater {
-                    removeStreamingArea()
-                    streamBuffer.setLength(0)
-
-                    // Add the full response as an assistant message in the chat
-                    messageHistory.add(ChatMessage("assistant", fullResponse))
-                    renderAssistantMessage(fullResponse)
-
-                    // Parse and apply file operations
-                    val operations = parseFileOperations(fullResponse)
-                    if (operations.isNotEmpty()) {
-                        applyFileOperations(operations)
-                    }
-
-                    usage?.let {
-                        currentSession().totalTokens += it.totalTokens
-                        addMessageLabel(
-                            "── Token: ${it.totalTokens} (P:${it.promptTokens} C:${it.completionTokens})"
-                        )
-                    }
-                    saveSessions()
-                    isStreaming = false
-                    sendStopButton.text = "▶ 发送 (Ctrl+Enter)"
-                    sendStopButton.toolTipText = "发送消息"
-                    currentEventSource = null
-                    scrollToBottom()
-                }
-            },
-            onError = { error ->
-                ApplicationManager.getApplication().invokeLater {
-                    removeStreamingArea()
-                    streamBuffer.setLength(0)
-                    addMessageLabel("[ERROR] ${error.message}")
-                    isStreaming = false
-                    sendStopButton.text = "▶ 发送 (Ctrl+Enter)"
-                    sendStopButton.toolTipText = "发送消息"
-                    currentEventSource = null
-                    scrollToBottom()
-                }
+        // 先声明回调再启动流式请求（避免 lambda 引用未初始化的 val）
+        val onTokenBlock: (String) -> Unit = { token ->
+            ApplicationManager.getApplication().invokeLater {
+                streamTextArea.append(token)
+                scrollToBottom()
             }
+        }
+
+        val onCompleteBlock: (String, Usage?) -> Unit = { fullResponse, usage ->
+            ApplicationManager.getApplication().invokeLater {
+                val oldState = chatState.getAndSet(ChatState.Idle)
+                if (oldState is ChatState.Streaming) {
+                    oldState.eventSource.cancel()
+                    removeStreamingArea(oldState)
+                }
+
+                // Add the full response as an assistant message in the chat
+                messageHistory.add(ChatMessage("assistant", fullResponse))
+                renderAssistantMessage(fullResponse)
+
+                // Parse and apply file operations
+                val operations = parseFileOperations(fullResponse)
+                if (operations.isNotEmpty()) {
+                    applyFileOperations(operations)
+                }
+
+                usage?.let {
+                    currentSession().totalTokens += it.totalTokens
+                    addMessageLabel(
+                        "── Token: ${it.totalTokens} (P:${it.promptTokens} C:${it.completionTokens})"
+                    )
+                }
+                saveSessions()
+                sendStopButton.text = "▶ 发送 (Enter)"
+                sendStopButton.toolTipText = "发送消息"
+                ensureMessagesFiller()
+                scrollToBottom()
+            }
+        }
+
+        val onErrorBlock: (Throwable) -> Unit = { error ->
+            ApplicationManager.getApplication().invokeLater {
+                val oldState = chatState.getAndSet(ChatState.Idle)
+                if (oldState is ChatState.Streaming) {
+                    oldState.eventSource.cancel()
+                    removeStreamingArea(oldState)
+                }
+
+                addMessageLabel("[ERROR] ${error.message}")
+                sendStopButton.text = "▶ 发送 (Enter)"
+                sendStopButton.toolTipText = "发送消息"
+                ensureMessagesFiller()
+                scrollToBottom()
+            }
+        }
+
+        val eventSource = client.chatStream(
+            messages = messages,
+            onToken = onTokenBlock,
+            onComplete = onCompleteBlock,
+            onError = onErrorBlock
         )
+
+        // 设置为流式状态
+        chatState.set(ChatState.Streaming(
+            eventSource = eventSource,
+            bubble = streamBubble
+        ))
     }
 
     private data class FileOperation(
@@ -1247,6 +1120,9 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
      * Performs path traversal validation and user confirmation.
      */
     private fun applyFileOperations(operations: List<FileOperation>) {
+        // Reset cached paths for fresh scan
+        cachedSourceRoots = null
+
         val projectBasePath = project.basePath ?: return
         val projectDir = java.io.File(projectBasePath).canonicalPath
 
@@ -1328,35 +1204,53 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
                         }
                     }
                     else -> {
-                        // Ensure parent directory exists
-                        targetFile.parentFile?.mkdirs()
+                        // ===== Smart path resolution =====
+                        // Before creating new directories, check if the path maps to
+                        // an existing source root in the project. The AI may output
+                        // paths like "src/main/java/com/example/X.java" but the
+                        // project uses "src/main/kotlin/..." — remap automatically.
+                        val resolvedFile = resolveToExistingSourceRoot(targetFile)
+                        val effectiveFile = resolvedFile ?: targetFile
+                        val effectiveParent = effectiveFile.parentFile
+
+                        // Only create parent dirs if they don't exist AND
+                        // we couldn't find an existing matching source root.
+                        if (resolvedFile == null && effectiveParent != null) {
+                            // Check if ANY part of the path tree already exists
+                            val existingAncestor = findExistingAncestor(effectiveParent)
+                            if (existingAncestor == null) {
+                                // No existing path segment found — warn the user
+                                addMessageLabel("⚠️ 路径 ${op.path} 不匹配任何现有源码目录，将在新位置创建")
+                            }
+                        }
+                        effectiveParent?.mkdirs()
 
                         val contentBytes = op.content.toByteArray(Charsets.UTF_8)
-                        val isNew = !targetFile.exists()
+                        val isNew = !effectiveFile.exists()
 
                         if (isNew) {
                             // Create new file
                             val parentVFile = LocalFileSystem.getInstance()
-                                .findFileByIoFile(targetFile.parentFile)
+                                .findFileByIoFile(effectiveFile.parentFile)
                             if (parentVFile != null && parentVFile.exists()) {
-                                val vf = parentVFile.createChildData(this, targetFile.name)
+                                val vf = parentVFile.createChildData(this, effectiveFile.name)
                                 vf.setBinaryContent(contentBytes)
                                 created++
                             } else {
                                 // Fallback: use java.io.File
-                                targetFile.writeBytes(contentBytes)
-                                LocalFileSystem.getInstance().refreshIoFiles(listOf(targetFile))
+                                effectiveFile.writeBytes(contentBytes)
+                                LocalFileSystem.getInstance().refreshIoFiles(listOf(effectiveFile))
                                 created++
                             }
                         } else {
                             // Update existing file
-                            val vf = LocalFileSystem.getInstance().findFileByIoFile(targetFile)
+                            val vf = LocalFileSystem.getInstance().findFileByIoFile(effectiveFile)
                             if (vf != null && vf.exists()) {
                                 vf.setBinaryContent(contentBytes)
                                 modified++
                             } else {
-                                targetFile.writeBytes(contentBytes)
-                                LocalFileSystem.getInstance().refreshIoFiles(listOf(targetFile))
+                                effectiveFile.writeBytes(contentBytes)
+                                LocalFileSystem.getInstance().refreshIoFiles(listOf(effectiveFile))
                                 modified++
                             }
                         }
@@ -1383,24 +1277,172 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         }
     }
 
+    // ===== Smart path resolution helpers =====
+
+    /** Cache of project source root paths, computed once per operation */
+    private var cachedSourceRoots: List<java.io.File>? = null
+
+    /**
+     * Try to resolve a target file path to an existing source root.
+     * If the AI says "src/main/java/com/example/X.java" but the project uses
+     * "src/main/kotlin/com/example/", this remaps to the existing kotlin dir.
+     *
+     * Returns null if no remapping is needed (path already valid).
+     */
+    private fun resolveToExistingSourceRoot(targetFile: java.io.File): java.io.File? {
+        val basePath = project.basePath ?: return null
+        val baseDir = java.io.File(basePath)
+
+        // If the file already exists, use it as-is
+        if (targetFile.exists()) return null
+
+        // Get the package path (everything after the source root segment)
+        val relativePath = try {
+            targetFile.canonicalPath.removePrefix(baseDir.canonicalPath).trimStart('/').replace('\\', '/')
+        } catch (_: Exception) { return null }
+
+        if (relativePath.isEmpty()) return null
+
+        val sourceRoots = getSourceRootPaths()
+
+        // Check if the path already starts with an existing source root
+        for (root in sourceRoots) {
+            if (relativePath.startsWith(root.trimStart('/'))) {
+                return null // Already matches an existing root — use as-is
+            }
+        }
+
+        // Extract the package+filename part (e.g., "com/example/X.java" from
+        // "src/main/java/com/example/X.java" or "kotlin/com/example/X.java")
+        val sourceRootPatterns = listOf(
+            "src/main/java/", "src/main/kotlin/", "src/main/resources/",
+            "src/test/java/", "src/test/kotlin/", "src/test/resources/",
+            "java/", "kotlin/", "resources/"
+        )
+        val packagePart = sourceRootPatterns
+            .firstOrNull { relativePath.contains(it) }
+            ?.let { relativePath.substringAfter(it) }
+            ?: relativePath
+
+        // Find the best matching source root by checking if a directory at
+        // that root + packagePart already exists
+        for (root in sourceRoots) {
+            val candidate = java.io.File(root, packagePart)
+            if (candidate.parentFile?.exists() == true) {
+                return candidate
+            }
+            // Also try finding any file with the same name in the package tree
+            val existingFile = findFileByNameInProject(candidate.name)
+            if (existingFile != null && existingFile.parentFile?.exists() == true) {
+                // Same filename exists — use that directory for the new file
+                return java.io.File(existingFile.parentFile, candidate.name)
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Walk up the parent chain to find the deepest ancestor that already exists.
+     * Returns the lowest existing dir (the one closest to the leaf).
+     */
+    private fun findExistingAncestor(file: java.io.File): java.io.File? {
+        var current = file
+        while (current != null) {
+            if (current.exists()) return current
+            current = current.parentFile
+        }
+        return null
+    }
+
+    /**
+     * Collect all source root and content root paths from the project.
+     * This tells us where the project actually puts its source files.
+     */
+    private fun getSourceRootPaths(): List<String> {
+        if (cachedSourceRoots != null) {
+            return cachedSourceRoots!!.map { it.canonicalPath.replace('\\', '/') }
+        }
+
+        val roots = mutableListOf<String>()
+        try {
+            // Source roots (src/main/java, src/main/kotlin, etc.)
+            val sourceRoots = ProjectRootManager.getInstance(project).contentSourceRoots
+            for (root in sourceRoots) {
+                roots.add(root.path.replace('\\', '/'))
+            }
+            // Also include content roots (the module root)
+            val contentRoots = ProjectRootManager.getInstance(project).contentRoots
+            for (root in contentRoots) {
+                val path = root.path.replace('\\', '/')
+                if (path !in roots) roots.add(path)
+            }
+        } catch (_: Exception) { }
+
+        // Also scan the file system for common source directories
+        val basePath = project.basePath ?: return roots
+        val baseDir = java.io.File(basePath)
+        val commonDirs = listOf(
+            "src/main/java", "src/main/kotlin", "src/test/java", "src/test/kotlin",
+            "src/main/resources", "src/test/resources"
+        )
+        for (dir in commonDirs) {
+            val f = java.io.File(baseDir, dir)
+            if (f.exists()) {
+                val path = f.canonicalPath.replace('\\', '/')
+                if (path !in roots) roots.add(path)
+            }
+        }
+
+        cachedSourceRoots = roots.map { java.io.File(it) }
+        return roots
+    }
+
+    /**
+     * Search the entire project for a file with the given name.
+     * Used to find existing locations for files the AI wants to create.
+     */
+    private fun findFileByNameInProject(fileName: String): java.io.File? {
+        val basePath = project.basePath ?: return null
+        val baseDir = java.io.File(basePath)
+        val results = mutableListOf<java.io.File>()
+
+        try {
+            baseDir.walkTopDown()
+                .maxDepth(20)
+                .filter { it.isFile && it.name == fileName }
+                .forEach { results.add(it) }
+        } catch (_: Exception) { }
+
+        return results.firstOrNull()
+    }
+
     private fun stopStreaming() {
-        currentEventSource?.cancel()
-        currentEventSource = null
-        isStreaming = false
-        sendStopButton.text = "▶ 发送 (Ctrl+Enter)"
+        val oldState = chatState.getAndSet(ChatState.Idle)
+        if (oldState is ChatState.Streaming) {
+            oldState.eventSource.cancel()
+            removeStreamingArea(oldState)
+        }
+        sendStopButton.text = "▶ 发送 (Enter)"
         sendStopButton.toolTipText = "发送消息"
-        removeStreamingArea()
-        streamBuffer.setLength(0)
+        ensureMessagesFiller()
     }
 
     private fun saveSessions() {
+        // 防抖：500ms 内多次调用合并为一次磁盘写入
+        saveTimer.restart()
+    }
+
+    /** 实际的持久化逻辑（由 debounce timer 触发） */
+    private fun doSaveSessions() {
         currentSession().lastActiveTime = System.currentTimeMillis()
         sessionStore.save(sessions, sessionCounter)
     }
 
     override fun dispose() {
-        // Save sessions when the tool window is closed
-        saveSessions()
+        // 关闭时同步保存（跳过 debounce，确保数据落盘）
+        saveTimer.stop()
+        doSaveSessions()
     }
 
     // ==================================================================
@@ -1418,17 +1460,16 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
      * Wrap a component in a panel that constrains its horizontal width to a
      * fraction of the available space.
      */
+    /**
+     * Wrap a component so it fills available horizontal space.
+     * The 5 % right-margin is handled by [createMessageRow] via BorderLayout.EAST,
+     * so no width constraint is needed here.
+     */
     private fun wrapWithWidthConstraint(
         component: JComponent,
         weight: Double = 0.95
     ): JPanel {
-        val wrapper = object : JPanel(GridBagLayout()) {
-            override fun getMaximumSize(): Dimension {
-                val parentW = parent?.width ?: 600
-                val maxW = (parentW.toDouble() * weight).toInt().coerceAtLeast(100)
-                return Dimension(maxW, super.getMaximumSize().height)
-            }
-        }.apply { isOpaque = false }
+        val wrapper = JPanel(GridBagLayout()).apply { isOpaque = false }
 
         val msgConstraints = GridBagConstraints().apply {
             fill = GridBagConstraints.BOTH
@@ -1458,7 +1499,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
             alignmentX = Component.LEFT_ALIGNMENT
         }
         messagesPanel.add(label, fillWidthConstraints)
-        messagesPanel.add(Box.createVerticalStrut(2), spacerConstraints)
+        messagesPanel.add(Box.createVerticalStrut(2), fillWidthConstraints)
         revalidateAndScroll()
     }
 
@@ -1504,11 +1545,9 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
     /**
      * Create a temporary streaming message bubble with anchor dot.
      * Shows "思考中... ◐◓◑◒" spinning animation until the first token arrives.
-     * Returns (JBTextArea, JBScrollPane) pair.
+     * Returns (JBTextArea, JBScrollPane) pair. The bubble is stored in [state].
      */
-    private fun createStreamingArea(): Pair<JBTextArea, JBScrollPane> {
-        val bubble = MessageBubble(project, MessageBubble.Role.STREAMING)
-        streamingBubble = bubble
+    private fun createStreamingArea(bubble: MessageBubble): JBTextArea {
         val contentWrapper = wrapWithWidthConstraint(bubble)
 
         val row = createMessageRow(contentWrapper, bubble)
@@ -1516,31 +1555,14 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         revalidateAndScroll()
 
         // ── Start thinking animation ──
-        firstTokenArrived = false
         val textArea = bubble.streamTextArea!!
-        textArea.text = "..."
-        thinkingTimer?.stop()
-        thinkingTimer = Timer(250) {
-            if (!firstTokenArrived) {
-                val dots = when ((System.currentTimeMillis() / 250) % 4) {
-                    0L -> "◐"
-                    1L -> "◓"
-                    2L -> "◑"
-                    else -> "◒"
-                }
-                textArea.text = "... $dots"
-                textArea.repaint()
-            }
-        }.apply { start() }
-
-        return Pair(textArea, bubble.streamScrollPane!!)
+        textArea.text = "... 思考中 ◐"
+        return textArea
     }
 
     /** Remove the streaming bubble and stop the thinking animation. */
-    private fun removeStreamingArea() {
-        thinkingTimer?.stop()
-        thinkingTimer = null
-        val bubble = streamingBubble ?: return
+    private fun removeStreamingArea(state: ChatState.Streaming) {
+        val bubble = state.bubble
         for (i in messagesPanel.componentCount - 1 downTo 0) {
             val c = messagesPanel.getComponent(i)
             // c is now the row; the bubble is nested inside it
@@ -1548,12 +1570,9 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
                 messagesPanel.remove(c)
                 messagesPanel.revalidate()
                 messagesPanel.repaint()
-                streamingBubble = null
                 return
             }
         }
-        // Fallback: remove any wrapped stream bubble
-        streamingBubble = null
     }
 
     /** Recursively check if a component tree contains the given target. */
@@ -1571,7 +1590,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
 
     companion object {
         private const val DOT_SIZE = 9        // dot diameter in pixels
-        private const val DOT_PANEL_WIDTH = 36
+        private const val DOT_PANEL_WIDTH = 20
         private val DOT_COLOR = JBColor(0x1A73E8, 0x64B5F6)
         private val DOT_HOVER_COLOR = JBColor(0x1557B0, 0x82C3FD)
         private val LINE_COLOR = JBColor(0xCCCCCC, 0x555555)
@@ -1636,11 +1655,12 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
             }
         })
 
-        // ── Row: [dot | content] ──
+        // ── Row: [dot | content | right-margin] ──
         val row = JPanel(BorderLayout()).apply {
             isOpaque = false
             add(dotPanel, BorderLayout.WEST)
             add(content, BorderLayout.CENTER)
+            add(Box.createRigidArea(Dimension(8, 0)), BorderLayout.EAST)
         }
         return row
     }
@@ -1670,5 +1690,31 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         messagesPanel.revalidate()
         messagesPanel.repaint()
         scrollToBottom()
+    }
+
+    /**
+     * Remove the vertical filler from messagesPanel, so messages take their
+     * natural height and the scroll pane viewport expands gradually as content
+     * streams in (little-by-little expansion).
+     */
+    private fun removeMessagesFiller() {
+        messagesPanel.remove(verticalFiller)
+    }
+
+    /**
+     * Ensure the vertical filler is present at the end of messagesPanel.
+     * The filler has weighty=1.0 so it expands to take any extra vertical space,
+     * pushing messages to the top and eliminating blank space below.
+     */
+    private fun ensureMessagesFiller() {
+        for (c in messagesPanel.components) {
+            if (c === verticalFiller) return
+        }
+        messagesPanel.add(verticalFiller, GridBagConstraints().apply {
+            fill = GridBagConstraints.BOTH
+            weightx = 1.0
+            weighty = 1.0
+            gridwidth = GridBagConstraints.REMAINDER
+        })
     }
 }

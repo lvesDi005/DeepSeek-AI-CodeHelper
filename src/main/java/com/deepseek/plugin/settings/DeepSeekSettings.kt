@@ -21,6 +21,12 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
     var completionMinPrefix: Int = 2           // 最少输入字符数才触发补全
     var maxContextLines: Int = 30              // 补全时发送的最大上下文行数
 
+    // 注解感知补全
+    var annotationAwareEnabled: Boolean = true // 是否启用注解分析驱动的补全/代码模式
+
+    // 注释感知补全
+    var commentAwareEnabled: Boolean = true    // 是否启用注释分析驱动的代码补全
+
     // API Provider 选择: "deepseek" | "agnes"
     var provider: String = "deepseek"
 

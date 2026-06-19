@@ -10,46 +10,80 @@ import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
 import java.io.IOException
-import java.util.concurrent.TimeUnit
 
 class DeepSeekApiClient {
 
     companion object {
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
         private val gson = Gson()
+
+        /** 最大重试次数 */
+        private const val MAX_RETRIES = 3
+        /** 初始退避延迟 (ms) */
+        private const val BASE_DELAY_MS = 1000L
+
+        /**
+         * 判断错误是否可重试：
+         * - IOException（网络层故障，如连接重置、DNS 超时）
+         * - HTTP 429（限流）
+         * - HTTP 5xx（服务端错误）
+         */
+        private fun isRetryable(error: Throwable, httpCode: Int?): Boolean {
+            if (error is IOException) return true
+            if (error is RateLimitException) return true
+            return httpCode != null && httpCode >= 500
+        }
     }
 
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .build()
+    /**
+     * 带指数退避重试的执行器。
+     * 只对 [isRetryable] 判定为可重试的错误进行重试。
+     */
+    private fun <T> retryWithBackoff(
+        maxRetries: Int = MAX_RETRIES,
+        block: () -> Result<T>
+    ): Result<T> {
+        var lastError: Throwable? = null
+        repeat(maxRetries) { attempt ->
+            val result = block()
+            result.fold(
+                onSuccess = { return result },
+                onFailure = { error ->
+                    lastError = error
+                    val httpCode = extractHttpCode(error)
+                    if (attempt < maxRetries - 1 && isRetryable(error, httpCode)) {
+                        val delayMs = BASE_DELAY_MS * (1L shl attempt) // 1s, 2s, 4s
+                        try {
+                            Thread.sleep(delayMs)
+                        } catch (_: InterruptedException) {
+                            return Result.failure(error)
+                        }
+                    } else {
+                        return result // 不可重试或已达最大次数
+                    }
+                }
+            )
+        }
+        return Result.failure(lastError ?: IOException("Retry exhausted"))
+    }
+
+    /** 从异常中尝试提取 HTTP 状态码 */
+    private fun extractHttpCode(error: Throwable): Int? {
+        val msg = error.message ?: return null
+        val match = Regex("HTTP (\\d+)").find(msg)
+        return match?.groupValues?.get(1)?.toIntOrNull()
+    }
 
     // ── Provider 辅助 ──
+    private val syncClient get() = HttpClientProvider.chatSyncClient
+    /** 流式 SSE 调用使用宽松超时的共享客户端 */
+    private val streamClient get() = HttpClientProvider.SHARED_CLIENT
+    /** FIM 补全使用短超时客户端 */
+    private val completionClient get() = HttpClientProvider.completionClient
 
-    /** 根据当前 provider 获取 base URL */
-    private fun baseUrl(settings: DeepSeekSettings): String {
-        return when (settings.provider) {
-            "agnes" -> settings.agnesBaseUrl.trimEnd('/')
-            else -> "https://api.deepseek.com/v1"
-        }
-    }
-
-    /** 根据当前 provider 获取 API Key */
-    private fun apiKey(settings: DeepSeekSettings): String {
-        return when (settings.provider) {
-            "agnes" -> settings.agnesApiKey
-            else -> settings.apiKey
-        }
-    }
-
-    /** 根据当前 provider 获取模型名 */
-    private fun model(settings: DeepSeekSettings): String {
-        return when (settings.provider) {
-            "agnes" -> settings.agnesModel.ifBlank { "agnes-2.0-flash" }
-            else -> settings.model
-        }
-    }
+    // ── Provider 辅助（策略模式）──
+    private fun provider(settings: DeepSeekSettings): LlmProvider =
+        LlmProviderRegistry.get(settings.provider)
 
     // ============ 非流式调用 (Agent Actions) ============
 
@@ -67,36 +101,48 @@ class DeepSeekApiClient {
     }
 
     private fun chatSync(settings: DeepSeekSettings, messages: List<ChatMessage>): Result<String> {
-        val request = ChatRequest(
-            model = model(settings),
-            messages = messages,
-            temperature = settings.temperature,
-            maxTokens = settings.maxTokens,
-            stream = false
-        )
+        // H3: 请求限流检查
+        if (!HttpClientProvider.chatRateLimiter.tryAcquire()) {
+            return Result.failure(RateLimitException())
+        }
+        return retryWithBackoff {
+            val request = ChatRequest(
+                model = provider(settings).model(settings),
+                messages = messages,
+                temperature = settings.temperature,
+                maxTokens = settings.maxTokens,
+                stream = false
+            )
 
-        val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
+            val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
 
-        val httpRequest = Request.Builder()
-            .url("${baseUrl(settings)}/chat/completions")
-            .header("Authorization", "Bearer ${apiKey(settings)}")
-            .header("Content-Type", "application/json")
-            .post(body)
-            .build()
+            val httpRequest = Request.Builder()
+                .url("${provider(settings).baseUrl(settings)}/chat/completions")
+                .header("Authorization", "Bearer ${provider(settings).apiKey(settings)}")
+                .header("Content-Type", "application/json")
+                .post(body)
+                .build()
 
-        return try {
-            val response = client.newCall(httpRequest).execute()
-            val responseBody = response.body?.string() ?: ""
-            if (!response.isSuccessful) {
-                val errMsg = tryParseError(responseBody, response.code)
-                Result.failure(IOException("API error ${response.code}: $errMsg"))
-            } else {
-                val chatResponse = gson.fromJson(responseBody, ChatResponse::class.java)
-                val content = chatResponse.choices.firstOrNull()?.message?.content ?: ""
-                Result.success(content)
+            try {
+                syncClient.newCall(httpRequest).execute().use { response ->
+                    val responseBody = response.body?.string() ?: ""
+                    if (!response.isSuccessful) {
+                        val errMsg = tryParseError(responseBody, response.code)
+                        val ex = if (response.code == 429) {
+                            RateLimitException()
+                        } else {
+                            ApiException("API error ${response.code}: $errMsg", httpCode = response.code)
+                        }
+                        Result.failure(ex)
+                    } else {
+                        val chatResponse = gson.fromJson(responseBody, ChatResponse::class.java)
+                        val content = chatResponse.choices.firstOrNull()?.message?.content ?: ""
+                        Result.success(content)
+                    }
+                }
+            } catch (e: IOException) {
+                Result.failure(e)
             }
-        } catch (e: IOException) {
-            Result.failure(e)
         }
     }
 
@@ -108,9 +154,17 @@ class DeepSeekApiClient {
         onComplete: (fullResponse: String, usage: Usage?) -> Unit,
         onError: (Throwable) -> Unit
     ): EventSource {
+        // H3: 请求限流检查
+        if (!HttpClientProvider.chatRateLimiter.tryAcquire()) {
+            onError(RateLimitException())
+            return object : EventSource {
+                override fun cancel() {}
+                override fun request() = Request.Builder().url("https://api.deepseek.com/v1/chat/completions").build()
+            }
+        }
         val settings = DeepSeekSettings.instance
         val request = ChatRequest(
-            model = model(settings),
+            model = provider(settings).model(settings),
             messages = messages,
             temperature = settings.temperature,
             maxTokens = settings.maxTokens,
@@ -120,13 +174,13 @@ class DeepSeekApiClient {
         val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
 
         val httpRequest = Request.Builder()
-            .url("${baseUrl(settings)}/chat/completions")
-            .header("Authorization", "Bearer ${apiKey(settings)}")
+            .url("${provider(settings).baseUrl(settings)}/chat/completions")
+            .header("Authorization", "Bearer ${provider(settings).apiKey(settings)}")
             .header("Content-Type", "application/json")
             .post(body)
             .build()
 
-        val factory = EventSources.createFactory(client)
+        val factory = EventSources.createFactory(streamClient)
         val fullResponse = StringBuilder()
         var lastUsage: Usage? = null
         var completed = false
@@ -161,7 +215,7 @@ class DeepSeekApiClient {
                 } else {
                     t?.message ?: "Unknown error"
                 }
-                onError(IOException(errMsg, t))
+                onError(ApiException(errMsg, httpCode = response?.code))
             }
 
             override fun onClosed(eventSource: EventSource) {
@@ -186,11 +240,16 @@ class DeepSeekApiClient {
         fileContext: String,
         onResult: (String?) -> Unit
     ) {
+        // H3: FIM 请求限流检查（每分钟最多 60 次）
+        if (!HttpClientProvider.completionRateLimiter.tryAcquire()) {
+            onResult(null) // 限流时静默跳过
+            return
+        }
         val settings = DeepSeekSettings.instance
         val prompt = buildFimPrompt(prefix, suffix, language, fileContext)
 
         val request = FimRequest(
-            model = settings.completionModel.ifBlank { model(settings) },
+            model = settings.completionModel.ifBlank { provider(settings).model(settings) },
             prompt = prompt,
             suffix = suffix,
             maxTokens = settings.completionMaxTokens,
@@ -202,13 +261,13 @@ class DeepSeekApiClient {
         val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
 
         val httpRequest = Request.Builder()
-            .url("${baseUrl(settings)}/completions")
-            .header("Authorization", "Bearer ${apiKey(settings)}")
+            .url("${provider(settings).baseUrl(settings)}/completions")
+            .header("Authorization", "Bearer ${provider(settings).apiKey(settings)}")
             .header("Content-Type", "application/json")
             .post(body)
             .build()
 
-        client.newCall(httpRequest).enqueue(object : Callback {
+        completionClient.newCall(httpRequest).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 onResult(null)
             }
@@ -249,7 +308,7 @@ class DeepSeekApiClient {
         val settings = DeepSeekSettings.instance
 
         val request = FimRequest(
-            model = settings.completionModel.ifBlank { model(settings) },
+            model = settings.completionModel.ifBlank { provider(settings).model(settings) },
             prompt = prefix,
             suffix = suffix,
             maxTokens = settings.completionMaxTokens,
@@ -259,21 +318,25 @@ class DeepSeekApiClient {
         val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
 
         val httpRequest = Request.Builder()
-            .url("${baseUrl(settings)}/completions")
-            .header("Authorization", "Bearer ${apiKey(settings)}")
+            .url("${provider(settings).baseUrl(settings)}/completions")
+            .header("Authorization", "Bearer ${provider(settings).apiKey(settings)}")
             .header("Content-Type", "application/json")
             .post(body)
             .build()
 
         return try {
-            val response = client.newCall(httpRequest).execute()
-            val responseBody = response.body?.string() ?: ""
-            if (!response.isSuccessful) {
-                Result.failure(IOException("API error ${response.code}: ${tryParseError(responseBody, response.code)}"))
-            } else {
-                val completionsResponse = gson.fromJson(responseBody, FimResponse::class.java)
-                val text = completionsResponse.choices.firstOrNull()?.text ?: ""
-                Result.success(text.trim())
+            completionClient.newCall(httpRequest).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    val errMsg = tryParseError(responseBody, response.code)
+                    val ex = if (response.code == 429) RateLimitException()
+                        else ApiException("API error ${response.code}: $errMsg", httpCode = response.code)
+                    Result.failure(ex)
+                } else {
+                    val completionsResponse = gson.fromJson(responseBody, FimResponse::class.java)
+                    val text = completionsResponse.choices.firstOrNull()?.text ?: ""
+                    Result.success(text.trim())
+                }
             }
         } catch (e: IOException) {
             Result.failure(e)

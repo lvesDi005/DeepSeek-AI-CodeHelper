@@ -111,7 +111,7 @@ class CodeBlockCard(
             selectionColor = JBColor(0x3399FF, 0x2D5B9E)
         }
 
-        val maxHeight = 300
+        val maxHeight = 1500
         val prefHeight = minOf(codeArea.preferredSize.height + 16, maxHeight)
         return JBScrollPane(codeArea).apply {
             border = JBUI.Borders.empty()

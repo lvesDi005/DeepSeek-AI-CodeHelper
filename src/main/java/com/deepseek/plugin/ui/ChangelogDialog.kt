@@ -96,29 +96,34 @@ class ChangelogDialog(
             val bgColor = if (JBColor.isBright()) "#FFFFFF" else "#2B2B2B"
             val fgColor = if (JBColor.isBright()) "#1A1A1A" else "#E0E0E0"
             val headingColor = if (JBColor.isBright()) "#333333" else "#BBBBBB"
-            val linkColor = if (JBColor.isBright()) "#1A73E8" else "#64B5F6"
+            val codeBg = if (JBColor.isBright()) "#F0F0F0" else "#3A3A3A"
 
-            return """<html><body style="
+            return """<html>
+    <head>
+        <style>
+            body {
                 font-family: 'Segoe UI', Roboto, sans-serif;
                 font-size: 12pt;
                 color: $fgColor;
                 background-color: $bgColor;
                 padding: 8px;
                 margin: 0;
-            "><div style="padding: 0; margin: 0;">
-                <style>
-                    h3 { color: $headingColor; font-size: 14pt; margin: 14px 0 6px 0; font-weight: bold; }
-                    h4 { color: $headingColor; font-size: 12pt; margin: 10px 0 4px 0; font-weight: bold; }
-                    ul { margin: 4px 0 8px 0; padding-left: 20px; }
-                    li { margin: 3px 0; line-height: 1.4; }
-                    a { color: $linkColor; text-decoration: underline; }
-                    code { font-family: 'JetBrains Mono', Monospaced, monospace; font-size: 11pt;
-                           background-color: ${if (JBColor.isBright()) "#F0F0F0" else "#3A3A3A"};
-                           padding: 1px 4px; border-radius: 3px; }
-                </style>
-                $rawHtml
-            </div></body></html>
-        """.trimIndent()
+            }
+            h3 { color: $headingColor; font-size: 14pt; margin: 14px 0 6px 0; font-weight: bold; }
+            h4 { color: $headingColor; font-size: 12pt; margin: 10px 0 4px 0; font-weight: bold; }
+            ul { margin: 4px 0 8px 0; padding-left: 20px; }
+            li { margin: 3px 0; line-height: 1.4; }
+            code {
+                font-family: 'JetBrains Mono', Monospaced, monospace;
+                font-size: 11pt;
+                background-color: $codeBg;
+                padding: 1px 4px;
+                border-radius: 3px;
+            }
+        </style>
+    </head>
+    <body>$rawHtml</body>
+</html>""".trimIndent()
         }
     }
 }

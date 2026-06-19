@@ -10,9 +10,17 @@ import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.fileTypes.PlainTextFileType
 import com.intellij.patterns.PlatformPatterns
-import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
 
+/**
+ * 代码补全入口。
+ *
+ * 注册两个 Provider：
+ * 1. [StaticAnalysisCompletionProvider] — 基于 PSI/AST 的静态分析补全（前置过滤）
+ * 2. [DeepSeekCompletionProvider] — AI 驱动的 FIM 补全（fallback）
+ *
+ * 静态分析能提供足够候选时，AI 请求被跳过以节省 token 和延迟。
+ */
 class DeepSeekCompletionContributor : CompletionContributor() {
 
     companion object {
@@ -20,6 +28,14 @@ class DeepSeekCompletionContributor : CompletionContributor() {
     }
 
     init {
+        // 静态分析 Provider —— 优先执行
+        extend(
+            CompletionType.BASIC,
+            PlatformPatterns.psiElement(),
+            StaticAnalysisCompletionProvider()
+        )
+
+        // AI Provider —— 仅当静态分析候选不足时才会真正触发 API 调用
         extend(
             CompletionType.BASIC,
             PlatformPatterns.psiElement(),
@@ -35,6 +51,7 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
     }
 
     private val client = DeepSeekApiClient()
+    private val staticAnalyzer = StaticAnalysisCompletionProvider()
 
     // 防止短时间内重复请求
     @Volatile private var lastRequestTime: Long = 0
@@ -47,6 +64,20 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
         val settings = DeepSeekSettings.instance
         if (!settings.completionEnabled || settings.apiKey.isBlank()) return
         if (parameters.isExtendedCompletion) return
+
+        // ======== 前置过滤：先跑静态分析 ========
+        val project = parameters.editor.project ?: return
+        val file = parameters.originalFile ?: return
+        try {
+            val analysis = staticAnalyzer.analyze(project, file, parameters.offset)
+            if (analysis.isSatisfied) {
+                LOG.debug("StaticAnalysis satisfied (${analysis.candidates.size} candidates, ${analysis.contextType}) — skipping AI")
+                return // 静态分析已足够，跳过 AI API 调用
+            }
+            LOG.debug("StaticAnalysis not satisfied (${analysis.candidates.size} candidates, ${analysis.contextType}) — falling through to AI")
+        } catch (e: Exception) {
+            LOG.warn("StaticAnalysis check failed, proceeding with AI", e)
+        }
 
         // --- 1. 收集前缀文本 (光标前) ---
         val prefix = getPrefixText(parameters)
@@ -69,7 +100,7 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
         val language = getLanguage(parameters)
         val fileContext = collectFileContext(parameters, settings.maxContextLines)
 
-        LOG.info("Completion triggered | lang=$language | prefixLen=${prefix.length} | suffixLen=${suffix.length}")
+        LOG.info("AI Completion triggered | lang=$language | prefixLen=${prefix.length} | suffixLen=${suffix.length}")
 
         // --- 5. 异步调用 FIM API (非阻塞!) ---
         client.completionFim(prefix, suffix, language, fileContext) { suggestionRaw ->
@@ -91,9 +122,9 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
                             Double.MAX_VALUE
                         )
                     )
-                    LOG.info("Completion added | length=${suggestion.length} | preview=${suggestion.take(40).replace("\n","\\n")}")
+                    LOG.info("AI Completion added | length=${suggestion.length} | preview=${suggestion.take(40).replace("\n","\\n")}")
                 } catch (e: Exception) {
-                    LOG.warn("Failed to add completion element", e)
+                    LOG.warn("Failed to add AI completion element", e)
                 }
             }
         }

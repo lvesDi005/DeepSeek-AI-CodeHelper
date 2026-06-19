@@ -6,14 +6,12 @@ import com.google.gson.JsonParser
 import com.google.gson.annotations.SerializedName
 import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.Base64
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -30,11 +28,8 @@ class StepFunApiClient {
         private val gson = Gson()
     }
 
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .build()
+    /** 使用共享连接池的 StepFun 客户端 */
+    private val client get() = HttpClientProvider.stepFunClient
 
     /** 追踪当前正在执行的 HTTP Call，用于强制取消 */
     private val currentCall = AtomicReference<Call?>(null)
@@ -106,6 +101,11 @@ class StepFunApiClient {
             return Result.failure(IOException("StepFun API Key 未配置，请在 Settings → Tools → DeepSeek AI 中设置"))
         }
 
+        // H3: 图片解析限流检查（每分钟最多 10 次）
+        if (!HttpClientProvider.stepFunRateLimiter.tryAcquire()) {
+            return Result.failure(RateLimitException("图片解析过于频繁，请稍后再试"))
+        }
+
         // 读取图片并转为 base64 data URI
         val dataUri = readImageAsBase64(imagePath)
             ?: return Result.failure(IOException("无法读取图片文件: $imagePath"))
@@ -135,20 +135,22 @@ class StepFunApiClient {
         val call = client.newCall(httpRequest)
         currentCall.set(call)
         return try {
-            val response = call.execute()
-            val responseBody = response.body?.string() ?: ""
-            if (!response.isSuccessful) {
-                val errMsg = tryParseError(responseBody, response.code)
-                Result.failure(IOException("StepFun API error ${response.code}: $errMsg"))
-            } else {
-                val visionResp = gson.fromJson(responseBody, VisionResponse::class.java)
-                val content = visionResp.choices?.firstOrNull()?.message?.content ?: ""
-                if (content.isBlank()) {
-                    Result.failure(IOException("StepFun 返回了空内容"))
+            val result = call.execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    val errMsg = tryParseError(responseBody, response.code)
+                    Result.failure(IOException("StepFun API error ${response.code}: $errMsg"))
                 } else {
-                    Result.success(content.trim())
+                    val visionResp = gson.fromJson(responseBody, VisionResponse::class.java)
+                    val content = visionResp.choices?.firstOrNull()?.message?.content ?: ""
+                    if (content.isBlank()) {
+                        Result.failure(IOException("StepFun 返回了空内容"))
+                    } else {
+                        Result.success(content.trim())
+                    }
                 }
             }
+            result
         } catch (e: IOException) {
             Result.failure(e)
         } finally {

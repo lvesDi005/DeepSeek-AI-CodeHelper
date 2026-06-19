@@ -72,7 +72,7 @@ class MessageBubble(
             wrapStyleWord = true
             font = JBUI.Fonts.create("Monospaced", 13)
             background = Color(0, 0, 0, 0)
-            margin = JBUI.insets(2, 0, 2, 0)
+            margin = JBUI.insets(0, 0, 0, 0)
             border = JBUI.Borders.empty()
             foreground = JBColor(0x1A1A1A, 0xE0E0E0)
             alignmentX = Component.LEFT_ALIGNMENT
@@ -80,7 +80,7 @@ class MessageBubble(
 
         val inner = JPanel(BorderLayout()).apply {
             isOpaque = false
-            border = JBUI.Borders.empty(8, 12, 6, 12)
+            border = JBUI.Borders.empty(0, 6, 0, 6)
             add(headerPanel, BorderLayout.NORTH)
             add(textArea, BorderLayout.CENTER)
         }
@@ -124,9 +124,9 @@ class MessageBubble(
                         language = segment.language,
                         showInsertButton = true
                     )
-                    contentBody.add(Box.createVerticalStrut(6))
-                    contentBody.add(card)
                     contentBody.add(Box.createVerticalStrut(4))
+                    contentBody.add(card)
+                    contentBody.add(Box.createVerticalStrut(2))
                 }
             }
         }
@@ -137,7 +137,7 @@ class MessageBubble(
 
         val inner = JPanel(BorderLayout()).apply {
             isOpaque = false
-            border = JBUI.Borders.empty(8, 12, 6, 12)
+            border = JBUI.Borders.empty(0, 6, 0, 6)
             add(headerPanel, BorderLayout.NORTH)
             add(contentBody, BorderLayout.CENTER)
         }
@@ -157,7 +157,7 @@ class MessageBubble(
             wrapStyleWord = true
             font = JBUI.Fonts.create("Monospaced", 13)
             background = Color(0, 0, 0, 0)
-            margin = JBUI.insets(2, 0, 2, 0)
+            margin = JBUI.insets(0, 0, 0, 0)
             border = JBUI.Borders.empty()
             foreground = JBColor(0x1A1A1A, 0xE0E0E0)
             (caret as DefaultCaret).updatePolicy = DefaultCaret.ALWAYS_UPDATE
@@ -173,7 +173,7 @@ class MessageBubble(
 
         val inner = JPanel(BorderLayout()).apply {
             isOpaque = false
-            border = JBUI.Borders.empty(8, 12, 6, 12)
+            border = JBUI.Borders.empty(0, 6, 0, 6)
             add(headerPanel, BorderLayout.NORTH)
             add(streamScrollPane, BorderLayout.CENTER)
         }

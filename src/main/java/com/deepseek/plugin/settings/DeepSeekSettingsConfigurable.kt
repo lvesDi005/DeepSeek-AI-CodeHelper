@@ -19,6 +19,8 @@ class DeepSeekSettingsConfigurable : Configurable {
     private var completionMinPrefixField: JBTextField? = null
     private var maxContextLinesField: JBTextField? = null
     private var completionEnabledCheckbox: JCheckBox? = null
+    private var annotationAwareCheckbox: JCheckBox? = null
+    private var commentAwareCheckbox: JCheckBox? = null
     private var stepFunApiKeyField: JBPasswordField? = null
     private var stepFunModelField: JBTextField? = null
     private var providerComboBox: com.intellij.openapi.ui.ComboBox<String>? = null
@@ -130,6 +132,18 @@ class DeepSeekSettingsConfigurable : Configurable {
                         text = settings.completionDelayMs.toString()
                     }).component as JBTextField
                 }
+                row {
+                    annotationAwareCheckbox = checkBox("Annotation-aware completion (analyze @Data, @Service, @Entity, etc.)")
+                        .apply { component.isSelected = settings.annotationAwareEnabled }
+                        .component
+                    comment("Automatically suggests synthetic methods (Lombok), code patterns (Spring/JPA), and annotation names")
+                }
+                row {
+                    commentAwareCheckbox = checkBox("Comment-aware completion (analyze // getter, // singleton, // TODO, etc.)")
+                        .apply { component.isSelected = settings.commentAwareEnabled }
+                        .component
+                    comment("Generates code based on natural language comments: // getter for name, // save, // singleton pattern, etc.")
+                }
             }
 
             group("StepFun Image Parsing") {
@@ -168,6 +182,8 @@ class DeepSeekSettingsConfigurable : Configurable {
                 || agnesApiKeyField?.password?.let { String(it) } != settings.agnesApiKey
                 || agnesModelField?.text != settings.agnesModel
                 || agnesBaseUrlField?.text != settings.agnesBaseUrl
+                || annotationAwareCheckbox?.isSelected != settings.annotationAwareEnabled
+                || commentAwareCheckbox?.isSelected != settings.commentAwareEnabled
     }
 
     override fun apply() {
@@ -187,6 +203,8 @@ class DeepSeekSettingsConfigurable : Configurable {
         settings.agnesApiKey = agnesApiKeyField?.password?.let { String(it) } ?: ""
         settings.agnesModel = agnesModelField?.text ?: "Agnes-2.0-Flash"
         settings.agnesBaseUrl = agnesBaseUrlField?.text ?: "https://apihub.agnes-ai.com/v1"
+        settings.annotationAwareEnabled = annotationAwareCheckbox?.isSelected ?: true
+        settings.commentAwareEnabled = commentAwareCheckbox?.isSelected ?: true
     }
 
     override fun reset() {
@@ -200,6 +218,8 @@ class DeepSeekSettingsConfigurable : Configurable {
         completionMinPrefixField?.text = settings.completionMinPrefix.toString()
         maxContextLinesField?.text = settings.maxContextLines.toString()
         completionDelayField?.text = settings.completionDelayMs.toString()
+        annotationAwareCheckbox?.isSelected = settings.annotationAwareEnabled
+        commentAwareCheckbox?.isSelected = settings.commentAwareEnabled
         stepFunApiKeyField?.text = settings.stepFunApiKey
         stepFunModelField?.text = settings.stepFunModel
         providerComboBox?.selectedItem = settings.provider

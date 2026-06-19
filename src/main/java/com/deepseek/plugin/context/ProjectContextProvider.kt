@@ -1,5 +1,6 @@
 package com.deepseek.plugin.context
 
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.vfs.VirtualFile
@@ -40,6 +41,8 @@ class ProjectContextProvider(private val project: Project) {
     /** Cache: simpleName (lowercase) → SourceInfo */
     private var cache: Map<String, SourceInfo>? = null
     private var cacheTimestamp: Long = 0
+    /** 每个文件的时间戳快照 — 用于增量检测：key = file path, value = timeStamp */
+    private val fileTimestamps = mutableMapOf<String, Long>()
 
     /**
      * Main entry: given the user's message, return a context string of related project files.
@@ -75,19 +78,92 @@ class ProjectContextProvider(private val project: Project) {
 
     private fun getIndex(): Map<String, SourceInfo> {
         val now = System.currentTimeMillis()
-        // Rebuild cache every 30 seconds
-        if (cache != null && (now - cacheTimestamp) < 30_000) return cache!!
+        // 60000ms (1 min) 内不触发全量重建
+        if (cache != null && (now - cacheTimestamp) < 60_000) {
+            // 增量检查：只在文件时间戳变化时重新读取变更文件
+            val dirtyPaths = detectDirtyFiles()
+            if (dirtyPaths.isEmpty()) return cache!!
+            // 增量更新：只重新读取 dirty 文件
+            incrementalUpdate(dirtyPaths)
+            cacheTimestamp = now
+            return cache!!
+        }
 
+        // 全量重建
+        return rebuildIndex(now)
+    }
+
+    /** 检测哪些源文件的时间戳发生了变化 */
+    private fun detectDirtyFiles(): Set<String> {
+        val dirty = mutableSetOf<String>()
+        try {
+            val contentRoots = ProjectRootManager.getInstance(project).contentSourceRoots
+            for (root in contentRoots) {
+                checkDirty(root, root, dirty)
+            }
+        } catch (_: Exception) {}
+        return dirty
+    }
+
+    private fun checkDirty(root: VirtualFile, dir: VirtualFile, dirty: MutableSet<String>) {
+        for (child in dir.children) {
+            if (child.isDirectory) {
+                val name = child.name
+                if (name == "resources" || name == "test" || name == "META-INF" ||
+                    name.startsWith(".")) continue
+                checkDirty(root, child, dirty)
+            } else if (isSourceFile(child)) {
+                val path = child.path
+                val cached = fileTimestamps[path]
+                val current = child.timeStamp
+                if (cached == null || cached != current) {
+                    dirty.add(path)
+                }
+            }
+        }
+    }
+
+    /** 全量重建索引 */
+    private fun rebuildIndex(now: Long): Map<String, SourceInfo> {
         val result = mutableMapOf<String, SourceInfo>()
+        fileTimestamps.clear()
         val contentRoots = ProjectRootManager.getInstance(project).contentSourceRoots
-
         for (root in contentRoots) {
             collectSources(root, root, result)
         }
-
         cache = result
         cacheTimestamp = now
         return result
+    }
+
+    /** 增量更新：只重新读取 dirty 列表中的文件 */
+    private fun incrementalUpdate(dirtyPaths: Set<String>) {
+        if (cache == null) return
+        val mutableCache = cache!!.toMutableMap()
+        val contentRoots = ProjectRootManager.getInstance(project).contentSourceRoots
+        val rootPaths = contentRoots.map { it.path }
+
+        for (dirtyPath in dirtyPaths) {
+            // 找到这个文件所属的 root
+            val rootPath = rootPaths.firstOrNull { dirtyPath.startsWith(it) } ?: continue
+            val vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(dirtyPath) ?: continue
+            if (!vf.exists()) {
+                // 文件被删除 → 从缓存中移除
+                val key = vf.nameWithoutExtension.lowercase()
+                mutableCache.remove(key)
+                fileTimestamps.remove(dirtyPath)
+                continue
+            }
+
+            val simpleName = vf.nameWithoutExtension
+            val relativePath = dirtyPath.substring(rootPath.length + 1)
+            val content = readContent(vf)
+            fileTimestamps[dirtyPath] = vf.timeStamp
+            if (content.isNotEmpty()) {
+                mutableCache[simpleName.lowercase()] = SourceInfo(simpleName, relativePath, content)
+            }
+        }
+        cache = mutableCache
     }
 
     private fun collectSources(root: VirtualFile, dir: VirtualFile, result: MutableMap<String, SourceInfo>) {
@@ -105,6 +181,8 @@ class ProjectContextProvider(private val project: Project) {
                 if (content.isNotEmpty()) {
                     result[simpleName.lowercase()] = SourceInfo(simpleName, relativePath, content)
                 }
+                // 记录时间戳用于增量检测
+                fileTimestamps[child.path] = child.timeStamp
             }
         }
     }
@@ -116,9 +194,12 @@ class ProjectContextProvider(private val project: Project) {
 
     private fun readContent(file: VirtualFile): String {
         return try {
-            // Prefer PSI for in-memory access
-            val psiFile = PsiManager.getInstance(project).findFile(file)
-            psiFile?.text ?: String(file.contentsToByteArray(), Charsets.UTF_8)
+            // PSI 访问必须在 ReadAction 中执行，确保线程安全
+            val psiText = ReadAction.compute<String, Exception> {
+                val psiFile = PsiManager.getInstance(project).findFile(file)
+                psiFile?.text
+            }
+            psiText ?: String(file.contentsToByteArray(), Charsets.UTF_8)
         } catch (_: Exception) {
             ""
         }

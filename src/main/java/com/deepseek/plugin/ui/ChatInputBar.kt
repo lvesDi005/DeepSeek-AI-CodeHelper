@@ -49,7 +49,10 @@ class ChatInputBar(
     fileAttachmentPanel: JPanel?,
     uploadButton: JComponent,
     modeSelector: JComponent,
-    sendStopButton: JComponent
+    sendStopButton: JComponent,
+    /** Callback invoked when the user drags the bottom-right resize handle.
+     *  [deltaY] is the vertical drag distance in pixels (positive = drag down). */
+    private val onResizeRequest: ((deltaY: Int) -> Unit)? = null
 ) : JPanel(BorderLayout()) {
 
     companion object {
@@ -176,7 +179,7 @@ class ChatInputBar(
         return toolbar
     }
 
-    // ── Layer 3: Resize Handle ────────────────────────────────
+    // ── Layer 3: Resize Handle (connected to JSplitPane divider) ──
 
     private fun createResizeHandle(scrollPane: JBScrollPane): JPanel {
         val handle = object : JPanel() {
@@ -204,15 +207,29 @@ class ChatInputBar(
             background = C_INPUT_BG
             isOpaque = true
 
-            // Drag to resize
+            // ── Drag to resize: track start position, report delta ──
+            var startY = 0
+
+            addMouseListener(object : MouseAdapter() {
+                override fun mousePressed(e: MouseEvent) {
+                    startY = e.y
+                }
+            })
+
             addMouseMotionListener(object : MouseMotionAdapter() {
                 override fun mouseDragged(e: MouseEvent) {
-                    val parent = scrollPane.parent
-                    if (parent != null) {
-                        val newHeight = scrollPane.height + e.y
-                        val constrained = newHeight.coerceIn(60, 400)
-                        scrollPane.preferredSize = Dimension(scrollPane.width, constrained)
-                        scrollPane.revalidate()
+                    val delta = e.y - startY
+                    if (onResizeRequest != null) {
+                        onResizeRequest(delta)
+                    } else {
+                        // Fallback: resize the scroll pane directly (legacy behaviour)
+                        val parent = scrollPane.parent
+                        if (parent != null) {
+                            val newHeight = scrollPane.height + delta
+                            val constrained = newHeight.coerceIn(60, 400)
+                            scrollPane.preferredSize = Dimension(scrollPane.width, constrained)
+                            scrollPane.revalidate()
+                        }
                     }
                 }
             })
