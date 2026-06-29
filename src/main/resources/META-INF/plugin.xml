@@ -72,8 +72,13 @@
                     class="com.deepseek.plugin.agent.OptimizeAction"
                     text="Optimize Code"
                     description="Optimize the selected code for performance and readability"/>
+            <action id="DeepSeekAI.UploadConsole"
+                    class="com.deepseek.plugin.agent.UploadConsoleAction"
+                    text="Upload to Chat"
+                    description="Upload selected console output to the chat panel for AI analysis"/>
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+            <add-to-group group-id="ConsoleEditorPopupMenu" anchor="last"/>
         </group>
     </actions>
 </idea-plugin>

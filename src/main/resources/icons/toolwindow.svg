@@ -1,4 +1,47 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <rect x="1" y="1" width="14" height="14" rx="3" fill="#4F46E5" stroke="#3730A3" stroke-width="0.5"/>
-  <text x="8" y="11.5" text-anchor="middle" font-size="9" font-family="Arial" font-weight="bold" fill="white">D</text>
+<svg width="160" height="160" viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- 背景渐变 -->
+    <linearGradient id="userBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <!-- 皮肤渐变 -->
+    <radialGradient id="skin" cx="50%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#fff7f0"/>
+      <stop offset="100%" stop-color="#f8d9c4"/>
+    </radialGradient>
+    <!-- 头发渐变 -->
+    <linearGradient id="hair" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#332922"/>
+      <stop offset="100%" stop-color="#1a1410"/>
+    </linearGradient>
+  </defs>
+  <!-- 圆形底板阴影 -->
+  <circle cx="80" cy="80" r="78" fill="#4f46e5" opacity="0.2"/>
+  <!-- 主背景圆 -->
+  <circle cx="80" cy="80" r="75" fill="url(#userBg)"/>
+  <!-- 头发 -->
+  <path d="M80 28 C48 28 32 52 34 92 C34 110 52 124 80 124 C108 124 126 110 126 92 C128 52 112 28 80 28 Z" fill="url(#hair)"/>
+  <!-- 脸部 -->
+  <ellipse cx="80" cy="72" rx="40" ry="44" fill="url(#skin)"/>
+  <!-- 刘海 -->
+  <path d="M42 56 Q80 36 118 56 Q110 44 80 42 Q50 44 42 56 Z" fill="#221b17"/>
+  <!-- 眼睛 -->
+  <ellipse cx="64" cy="70" rx="7" ry="9" fill="#ffffff"/>
+  <ellipse cx="96" cy="70" rx="7" ry="9" fill="#ffffff"/>
+  <circle cx="64" cy="72" r="4" fill="#222222"/>
+  <circle cx="96" cy="72" r="4" fill="#222222"/>
+  <circle cx="62" cy="70" r="1.5" fill="#fff"/>
+  <circle cx="94" cy="70" r="1.5" fill="#fff"/>
+  <!-- 眉毛 -->
+  <path d="M54 60 Q58 57 66 58" stroke="#221b17" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <path d="M94 58 Q102 57 106 60" stroke="#221b17" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <!-- 腮红 -->
+  <circle cx="50" cy="82" r="9" fill="#f4b8b8" opacity="0.4"/>
+  <circle cx="110" cy="82" r="9" fill="#f4b8b8" opacity="0.4"/>
+  <!-- 嘴巴微笑 -->
+  <path d="M70 92 Q80 102 90 92" stroke="#c97c7c" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <!-- 上衣肩膀 -->
+  <path d="M30 142 C30 116 52 106 80 106 C108 106 130 116 130 142 L130 158 L30 158 Z" fill="#ffffff"/>
+  <path d="M62 106 L80 130 L98 106" stroke="#d1d5db" stroke-width="1.5" fill="none"/>
 </svg>

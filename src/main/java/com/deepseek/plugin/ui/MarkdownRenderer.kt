@@ -23,6 +23,19 @@ import javax.swing.text.html.StyleSheet
 object MarkdownRenderer {
 
     /**
+     * Regex 匹配中文文本中混排的英文/代码术语。
+     * 规则：由 [a-zA-Z_] 开头，包含字母/数字/点/下划线/尖括号/方括号/# 的 2-60 字符序列，
+     * 前后必须是中文、空白或标点（确保不破坏已有 backtick 包裹）。
+     */
+    private val REGEX_INLINE_CODE = Regex(
+        "(?<=[\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef\\s，。、；：！？）()" +
+        "\\-–—/:;,.?!\"'\\[{(]|^)" +
+        "([a-zA-Z_][\\w.<>()\\[\\]#{}:]{1,60})" +
+        "(?=[\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef\\s，。、；：！？）()" +
+        "\\-–—/:;,.?!\"'\\]})]|$)"
+    )
+
+    /**
      * Create a [JEditorPane] that renders [markdownText] with IDE theme colours.
      *
      * @param markdownText  Markdown source (paragraphs, inline formatting, lists, headings)
@@ -38,7 +51,9 @@ object MarkdownRenderer {
         bgColor: java.awt.Color? = null,
         linkCallback: ((String) -> Unit)? = null
     ): JEditorPane {
-        val html = toHtml(markdownText)
+        // 预处理：将英文/代码术语自动包裹 backtick，使其在中文正文中更突出
+        val highlighted = highlightInlineCode(markdownText)
+        val html = toHtml(highlighted)
         val pane = JEditorPane("text/html", html).apply {
             isEditable = false
             isOpaque = bgColor != null
@@ -73,22 +88,54 @@ object MarkdownRenderer {
         return generator.generateHtml()
     }
 
+    /**
+     * 将中文文本中混排的英文/代码术语用 backtick 包裹，
+     * 使它们在 Markdown 渲染时获得内联代码样式（等宽字体 + 底色），从而突出显示。
+     *
+     * 例如：「使用 MessageBubble 显示」→「使用 `MessageBubble` 显示」
+     *
+     * 不会重复包裹已被 `` ` `` 包裹的内容。
+     */
+    fun highlightInlineCode(text: String): String {
+        val sb = StringBuilder()
+        var lastEnd = 0
+
+        for (match in REGEX_INLINE_CODE.findAll(text)) {
+            val start = match.range.first
+
+            // 跳过已被 backtick 包裹的（前面有 ` 且后面有对应的 `）
+            val alreadyWrapped = start > 0 && text[start - 1] == '`'
+
+            if (!alreadyWrapped) {
+                sb.append(text, lastEnd, start)
+                sb.append('`')
+                sb.append(match.value)
+                sb.append('`')
+                lastEnd = match.range.last + 1
+            }
+        }
+
+        sb.append(text.substring(lastEnd))
+        return sb.toString()
+    }
+
     // ── Private helpers ──
 
     private fun createStyleSheet(fontSize: Int, fgColor: java.awt.Color): StyleSheet {
         val ss = StyleSheet()
         val hexFg = toHex(fgColor)
-        val codeBg = toHex(JBColor(0xF0F0F0, 0x2A2A2A))
-        val codeFg = toHex(JBColor(0x333333, 0xD4D4D4))
+        val codeBg = toHex(JBColor(0xE8E8E8, 0x33333A))
+        val codeFg = toHex(JBColor(0x1976D2, 0x7CB7FF))
         val linkColor = toHex(JBColor(0x1A73E8, 0x64B5F6))
 
-        ss.addRule("body { font-family: 'Segoe UI', Roboto, sans-serif; font-size: ${fontSize}pt; color: $hexFg; margin: 0; padding: 0; }")
+        ss.addRule("body { font-family: sans-serif; font-size: ${fontSize}pt; color: $hexFg; margin: 0; padding: 0; }")
         ss.addRule("p { margin: 0 0 6px 0; padding: 0; }")
         ss.addRule("h1, h2, h3, h4, h5, h6 { margin: 10px 0 4px 0; font-weight: bold; }")
         ss.addRule("ul, ol { margin: 2px 0 6px 0; padding-left: 22px; }")
         ss.addRule("li { margin: 2px 0; }")
         ss.addRule("a { color: $linkColor; text-decoration: underline; }")
-        ss.addRule("code { font-family: 'JetBrains Mono', Monospaced, monospace; font-size: ${fontSize - 1}pt; background-color: $codeBg; color: $codeFg; padding: 1px 3px; }")
+        // 内联代码：等宽 + 底色 + 颜色有别于正文，使其从中文中脱颖而出
+        ss.addRule("code { font-family: monospace; font-size: ${fontSize - 1}pt; background-color: $codeBg; color: $codeFg; padding: 1px 4px; }")
         ss.addRule("pre { background-color: transparent; padding: 0; margin: 0; }")
         ss.addRule("blockquote { margin: 4px 0; padding: 2px 10px; border-left: 3px solid #DDD; color: #888; }")
         ss.addRule("hr { border: none; border-top: 1px solid #E0E0E0; margin: 10px 0; }")

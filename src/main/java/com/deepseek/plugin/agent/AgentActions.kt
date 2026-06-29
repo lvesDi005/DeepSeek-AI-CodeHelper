@@ -1,5 +1,6 @@
 package com.deepseek.plugin.agent
 
+import com.deepseek.plugin.ui.CodeDiffUtil
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.project.Project
 
@@ -59,14 +60,24 @@ Return ONLY the generated code (wrapped in ```language ... ```). No explanations
         val editor = capturedEditor
 
         if (editor != null) {
-            WriteCommandAction.runWriteCommandAction(project) {
-                val document = editor.document
-                val selectionModel = editor.selectionModel
-                if (selectionModel.hasSelection()) {
-                    document.replaceString(selectionModel.selectionStart, selectionModel.selectionEnd, code)
-                } else {
-                    val offset = editor.caretModel.offset
-                    document.insertString(offset, code)
+            val selectionModel = editor.selectionModel
+            if (selectionModel.hasSelection() && code != originalCode) {
+                // Show diff preview + confirm before applying
+                CodeDiffUtil.showDiffAndApply(project, originalCode, code) {
+                    WriteCommandAction.runWriteCommandAction(project) {
+                        val document = editor.document
+                        document.replaceString(selectionModel.selectionStart, selectionModel.selectionEnd, code)
+                    }
+                }
+            } else {
+                WriteCommandAction.runWriteCommandAction(project) {
+                    val document = editor.document
+                    if (selectionModel.hasSelection()) {
+                        document.replaceString(selectionModel.selectionStart, selectionModel.selectionEnd, code)
+                    } else {
+                        val offset = editor.caretModel.offset
+                        document.insertString(offset, code)
+                    }
                 }
             }
         } else {
@@ -122,14 +133,17 @@ Return ONLY the optimized code wrapped in ```language ... ```. Add brief inline 
         val editor = capturedEditor
 
         if (editor != null) {
-            WriteCommandAction.runWriteCommandAction(project) {
-                val document = editor.document
-                val selectionModel = editor.selectionModel
-                if (selectionModel.hasSelection()) {
-                    document.replaceString(selectionModel.selectionStart, selectionModel.selectionEnd, code)
-                } else {
-                    super.showResult(project, originalCode, response)
+            val selectionModel = editor.selectionModel
+            if (selectionModel.hasSelection() && code != originalCode) {
+                // Show diff preview + confirm before applying
+                CodeDiffUtil.showDiffAndApply(project, originalCode, code) {
+                    WriteCommandAction.runWriteCommandAction(project) {
+                        val document = editor.document
+                        document.replaceString(selectionModel.selectionStart, selectionModel.selectionEnd, code)
+                    }
                 }
+            } else {
+                super.showResult(project, originalCode, response)
             }
         } else {
             super.showResult(project, originalCode, response)

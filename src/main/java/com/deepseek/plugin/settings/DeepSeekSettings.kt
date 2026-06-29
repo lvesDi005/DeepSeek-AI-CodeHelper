@@ -42,6 +42,9 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
     // 版本跟踪 — 用户上次看到的版本号，用于显示更新记录弹窗
     var lastSeenVersion: String = ""
 
+    // 更新日志语言偏好: "zh" | "en"
+    var changelogLanguage: String = "zh"
+
     override fun getState(): DeepSeekSettings = this
     override fun loadState(state: DeepSeekSettings) {
         XmlSerializerUtil.copyBean(state, this)

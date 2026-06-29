@@ -16,31 +16,31 @@ import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
 import java.awt.Graphics
+import java.awt.Graphics2D
+import java.awt.RenderingHints
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.event.MouseMotionAdapter
 import javax.swing.Box
 import javax.swing.BoxLayout
-import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
-import javax.swing.SwingConstants
 import javax.swing.border.CompoundBorder
 
 /**
- * VSCode industrial dark themed chat input bar with 4-layer vertical layout.
+ * 现代化聊天输入栏。
  *
  * ┌──────────────────────────────────────────────────┐
- * │  100% open source                             ✕  │  ← Layer 1: Notification bar
+ * │  📎 选中代码/文件预览区域                          │  ← Toolbar (previews)
  * ├──────────────────────────────────────────────────┤
- * │  📎                                              │  ← Layer 2: Toolbar (paperclip)
+ * │  ┌────────────────────────────────────────────┐  │
+ * │  │  输入消息...  @引用文件  ·  Enter发送      │  │  ← 圆角输入区
+ * │  │                                            │  │
+ * │  │                                      ⠿     │  │  ← resize handle
+ * │  └────────────────────────────────────────────┘  │
  * ├──────────────────────────────────────────────────┤
- * │  @引用文件，#调用智能Agent，!插入预设提示词...    │  ← Layer 3: Input area (70% height, resizable)
- * │                                                  │
- * │                                           ⠿     │  ← drag handle bottom-right
- * ├──────────────────────────────────────────────────┤
- * │  ⚡ Auto Mode [💬 问答 ▾]          [⚙] [▶ 发送] │  ← Layer 4: Status bar
+ * │  💬 问答 ▾               📤 [▶ 发送 (Enter)]    │  ← Status bar
  * └──────────────────────────────────────────────────┘
  */
 class ChatInputBar(
@@ -48,108 +48,42 @@ class ChatInputBar(
     selectedCodePanel: JPanel?,
     fileAttachmentPanel: JPanel?,
     uploadButton: JComponent,
+    translateButton: JComponent,
     modeSelector: JComponent,
     sendStopButton: JComponent,
-    /** Callback invoked when the user drags the bottom-right resize handle.
-     *  [deltaY] is the vertical drag distance in pixels (positive = drag down). */
     private val onResizeRequest: ((deltaY: Int) -> Unit)? = null
 ) : JPanel(BorderLayout()) {
 
     companion object {
-        // ── VSCode industrial dark palette ──
-        private val C_NOTIFICATION_BG = JBColor(Color(0xF5F5F5), Color(0x333333))
-        private val C_TOOLBAR_BG = JBColor(Color(0xECECEC), Color(0x252526))
         private val C_INPUT_BG = JBColor(Color(0xFFFFFF), Color(0x1E1E1E))
-        private val C_STATUS_BG = JBColor(Color(0xECECEC), Color(0x252526))
-        private val C_BORDER = JBColor(Color(0xD4D4D4), Color(0x3C3C3C))
-        private val C_BLUE = JBColor(Color(0x1A73E8), Color(0x4FC3F7))
-        private val C_YELLOW = JBColor(Color(0xF9A825), Color(0xFFD54F))
-        private val C_TEXT_SECONDARY = JBColor(Color(0x666666), Color(0x999999))
-        private val C_TEXT_PRIMARY = JBColor(Color(0xCCCCCC), Color(0xCCCCCC))
-        private val C_BUTTON_PRIMARY = JBColor(Color(0x1A73E8), Color(0x2979FF))
-        private val C_BUTTON_SECONDARY_BORDER = JBColor(Color(0xC0C0C0), Color(0x555555))
+        private val C_INPUT_BORDER = JBColor(Color(0xD0D0D0), Color(0x3C3C3C))
+        private val C_INPUT_BORDER_FOCUS = JBColor(0x1A73E8, 0x64B5F6)
+        private val C_TOOLBAR_BG = JBColor(Color(0xF5F5F5), Color(0x2D2D2D))
+        private val C_STATUS_BG = JBColor(Color(0xF5F5F5), Color(0x2D2D2D))
+        private val C_BORDER = JBColor(Color(0xE0E0E0), Color(0x3C3C3C))
+        private val C_BUTTON_PRIMARY = JBColor(0x1A73E8, 0x2979FF)
+        private val C_TEXT_SECONDARY = JBColor(0x999999, 0x777777)
     }
 
     init {
         isOpaque = false
 
-        // ── Vertical container for the 4 layers ──
         val stack = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             isOpaque = false
         }
 
-        // ═══════ Layer 1: Notification bar ═══════
-        stack.add(createNotificationBar())
-
-        // ═══════ Layer 2: Toolbar ─ previews ═══════
+        // ═══════ Layer 1: Toolbar — previews ═══════
         stack.add(createToolbar(selectedCodePanel, fileAttachmentPanel))
 
-        // ═══════ Layer 3: Input area ═══════
-        inputScrollPane.border = JBUI.Borders.empty()
-        inputScrollPane.isOpaque = true
-        inputScrollPane.background = C_INPUT_BG
-        // Add a resize handle (corner component)
-        inputScrollPane.setCorner(
-            JBScrollPane.LOWER_RIGHT_CORNER,
-            createResizeHandle(inputScrollPane)
-        )
-        stack.add(inputScrollPane)
+        // ═══════ Layer 2: Rounded input area ═══════
+        stack.add(createRoundedInputWrapper(inputScrollPane))
 
-        // ═══════ Layer 4: Status bar ═══════
-        stack.add(createStatusBar(modeSelector, uploadButton, sendStopButton))
+        // ═══════ Layer 3: Status bar ═══════
+        stack.add(createStatusBar(modeSelector, uploadButton, translateButton, sendStopButton))
 
         add(stack, BorderLayout.CENTER)
     }
-
-    // ── Layer 1 ────────────────────────────────────────────────
-
-    private fun createNotificationBar(): JPanel {
-        val bar = JPanel(BorderLayout()).apply {
-            background = C_NOTIFICATION_BG
-            border = CompoundBorder(
-                JBUI.Borders.customLine(C_BORDER, 0, 0, 1, 0),
-                JBUI.Borders.empty(4, 10, 4, 4)
-            )
-            isOpaque = true
-            minimumSize = Dimension(0, 28)
-            maximumSize = Dimension(Short.MAX_VALUE.toInt(), 28)
-        }
-
-        // Left: blue text
-        val label = JLabel("  100% open source").apply {
-            font = font.deriveFont(Font.BOLD, 11f)
-            foreground = C_BLUE
-            icon = AllIcons.General.BalloonInformation
-            iconTextGap = 6
-        }
-        bar.add(label, BorderLayout.WEST)
-
-        // Right: close × button
-        val closeBtn = ActionButton(
-            object : AnAction(null, null, AllIcons.Actions.Close) {
-                override fun actionPerformed(e: AnActionEvent) {
-                    bar.isVisible = false
-                }
-            },
-            Presentation().apply {
-                icon = AllIcons.Actions.Close
-                description = "关闭"
-            },
-            ActionPlaces.TOOLBAR,
-            Dimension(18, 18)
-        ).withTooltip("关闭")
-
-        val rightPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 0, 0)).apply {
-            isOpaque = false
-            add(closeBtn)
-        }
-        bar.add(rightPanel, BorderLayout.EAST)
-
-        return bar
-    }
-
-    // ── Layer 2 ────────────────────────────────────────────────
 
     private fun createToolbar(
         selectedCodePanel: JPanel?,
@@ -160,12 +94,11 @@ class ChatInputBar(
             isOpaque = true
             border = CompoundBorder(
                 JBUI.Borders.customLine(C_BORDER, 0, 0, 1, 0),
-                JBUI.Borders.empty(4, 6, 4, 6)
+                JBUI.Borders.empty(2, 6, 2, 6)
             )
-            maximumSize = Dimension(Short.MAX_VALUE.toInt(), 36)
+            maximumSize = Dimension(Short.MAX_VALUE.toInt(), 32)
         }
 
-        // Preview panels (optional, stacked vertically)
         if (selectedCodePanel != null || fileAttachmentPanel != null) {
             val previewStack = JPanel().apply {
                 layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -179,21 +112,73 @@ class ChatInputBar(
         return toolbar
     }
 
-    // ── Layer 3: Resize Handle (connected to JSplitPane divider) ──
+    private fun createRoundedInputWrapper(scrollPane: JBScrollPane): JPanel {
+        scrollPane.isOpaque = false
+        scrollPane.viewport.isOpaque = false
+        scrollPane.border = JBUI.Borders.empty()
 
-    private fun createResizeHandle(scrollPane: JBScrollPane): JPanel {
-        val handle = object : JPanel() {
+        scrollPane.setCorner(JBScrollPane.LOWER_RIGHT_CORNER, createResizeHandle())
+
+        val wrapper = object : JPanel(BorderLayout()) {
+            private var focused = false
+
+            init {
+                scrollPane.components.forEach { comp ->
+                    if (comp is javax.swing.JViewport) {
+                        comp.components.forEach { c ->
+                            if (c is javax.swing.text.JTextComponent) {
+                                c.addFocusListener(object : java.awt.event.FocusAdapter() {
+                                    override fun focusGained(e: java.awt.event.FocusEvent) {
+                                        focused = true
+                                        repaint()
+                                    }
+                                    override fun focusLost(e: java.awt.event.FocusEvent) {
+                                        focused = false
+                                        repaint()
+                                    }
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+
+            override fun paintComponent(g: Graphics) {
+                val g2 = g.create() as Graphics2D
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+
+                val arc = 10
+                g2.color = C_INPUT_BG
+                g2.fillRoundRect(0, 0, width - 1, height - 1, arc, arc)
+
+                g2.color = if (focused) C_INPUT_BORDER_FOCUS else C_INPUT_BORDER
+                g2.drawRoundRect(0, 0, width - 1, height - 1, arc, arc)
+
+                g2.dispose()
+            }
+        }.apply {
+            layout = BorderLayout()
+            isOpaque = false
+            border = JBUI.Borders.empty(8, 10, 4, 10)
+            add(scrollPane, BorderLayout.CENTER)
+        }
+
+        return wrapper
+    }
+
+    private fun createResizeHandle(): JPanel {
+        return object : JPanel() {
             override fun paintComponent(g: Graphics) {
                 super.paintComponent(g)
-                val g2 = g.create() as Graphics
+                val g2 = g.create() as Graphics2D
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
                 try {
                     g2.color = C_TEXT_SECONDARY
-                    val x = width - 12
-                    val y = height - 8
-                    // Draw 3 small dots as a resize grip
+                    val x = width - 14
+                    val y = height - 10
                     for (i in 0..2) {
                         for (j in 0..i) {
-                            g2.fillRect(x + j * 4, y + i * 4, 2, 2)
+                            g2.fillRoundRect(x + j * 4, y + i * 4, 2, 2, 1, 1)
                         }
                     }
                 } finally {
@@ -204,44 +189,27 @@ class ChatInputBar(
             preferredSize = Dimension(20, 20)
             minimumSize = Dimension(20, 20)
             cursor = Cursor.getPredefinedCursor(Cursor.SE_RESIZE_CURSOR)
-            background = C_INPUT_BG
-            isOpaque = true
+            isOpaque = false
 
-            // ── Drag to resize: track start position, report delta ──
             var startY = 0
-
             addMouseListener(object : MouseAdapter() {
-                override fun mousePressed(e: MouseEvent) {
-                    startY = e.y
-                }
+                override fun mousePressed(e: MouseEvent) { startY = e.y }
             })
-
             addMouseMotionListener(object : MouseMotionAdapter() {
                 override fun mouseDragged(e: MouseEvent) {
                     val delta = e.y - startY
                     if (onResizeRequest != null) {
                         onResizeRequest(delta)
-                    } else {
-                        // Fallback: resize the scroll pane directly (legacy behaviour)
-                        val parent = scrollPane.parent
-                        if (parent != null) {
-                            val newHeight = scrollPane.height + delta
-                            val constrained = newHeight.coerceIn(60, 400)
-                            scrollPane.preferredSize = Dimension(scrollPane.width, constrained)
-                            scrollPane.revalidate()
-                        }
                     }
                 }
             })
         }
-        return handle
     }
-
-    // ── Layer 4 ────────────────────────────────────────────────
 
     private fun createStatusBar(
         modeSelector: JComponent,
         uploadButton: JComponent,
+        translateButton: JComponent,
         sendStopButton: JComponent
     ): JPanel {
         val bar = JPanel(BorderLayout()).apply {
@@ -249,25 +217,23 @@ class ChatInputBar(
             isOpaque = true
             border = CompoundBorder(
                 JBUI.Borders.customLine(C_BORDER, 1, 0, 0, 0),
-                JBUI.Borders.empty(6, 8, 6, 8)
+                JBUI.Borders.empty(6, 10, 6, 8)
             )
             maximumSize = Dimension(Short.MAX_VALUE.toInt(), 44)
         }
 
-        // ── Left: mode selector + upload ──
-        val leftGroup = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
+        // ── 左侧：4 个控件紧凑排列 ──
+        val leftGroup = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
             isOpaque = false
             add(modeSelector)
+            add(Box.createHorizontalStrut(6))
             add(uploadButton)
+            add(Box.createHorizontalStrut(6))
+            add(translateButton)
         }
         bar.add(leftGroup, BorderLayout.WEST)
 
-        // ── Right: send button ──
-        val rightGroup = JPanel(FlowLayout(FlowLayout.RIGHT, 6, 0)).apply {
-            isOpaque = false
-        }
-
-        // Primary send button — visually prominent
+        // ── 右侧：发送按钮 ──
         sendStopButton.apply {
             font = font.deriveFont(Font.BOLD, 12f)
             foreground = Color.WHITE
@@ -275,9 +241,7 @@ class ChatInputBar(
             border = JBUI.Borders.empty(6, 18, 6, 18)
             isOpaque = true
         }
-        rightGroup.add(sendStopButton)
-
-        bar.add(rightGroup, BorderLayout.EAST)
+        bar.add(sendStopButton, BorderLayout.EAST)
 
         return bar
     }

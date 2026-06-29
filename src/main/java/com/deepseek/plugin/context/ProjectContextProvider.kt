@@ -1,8 +1,10 @@
 package com.deepseek.plugin.context
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectRootManager
+import com.intellij.openapi.util.Computable
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiManager
 import java.io.File
@@ -195,10 +197,10 @@ class ProjectContextProvider(private val project: Project) {
     private fun readContent(file: VirtualFile): String {
         return try {
             // PSI 访问必须在 ReadAction 中执行，确保线程安全
-            val psiText = ReadAction.compute<String, Exception> {
+            val psiText = ApplicationManager.getApplication().runReadAction(Computable<String> {
                 val psiFile = PsiManager.getInstance(project).findFile(file)
                 psiFile?.text
-            }
+            })
             psiText ?: String(file.contentsToByteArray(), Charsets.UTF_8)
         } catch (_: Exception) {
             ""

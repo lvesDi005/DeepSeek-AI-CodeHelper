@@ -19,6 +19,7 @@ import com.deepseek.plugin.ui.MessageBubble
 import com.deepseek.plugin.ui.ResponseSegment
 import com.deepseek.plugin.ui.SelectedCodePreview
 import com.deepseek.plugin.ui.SessionBar
+import com.deepseek.plugin.ui.TranslateDialog
 import com.deepseek.plugin.ui.UsageDialog
 import com.deepseek.plugin.ui.WelcomePanel
 import com.intellij.icons.AllIcons
@@ -41,23 +42,19 @@ import com.intellij.ui.components.*
 import com.intellij.util.ui.JBUI
 import kotlin.math.ceil
 import okhttp3.sse.EventSource
-import java.awt.BasicStroke
 import java.awt.BorderLayout
 import java.awt.CardLayout
 import java.awt.Color
 import java.awt.Component
-import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
 import java.awt.Graphics
 import java.awt.Graphics2D
+import java.awt.RenderingHints
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
-import java.awt.Rectangle
-import java.awt.RenderingHints
 import java.awt.event.*
-import java.awt.geom.Ellipse2D
 import java.util.concurrent.atomic.AtomicReference
 import javax.swing.*
 import javax.swing.text.DefaultCaret
@@ -76,6 +73,13 @@ data class ChatSession(
 )
 
 class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
+
+    companion object {
+        /** 当前活动的 ChatPanel 实例，供外部 Action 向聊天面板推送内容 */
+        @JvmStatic
+        var currentInstance: ChatPanel? = null
+            private set
+    }
 
     private val client = DeepSeekApiClient()
     private val stepFunClient = StepFunApiClient()
@@ -254,6 +258,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
             fileAttachmentPanel = fileAttachmentPanel,
             modeSelector = createModeDropdown(),
             uploadButton = createUploadButton(),
+            translateButton = createTranslateButton(),
             sendStopButton = sendStopButton,
             onResizeRequest = { deltaY ->
                 val newLoc = splitPane.dividerLocation + deltaY
@@ -280,6 +285,9 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
             showWelcome()
         }
         setupSelectionListener()
+
+        // 注册为当前活动实例，供 UploadConsoleAction 等外部调用
+        currentInstance = this
 
         // ── Scroll listener (removed — anchor dots embedded per-message) ──
     }
@@ -348,15 +356,50 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         selectedCodePreviewPanel.repaint()
     }
 
+    /**
+     * 从控制台/外部推送文本到聊天面板，以选中代码标签形式显示在输入框上方。
+     * 由 [UploadConsoleAction] 等右键操作调用。
+     */
+    fun setConsoleContext(text: String) {
+        val lineCount = text.lines().size
+        setSelectedContext(SelectedContext("Console Output", 1, lineCount, text))
+    }
+
     // ===== File attachment management =====
 
     private fun createUploadButton(): JComponent {
-        return JButton(AllIcons.Actions.Upload).apply {
-            toolTipText = "上传文件"
+        return createSmallRoundButton(AllIcons.Actions.Upload, "上传文件") {
+            openFileChooser()
+        }
+    }
+
+    private fun createTranslateButton(): JComponent {
+        return createSmallRoundButton(AllIcons.Actions.Preview, "翻译") {
+            TranslateDialog(this@ChatPanel.project).show()
+        }
+    }
+
+    /** 创建统一的小尺寸圆角图标按钮 */
+    private fun createSmallRoundButton(icon: javax.swing.Icon, tooltip: String, action: () -> Unit): JComponent {
+        return object : JButton(icon) {
+            override fun paintComponent(g: Graphics) {
+                val g2 = g.create() as Graphics2D
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                g2.color = if (model.isRollover) JBColor(0xE0E0E0, 0x4A4A4A) else Color(0, 0, 0, 0)
+                g2.fillRoundRect(0, 0, width, height, 8, 8)
+                super.paintComponent(g)
+                g2.dispose()
+            }
+        }.apply {
+            toolTipText = tooltip
             isOpaque = false
             isContentAreaFilled = false
-            border = JBUI.Borders.empty(2, 6)
-            addActionListener { openFileChooser() }
+            isBorderPainted = false
+            isFocusPainted = false
+            preferredSize = Dimension(24, 24)
+            minimumSize = Dimension(24, 24)
+            maximumSize = Dimension(24, 24)
+            addActionListener { action() }
         }
     }
 
@@ -1440,6 +1483,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
     }
 
     override fun dispose() {
+        currentInstance = null
         // 关闭时同步保存（跳过 debounce，确保数据落盘）
         saveTimer.stop()
         doSaveSessions()
@@ -1454,31 +1498,6 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
             messagesScrollPane.verticalScrollBar.value =
                 messagesScrollPane.verticalScrollBar.maximum
         }
-    }
-
-    /**
-     * Wrap a component in a panel that constrains its horizontal width to a
-     * fraction of the available space.
-     */
-    /**
-     * Wrap a component so it fills available horizontal space.
-     * The 5 % right-margin is handled by [createMessageRow] via BorderLayout.EAST,
-     * so no width constraint is needed here.
-     */
-    private fun wrapWithWidthConstraint(
-        component: JComponent,
-        weight: Double = 0.95
-    ): JPanel {
-        val wrapper = JPanel(GridBagLayout()).apply { isOpaque = false }
-
-        val msgConstraints = GridBagConstraints().apply {
-            fill = GridBagConstraints.BOTH
-            weightx = 1.0
-            gridwidth = GridBagConstraints.REMAINDER
-            anchor = GridBagConstraints.WEST
-        }
-        wrapper.add(component, msgConstraints)
-        return wrapper
     }
 
     /**
@@ -1504,54 +1523,81 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
     }
 
     /**
-     * Render a user message as a MessageBubble with "You:" header.
-     * Each bubble gets a left-side anchor dot for timeline navigation.
+     * Render a user message as a modern right-aligned chat bubble,
+     * with an ✕ delete button in the top-right corner.
      */
     private fun renderUserMessage(content: String) {
         showMessages()
-        val bubble = MessageBubble(project, MessageBubble.Role.USER, content)
-        val contentWrapper = wrapWithWidthConstraint(bubble)
 
-        val row = createMessageRow(contentWrapper, bubble)
-        messagesPanel.add(row, fillWidthConstraints)
+        // 计算这条用户消息在 session.messages 中的索引
+        val session = currentSession()
+        val userMsgIndices = session.messages.indices
+            .filter { session.messages[it].role == "user" }
+        val currentUserIdx = userMessages.size
+        val msgIndex = userMsgIndices.getOrNull(currentUserIdx)
+
+        val onDeleteAction = if (msgIndex != null) {
+            {
+                deleteMessagePair(session, msgIndex)
+            }
+        } else null
+
+        val bubble = MessageBubble(
+            project, MessageBubble.Role.USER, content,
+            onDelete = onDeleteAction
+        )
+        // 添加 4px 左侧缩进 + 8px 右侧缩进，让气泡不完全贴边
+        val padded = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(0, 4, 0, 8)
+            add(bubble, BorderLayout.CENTER)
+        }
+
+        messagesPanel.add(padded, fillWidthConstraints)
+        // 消息间距
+        messagesPanel.add(Box.createVerticalStrut(4), fillWidthConstraints)
 
         // Track for nav sidebar (only user messages)
         userMessages.add(MessageEntry(bubble, content))
         revalidateAndScroll()
-        // Schedule sidebar update after layout is final — REMOVED (in-message dots)
     }
 
     /**
-     * Render an assistant message — parse code blocks and render each as a
-     * modular MessageBubble with CodeBlockCards inside.
-     * Each bubble gets a left-side anchor dot for timeline navigation.
+     * Render an assistant message — card style with accent bar + avatar.
      */
     private fun renderAssistantMessage(content: String) {
         showMessages()
         val bubble = MessageBubble(project, MessageBubble.Role.ASSISTANT, content)
-        val contentWrapper = wrapWithWidthConstraint(bubble)
+        // 添加 6px 右侧缩进保持平衡
+        val padded = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(0, 0, 0, 8)
+            add(bubble, BorderLayout.CENTER)
+        }
 
-        val row = createMessageRow(contentWrapper, bubble)
-        messagesPanel.add(row, fillWidthConstraints)
+        messagesPanel.add(padded, fillWidthConstraints)
+        messagesPanel.add(Box.createVerticalStrut(4), fillWidthConstraints)
 
         // Link this response to the most recent user question without a response yet
         val lastUserMsg = userMessages.lastOrNull { it.responsePanel == null }
         lastUserMsg?.responsePanel = bubble
 
         revalidateAndScroll()
-        // Schedule sidebar update after layout settles — REMOVED (in-message dots)
     }
 
     /**
-     * Create a temporary streaming message bubble with anchor dot.
-     * Shows "思考中... ◐◓◑◒" spinning animation until the first token arrives.
-     * Returns (JBTextArea, JBScrollPane) pair. The bubble is stored in [state].
+     * Create a temporary streaming message bubble.
+     * Shows "思考中... ◐" spinning animation until the first token arrives.
      */
     private fun createStreamingArea(bubble: MessageBubble): JBTextArea {
-        val contentWrapper = wrapWithWidthConstraint(bubble)
+        val padded = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(0, 0, 0, 8)
+            add(bubble, BorderLayout.CENTER)
+        }
 
-        val row = createMessageRow(contentWrapper, bubble)
-        messagesPanel.add(row, fillWidthConstraints)
+        messagesPanel.add(padded, fillWidthConstraints)
+        messagesPanel.add(Box.createVerticalStrut(4), fillWidthConstraints)
         revalidateAndScroll()
 
         // ── Start thinking animation ──
@@ -1588,102 +1634,36 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
     //  Anchor dot timeline (left-side blue dots)
     // ════════════════════════════════════════════════════════════════
 
-    companion object {
-        private const val DOT_SIZE = 9        // dot diameter in pixels
-        private const val DOT_PANEL_WIDTH = 20
-        private val DOT_COLOR = JBColor(0x1A73E8, 0x64B5F6)
-        private val DOT_HOVER_COLOR = JBColor(0x1557B0, 0x82C3FD)
-        private val LINE_COLOR = JBColor(0xCCCCCC, 0x555555)
-    }
+    // ════════════════════════════════════════════════════════════════
+    //  (旧版圆点时间线已移除 — 改用现代气泡卡片布局)
+    // ════════════════════════════════════════════════════════════════
 
     /**
-     * Create a horizontal message row: [anchor dot panel | message content].
-     *
-     * The dot anchors form a continuous timeline-like column when rows are stacked.
-     * Clicking a dot scrolls the messages panel to bring this row into view.
+     * 删除一条用户消息及其对应的 AI 回复，然后重新渲染会话。
      */
-    private fun createMessageRow(content: JComponent, scrollTarget: JComponent): JPanel {
-        val dotPanel = object : JPanel(null) {
-            var hovered = false
-
-            override fun getPreferredSize() = Dimension(DOT_PANEL_WIDTH, super.getPreferredSize().height)
-            override fun getMinimumSize() = Dimension(DOT_PANEL_WIDTH, 1)
-            override fun getMaximumSize() = Dimension(DOT_PANEL_WIDTH, Int.MAX_VALUE)
-
-            override fun paintComponent(g: Graphics) {
-                val g2 = g.create() as Graphics2D
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-
-                val cx = width / 2.0
-                val cy = height / 2.0
-
-                // ── Vertical connecting line (full height) ──
-                g2.color = LINE_COLOR
-                g2.stroke = BasicStroke(1f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND,
-                    0f, floatArrayOf(3f, 3f), 0f)
-                g2.drawLine(cx.toInt(), 0, cx.toInt(), height)
-
-                // ── Hover glow ──
-                if (hovered) {
-                    g2.color = Color(26, 115, 232, 20)
-                    g2.fillOval((cx - 10).toInt(), (cy - 10).toInt(), 20, 20)
-                }
-
-                // ── Blue dot ──
-                val radius = DOT_SIZE / 2
-                g2.color = if (hovered) DOT_HOVER_COLOR else DOT_COLOR
-                g2.fillOval((cx - radius).toInt(), (cy - radius).toInt(), DOT_SIZE, DOT_SIZE)
-
-                g2.dispose()
-            }
+    private fun deleteMessagePair(session: ChatSession, userMsgIndex: Int) {
+        val indicesToRemove = mutableListOf(userMsgIndex)
+        // 如果下一条是 AI 回复，一起删除
+        val nextIdx = userMsgIndex + 1
+        if (nextIdx < session.messages.size && session.messages[nextIdx].role == "assistant") {
+            indicesToRemove.add(nextIdx)
         }
-        dotPanel.isOpaque = false
-        dotPanel.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        // 从后往前删，保持索引有效
+        indicesToRemove.sortedDescending().forEach { session.messages.removeAt(it) }
 
-        // ── Hover + click on the dot panel ──
-        dotPanel.addMouseListener(object : MouseAdapter() {
-            override fun mouseEntered(e: MouseEvent) {
-                dotPanel.hovered = true
-                dotPanel.repaint()
-            }
-            override fun mouseExited(e: MouseEvent) {
-                dotPanel.hovered = false
-                dotPanel.repaint()
-            }
-            override fun mouseClicked(e: MouseEvent) {
-                scrollToMessageRow(scrollTarget)
-            }
-        })
-
-        // ── Row: [dot | content | right-margin] ──
-        val row = JPanel(BorderLayout()).apply {
-            isOpaque = false
-            add(dotPanel, BorderLayout.WEST)
-            add(content, BorderLayout.CENTER)
-            add(Box.createRigidArea(Dimension(8, 0)), BorderLayout.EAST)
+        // 重新渲染整个会话
+        messagesPanel.removeAll()
+        userMessages.clear()
+        if (session.messages.isEmpty()) {
+            showWelcome()
+        } else {
+            showMessages()
+            ensureMessagesFiller()
+            addMessageLabel("=== ${session.name} ===")
+            renderMessageRange(session, 0, session.messages.size)
         }
-        return row
-    }
-
-    /**
-     * Scroll the messages viewport so the given component's row is visible.
-     */
-    private fun scrollToMessageRow(target: JComponent) {
-        SwingUtilities.invokeLater {
-            // Walk up from target to find the direct child of messagesPanel (the row)
-            var comp: java.awt.Component = target
-            while (comp.parent != null && comp.parent != messagesPanel) {
-                comp = comp.parent
-            }
-            if (comp.parent != messagesPanel) return@invokeLater
-
-            val r = Rectangle(
-                0, comp.y,
-                comp.width.coerceAtLeast(1),
-                comp.height.coerceAtLeast(1)
-            )
-            messagesScrollPane.viewport.scrollRectToVisible(r)
-        }
+        saveSessions()
+        scrollToBottom()
     }
 
     private fun revalidateAndScroll() {

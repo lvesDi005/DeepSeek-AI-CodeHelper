@@ -3,6 +3,7 @@ package com.deepseek.plugin.agent
 import com.deepseek.plugin.api.DeepSeekApiClient
 import com.deepseek.plugin.settings.DeepSeekSettings
 import com.deepseek.plugin.ui.CodeBlockCard
+import com.deepseek.plugin.ui.MessageTable
 import com.deepseek.plugin.ui.ResponseSegment
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
@@ -161,6 +162,11 @@ abstract class BaseAgentAction : AnAction() {
                     )
                     contentPanel.add(Box.createVerticalStrut(4))
                 }
+                is ResponseSegment.Table -> {
+                    contentPanel.add(Box.createVerticalStrut(4))
+                    contentPanel.add(MessageTable(segment.headers, segment.rows))
+                    contentPanel.add(Box.createVerticalStrut(4))
+                }
             }
         }
 
@@ -201,4 +207,6 @@ abstract class BaseAgentAction : AnAction() {
             preferredSize = Dimension(500, 350)
         }
     }
+
 }
+

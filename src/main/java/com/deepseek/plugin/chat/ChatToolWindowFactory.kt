@@ -43,9 +43,14 @@ class ChatToolWindowFactory : ToolWindowFactory {
             val dialog = ChangelogDialog(
                 previousVersion = previousVersion,
                 currentVersion = currentVersion,
-                changeLogHtml = CHANGELOG_HTML
+                changeLogHtml = CHANGELOG_HTML,
+                changeLogHtmlEn = CHANGELOG_HTML_EN,
+                initialLanguage = settings.changelogLanguage
             )
             dialog.show()
+
+            // Persist language preference after dialog closes
+            settings.changelogLanguage = dialog.selectedLanguage
 
             // Persist the new version so the dialog doesn't show again
             settings.lastSeenVersion = currentVersion
@@ -57,17 +62,37 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * HTML changelog content displayed in the update dialog.
          */
         private val CHANGELOG_HTML = """
+            <h3>v2.3.4</h3>
+            <ul>
+              <li>新增代码变更预览 — Generate/Optimize 生成代码后弹出 side-by-side 对比页面，用户审查后再确认是否保存</li>
+              <li>新增翻译对话框 — 聊天输入栏上传按钮旁添加翻译入口，弹出横向双栏翻译界面，支持 10 种语言互译</li>
+            </ul>
+            <h3>v2.3.3</h3>
+            <ul>
+              <li>深色扁平化 UI 重构 — 所有消息卡片改用大圆角绘制 (arc=18)，暗色背景统一 #24242A</li>
+              <li>统一紫色圆形头像 — 用户 (toolwindow.svg) 与 AI (action.svg) 均为 26×26 紫色圆形，视觉一致</li>
+              <li>用户头像右侧添加 "me" 名称标签，与 AI "DP Helper" 对称</li>
+              <li>卡片内边距均衡 — 统一 EmptyBorder(12,16,16,16)，消除顶部多余空白</li>
+              <li>删除按钮复用系统图标 — 替换 emoji 为 AllIcons.Actions.Close，与清空按钮一致</li>
+              <li>代码面板完整渲染 — 移除 JBScrollPane，全部代码行无截断无滚动，内边距增至 14×18</li>
+              <li>新增可视化表格组件 — MessageTable 一体化 GridBagLayout 网格，支持 ✓/✕ 彩色标识、自动换行</li>
+              <li>Markdown 管道表格自动识别 — parseResponse() 自动检测 |...| 表格语法，渲染为 MessageTable</li>
+            </ul>
+            <h3>v2.3.2</h3>
+            <ul>
+              <li>新增功能：Upload to Chat（控制台选中内容上传到聊天面板）</li>
+            </ul>            
             <h3>v2.3.1</h3>
             <ul>
               <li>架构优化</li>
             </ul>
             <h3>v2.3.0</h3>
             <ul>
-              <li>🧠 注解感知补全 — 自动分析 @Data/@Service/@RestController/@Entity 等注解，推荐合成方法（Lombok getter/setter/builder）和代码模式（Spring REST 骨架、JPA 映射、构造器注入）</li>
-              <li>💬 注释感知补全 — 在注释中写自然语言即可生成代码，支持中文：<code>// 根据id删除订单</code> → deleteById、<code>// 查询所有</code> → findAll、<code>// 获取name字段</code> → getName 等 30+ 种模式</li>
-              <li>🔖 @注解名自动补全 — 在类/方法/字段/参数位置输入 @ 时，自动推荐当前上下文适用的注解列表</li>
-              <li>⚙️ 新增独立设置开关 — 可分别开启/关闭"注解感知补全"和"注释感知补全"</li>
-              <li>🛡️ 静态分析前置过滤 — 基于 IntelliJ PSI/AST 的静态补全作为 AI 补全的前置过滤层，减少不必要的 API 调用</li>
+              <li>注解感知补全 — 自动分析 @Data/@Service/@RestController/@Entity 等注解，推荐合成方法（Lombok getter/setter/builder）和代码模式（Spring REST 骨架、JPA 映射、构造器注入）</li>
+              <li>注释感知补全 — 在注释中写自然语言即可生成代码，支持中文：<code>// 根据id删除订单</code> → deleteById、<code>// 查询所有</code> → findAll、<code>// 获取name字段</code> → getName 等 30+ 种模式</li>
+              <li>@注解名自动补全 — 在类/方法/字段/参数位置输入 @ 时，自动推荐当前上下文适用的注解列表</li>
+              <li>新增独立设置开关 — 可分别开启/关闭"注解感知补全"和"注释感知补全"</li>
+              <li>静态分析前置过滤 — 基于 IntelliJ PSI/AST 的静态补全作为 AI 补全的前置过滤层，减少不必要的 API 调用</li>
             </ul>
             <h3>v2.2.5</h3>
             <ul>
@@ -75,11 +100,11 @@ class ChatToolWindowFactory : ToolWindowFactory {
             </ul>
             <h3>v2.2.4</h3>
             <ul>
-              <li>📐 消息面板响应式布局 — 消息气泡自适应宽度，窗口缩放时动态重排，消除气泡上下多余空白</li>
-              <li>🔄 连续分栏布局 — 拖拽消息与输入区域之间的分隔条实时更新内容</li>
-              <li>📏 输入区域拖拽手柄现在直接调整分隔条位置，操作更可控</li>
-              <li>📦 代码块最大高度从 300px 提升至 1500px，适配长代码片段</li>
-              <li>✂️ 收紧消息气泡内边距，减少用户/助手消息周围的垂直空白</li>
+              <li>消息面板响应式布局 — 消息气泡自适应宽度，窗口缩放时动态重排，消除气泡上下多余空白</li>
+              <li>连续分栏布局 — 拖拽消息与输入区域之间的分隔条实时更新内容</li>
+              <li>输入区域拖拽手柄现在直接调整分隔条位置，操作更可控</li>
+              <li>代码块最大高度从 300px 提升至 1500px，适配长代码片段</li>
+              <li>收紧消息气泡内边距，减少用户/助手消息周围的垂直空白</li>
             </ul>
             <h3>v2.2.3</h3>
             <ul>
@@ -154,6 +179,130 @@ class ChatToolWindowFactory : ToolWindowFactory {
               <li>Agent 模式：解释代码、生成代码、审查代码、优化代码</li>
               <li>右键菜单集成</li>
               <li>API Key 配置页面</li>
+            </ul>
+        """.trimIndent()
+
+        /**
+         * English version of the changelog HTML.
+         */
+        private val CHANGELOG_HTML_EN = """
+            <h3>v2.3.4</h3>
+            <ul>
+              <li>New code diff preview — Generate/Optimize actions now show a side-by-side diff before applying, user reviews and confirms changes</li>
+              <li>New translate dialog — Added translate button next to file upload in chat input bar, opens a two-column translation UI supporting 10 languages</li>
+            </ul>
+            <h3>v2.3.3</h3>
+            <ul>
+              <li>Dark flat UI redesign — All message cards use large rounded corners (arc=18), unified dark background #24242A</li>
+              <li>Unified purple circular avatars — User (toolwindow.svg) and AI (action.svg) both 26×26 purple circles for consistent look</li>
+              <li>Added "me" label next to user avatar, symmetric with AI's "DP Helper"</li>
+              <li>Balanced card padding — Unified EmptyBorder(12,16,16,16), eliminated excess top whitespace</li>
+              <li>Delete button uses system icon — Replaced emoji with AllIcons.Actions.Close, matching the clear button</li>
+              <li>Code panel full rendering — Removed JBScrollPane, all code lines fully visible without scrolling, padding increased to 14×18</li>
+              <li>New visual table component — MessageTable with unified GridBagLayout grid, colored ✓/✕ markers, auto-wrapping text</li>
+              <li>Auto-detection of Markdown pipe tables — parseResponse() automatically recognizes |...| table syntax and renders as MessageTable</li>
+            </ul>
+            <h3>v2.3.2</h3>
+            <ul>
+              <li>New feature: Upload to Chat (upload selected content from the console to the chat panel)</li>
+            </ul>
+            <h3>v2.3.1</h3>
+            <ul>
+              <li>Architecture optimization</li>
+            </ul>
+            <h3>v2.3.0</h3>
+            <ul>
+              <li>Annotation-aware completion — Automatically analyzes @Data/@Service/@RestController/@Entity annotations and recommends synthetic methods (Lombok getter/setter/builder) and code patterns (Spring REST skeleton, JPA mapping, constructor injection)</li>
+              <li>Comment-aware completion — Write natural language in comments to generate code, supporting Chinese: <code>// 根据id删除订单</code> → deleteById, <code>// 查询所有</code> → findAll, <code>// 获取name字段</code> → getName and 30+ other patterns</li>
+              <li>@-annotation auto-completion — When typing @ on a class/method/field/parameter, automatically recommends applicable annotations for the current context</li>
+              <li>New independent settings toggles — Enable/disable "Annotation-aware completion" and "Comment-aware completion" separately</li>
+              <li>Static analysis pre-filter — IntelliJ PSI/AST-based static completion as a pre-filter layer for AI completion, reducing unnecessary API calls</li>
+            </ul>
+            <h3>v2.2.5</h3>
+            <ul>
+              <li>Send and newline changed to Enter / Shift+Enter</li>
+            </ul>
+            <h3>v2.2.4</h3>
+            <ul>
+              <li>Responsive message panel layout — Message bubbles auto-fit width, dynamically reflow on window resize, eliminating excess vertical space around bubbles</li>
+              <li>Continuous split-pane layout — Dragging the divider between messages and input area updates content in real-time</li>
+              <li>Input area drag handle now directly adjusts divider position for more controllable operation</li>
+              <li>Max code block height increased from 300px to 1500px for long code snippets</li>
+              <li>Tighter padding inside message bubbles, reducing vertical whitespace around user/assistant messages</li>
+            </ul>
+            <h3>v2.2.3</h3>
+            <ul>
+              <li>Fixed: button click event handling</li>
+            </ul>
+            <h3>v2.2.2</h3>
+            <ul>
+              <li>Fixed: JTextComponent.modelToView(int) → modelToView2D(int)</li>
+            </ul>
+            <h3>v2.2.1</h3>
+            <ul>
+              <li>VSCode industrial dark theme input panel — 4-layer vertical layout: notification bar, toolbar, scalable input area, status bar</li>
+              <li>Auto-expanding input area — up to 12 lines, scrolls beyond, supports drag-to-resize</li>
+              <li>Compact selected-code badge — shows only file name and line range, no code snippet preview</li>
+              <li>Attachment upload and UI operations use IntelliJ native icons</li>
+            </ul>
+            <h3>v2.2.0</h3>
+            <ul>
+              <li>Multi-model provider support — settings panel can switch between DeepSeek and Agnes 2.0 Flash</li>
+              <li>Agnes 2.0 Flash integration — configurable API Key, model name, and Base URL</li>
+              <li>Settings UI update — new API Provider selector and Agnes-specific config area</li>
+            </ul>
+            <h3>v2.1.0</h3>
+            <ul>
+              <li>Version update dialog — automatically shows release notes after plugin update</li>
+              <li>Multiple bug fixes and stability improvements</li>
+              <li>Backward compatible with IDEA 24.1.x ~ 26.3.x</li>
+            </ul>
+            <h3>v2.0.2</h3>
+            <ul>
+              <li>New Agent mode — switch between "💬 Q&A" and "🤖 Agent" via dropdown at the bottom of the chat panel</li>
+              <li>In Agent mode, AI automatically scans the project directory, locates target files, and performs create/modify/delete operations based on user requests</li>
+              <li>Recursively collects project source files (skipping .git/build/target/node_modules etc.) as AI context</li>
+              <li>AI outputs structured <code>&lt;file path="..."&gt;</code> tags to specify file operations</li>
+              <li>Path traversal protection — normalized path validation ensures all write operations stay within the project root</li>
+              <li>User confirmation dialog — shows complete file operation list before execution</li>
+              <li>Multi-turn conversation support in Agent mode — full message history preserved across consecutive requests</li>
+              <li>Send button text changes to "执行 (Enter)" when Agent is active</li>
+            </ul>
+            <h3>v2.0.1</h3>
+            <ul>
+              <li>Major UI refactor — ChatPanel split into modular components (MessageBubble, ChatInputBar, ChatToolbar, SessionBar)</li>
+              <li>AI replies now support Markdown rendering (bold, italic, inline code, links, lists)</li>
+              <li>Message beautification: rounded corners, shadows, circular avatar icons (user/assistant), timestamp display</li>
+              <li>Usage and history dialogs extracted into standalone classes</li>
+              <li>Optimized packaging — stripped Android/security classes from okhttp JAR to pass Plugin Verifier</li>
+              <li>Fixed IntelliJ 2025.1/2025.2 compatibility issues</li>
+            </ul>
+            <h3>v1.0.5</h3>
+            <ul>
+              <li>New Question Navigator sidebar — shows 6 nodes at a time, dynamically updates on scroll, fixed issue where clicking a node didn't scroll to the corresponding reply</li>
+              <li>Message bubbles now auto-fit to width (75% of container), more balanced and readable layout</li>
+            </ul>
+            <h3>v1.0.4</h3>
+            <ul>
+              <li>File upload button in chat input area — click to select local file, displayed as upload preview card above the input area; file content sent as context with the message</li>
+              <li>Selected code preview card — shows file, line range, and first 3 lines of selected code, supports one-click close</li>
+              <li>CodeBlockCard extracted as reusable UI component with copy and insert buttons</li>
+              <li>Clear button moved to session bar for easier session management</li>
+            </ul>
+            <h3>v1.0.3</h3>
+            <ul>
+              <li>Fixed AI reply consuming double tokens issue</li>
+              <li>Fixed right-click context menu icon size issue</li>
+              <li>Fixed Agent result dialog size issue</li>
+              <li>Improved code completion: single-suggestion mode, optimized FIM prompt</li>
+            </ul>
+            <h3>v1.0.0</h3>
+            <ul>
+              <li>AI-powered inline code completion</li>
+              <li>Streaming chat Q&A panel</li>
+              <li>Agent mode: explain code, generate code, review code, optimize code</li>
+              <li>Right-click context menu integration</li>
+              <li>API Key configuration page</li>
             </ul>
         """.trimIndent()
     }

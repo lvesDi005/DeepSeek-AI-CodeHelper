@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepSeek Chat - 暗色界面</title>
+<style>
+  /* ===== 全局重置 ===== */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a1e;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    padding: 40px;
+  }
+
+  /* ===== 截图容器 ===== */
+  .screenshot {
+    width: 820px;
+    background: #1e1e22;
+    border-radius: 12px;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.06),
+      0 8px 32px rgba(0,0,0,0.6),
+      0 2px 8px rgba(0,0,0,0.5);
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* ===== 窗口标题栏 ===== */
+  .window-bar {
+    display: flex;
+    align-items: center;
+    padding: 12px 20px;
+    background: #18181c;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .window-dots {
+    display: flex;
+    gap: 8px;
+    margin-right: 16px;
+  }
+  .window-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+  }
+  .dot-red    { background: #ff5f57; }
+  .dot-yellow { background: #fdbc40; }
+  .dot-green  { background: #33c748; }
+  .window-title {
+    color: rgba(255,255,255,0.4);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+  }
+
+  /* ===== 聊天区域 ===== */
+  .chat-area {
+    padding: 24px 28px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* ===== 消息卡片通用 ===== */
+  .message {
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.04),
+      inset 0 -1px 0 rgba(0,0,0,0.15);
+  }
+
+  /* ===== 用户消息卡片 ===== */
+  .message-user {
+    background: #25252b;
+    border: 1px solid rgba(255,255,255,0.06);
+    align-self: flex-end;
+  }
+
+  /* ===== 用户头部：头像 + 时间操作区 ===== */
+  .user-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px 8px;
+  }
+  .user-avatar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .user-avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: #e67e22;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .user-avatar span {
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: lowercase;
+  }
+  .user-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .user-time {
+    color: rgba(255,255,255,0.3);
+    font-size: 12px;
+    font-weight: 400;
+  }
+  .user-delete {
+    color: rgba(255,255,255,0.2);
+    font-size: 15px;
+    cursor: default;
+    transition: color 0.15s;
+    line-height: 1;
+  }
+  .user-delete:hover {
+    color: rgba(255,255,255,0.5);
+  }
+
+  /* ===== 代码文件标签行 ===== */
+  .file-tab-row {
+    display: flex;
+    align-items: center;
+    padding: 6px 16px 8px 58px;
+    gap: 6px;
+  }
+  .file-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 5px;
+    padding: 4px 10px 4px 8px;
+    font-size: 12px;
+    color: rgba(255,255,255,0.5);
+  }
+  .coffee-icon {
+    font-size: 13px;
+    line-height: 1;
+  }
+
+  /* ===== 用户消息正文 ===== */
+  .user-body {
+    padding: 4px 16px 18px 58px;
+  }
+  .user-body .divider {
+    height: 1px;
+    background: rgba(255,255,255,0.06);
+    margin-bottom: 12px;
+  }
+  .user-body .text {
+    color: rgba(255,255,255,0.88);
+    font-size: 14px;
+    line-height: 1.7;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+  }
+
+  /* ===== AI 回复卡片 ===== */
+  .message-ai {
+    background: #1f1f25;
+    border: 1px solid rgba(255,255,255,0.05);
+    align-self: flex-start;
+  }
+
+  /* ===== AI 头部 ===== */
+  .ai-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px 6px;
+  }
+  .ai-icon {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: rgba(255,255,255,0.02);
+  }
+  .ai-icon-inner {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.35);
+    background: transparent;
+  }
+  .ai-name {
+    color: rgba(255,255,255,0.45);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+  }
+
+  /* ===== AI 回复正文 ===== */
+  .ai-body {
+    padding: 6px 16px 18px 54px;
+  }
+  .ai-body .text {
+    color: rgba(255,255,255,0.85);
+    font-size: 14px;
+    line-height: 1.7;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+  }
+  .ai-body .code-block {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 6px;
+    margin: 10px 0 6px;
+    overflow: hidden;
+  }
+  .code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 12px;
+    background: rgba(0,0,0,0.15);
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .code-lang {
+    color: rgba(255,255,255,0.3);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .code-copy {
+    color: rgba(255,255,255,0.2);
+    font-size: 12px;
+    cursor: default;
+  }
+  .code-body {
+    padding: 12px 14px;
+    font-family: "JetBrains Mono", "SF Mono", "Fira Code", "Consolas", monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.7);
+  }
+
+  /* ===== 底部提示文字 ===== */
+  .footer-hint {
+    text-align: center;
+    padding: 6px 0 2px;
+    color: rgba(255,255,255,0.15);
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+
+<div class="screenshot">
+
+  <!-- 窗口标题栏 -->
+  <div class="window-bar">
+    <div class="window-dots">
+      <div class="window-dot dot-red"></div>
+      <div class="window-dot dot-yellow"></div>
+      <div class="window-dot dot-green"></div>
+    </div>
+    <div class="window-title">DeepSeek Chat · 暗色主题</div>
+  </div>
+
+  <!-- 聊天区域 -->
+  <div class="chat-area">
+
+    <!-- ===== 用户消息 ===== -->
+    <div class="message message-user">
+      <!-- 头部：头像 + 时间 + 删除 -->
+      <div class="user-header">
+        <div class="user-avatar-row">
+          <div class="user-avatar"><span>n</span></div>
+          <div class="user-time">14:32</div>
+        </div>
+        <div class="user-meta">
+          <div class="user-delete" title="删除此消息">&#x1F5D1;</div>
+        </div>
+      </div>
+
+      <!-- 代码文件标签 -->
+      <div class="file-tab-row">
+        <div class="file-tab">
+          <span class="coffee-icon">&#x2615;</span>
+          <span>index.js</span>
+        </div>
+        <div class="file-tab">
+          <span class="coffee-icon">&#x2615;</span>
+          <span>app.css</span>
+        </div>
+      </div>
+
+      <!-- 正文 -->
+      <div class="user-body">
+        <div class="divider"></div>
+        <div class="text">
+          这个布局在移动端会溢出，建议用 flex-wrap 或者 grid 做响应式改版。<br>
+          另外侧边栏在 768px 以下应该默认收起。
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== AI 回复 ===== -->
+    <div class="message message-ai">
+      <!-- 头部 -->
+      <div class="ai-header">
+        <div class="ai-icon">
+          <div class="ai-icon-inner"></div>
+        </div>
+        <span class="ai-name">DP Helper</span>
+      </div>
+
+      <!-- 正文 -->
+      <div class="ai-body">
+        <div class="text">
+          好的，我来帮你优化这个布局。以下是建议方案：
+        </div>
+
+        <div class="code-block">
+          <div class="code-header">
+            <span class="code-lang">CSS</span>
+            <span class="code-copy">&#x2398;</span>
+          </div>
+          <div class="code-body">
+            .container {<br>
+            &nbsp;&nbsp;display: flex;<br>
+            &nbsp;&nbsp;flex-wrap: wrap;<br>
+            &nbsp;&nbsp;gap: 16px;<br>
+            }<br><br>
+            @media (max-width: 768px) {<br>
+            &nbsp;&nbsp;.sidebar { display: none; }<br>
+            }
+          </div>
+        </div>
+
+        <div class="text" style="margin-top: 10px;">
+          同时在 <span style="color:rgba(255,255,255,0.4);">App.jsx</span> 中添加一个 toggle 状态来控制侧边栏的显隐。<br>
+          需要我把完整代码发出来吗？
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-hint">↓ 继续滚动查看更早消息</div>
+
+  </div>
+</div>
+
+</body>
+</html>
