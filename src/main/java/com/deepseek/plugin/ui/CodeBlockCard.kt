@@ -1,12 +1,6 @@
 package com.deepseek.plugin.ui
 
 import com.intellij.icons.AllIcons
-import com.intellij.openapi.actionSystem.ActionPlaces
-import com.intellij.openapi.actionSystem.ActionToolbar
-import com.intellij.openapi.actionSystem.AnAction
-import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.Presentation
-import com.intellij.openapi.actionSystem.impl.ActionButton
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
@@ -19,6 +13,7 @@ import java.awt.Font
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import javax.swing.Box
+import javax.swing.JEditorPane
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.Timer
@@ -91,30 +86,134 @@ class CodeBlockCard(
     }
 
     // ================================================================
-    // Code area
+    // Code area  — highlight comments to distinguish them from code
     // ================================================================
 
     private fun createCodeArea(): JPanel {
-        val codeArea = JBTextArea(code).apply {
+        val bg = JBColor(0xF5F5F5, 0x1A1A1A)
+        val defaultFg = JBColor(0x333333, 0xD4D4D4)
+        val commentFg = JBColor(0x999999, 0x6A9955)
+        val html = buildHighlightedHtml(code, defaultFg, commentFg)
+
+        val editorPane = JEditorPane("text/html", html).apply {
             isEditable = false
             isFocusable = false
-            lineWrap = false
-            font = JBUI.Fonts.create("Monospaced", 13)
-            background = JBColor(0xF5F5F5, 0x1A1A1A)
-            foreground = JBColor(0x333333, 0xD4D4D4)
-            caretColor = foreground
-            margin = JBUI.insets(14, 18)
-            border = JBUI.Borders.empty()
-            selectedTextColor = JBColor.WHITE
-            selectionColor = JBColor(0x3399FF, 0x2D5B9E)
+            putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, true)
+            font = JBUI.Fonts.create("Monospaced", 12)
+            background = bg
+            margin = JBUI.insets(8, 14)
         }
 
-        // 用普通面板包裹代码区域，无滚动条，完整展示全部代码行
         return JPanel(BorderLayout()).apply {
             isOpaque = true
-            background = JBColor(0xF5F5F5, 0x1A1A1A)
-            add(codeArea, BorderLayout.CENTER)
+            background = bg
+            add(editorPane, BorderLayout.CENTER)
         }
+    }
+
+    // ── Comment-highlighted HTML builder ──
+
+    private fun buildHighlightedHtml(code: String, defaultFg: JBColor, commentFg: JBColor): String {
+        val defaultRgb = colorHex(defaultFg)
+        val commentRgb = colorHex(commentFg)
+        val lines = code.split("\n")
+        val sb = StringBuilder()
+        var inBlock = false
+
+        for ((i, line) in lines.withIndex()) {
+            if (i > 0) sb.append("<br>\n")
+
+            val escaped = escapeHtml(line)
+
+            if (inBlock) {
+                // inside a /* */ block comment — find closing */
+                val endIdx = escaped.indexOf("*/")
+                if (endIdx >= 0) {
+                    sb.append("<span style=\"color:$commentRgb\">")
+                    sb.append(escaped, 0, endIdx + 2)
+                    sb.append("</span>")
+                    sb.append(escaped, endIdx + 2, escaped.length)
+                    inBlock = false
+                } else {
+                    sb.append("<span style=\"color:$commentRgb\">").append(escaped).append("</span>")
+                }
+                continue
+            }
+
+            // Find the earliest comment start on this line
+            // 1) #  — at line start or preceded only by whitespace
+            val hashIdx = findHashComment(escaped)
+            // 2) // — line comment
+            val slashIdx = escaped.indexOf("//")
+            // 3) /* — block comment start
+            val blockIdx = escaped.indexOf("/*")
+
+            val candidates = listOfNotNull(
+                hashIdx?.let { CommentSite(it, "hash") },
+                if (slashIdx >= 0) CommentSite(slashIdx, "slash") else null,
+                if (blockIdx >= 0) CommentSite(blockIdx, "block") else null
+            )
+            val earliest = candidates.minByOrNull { it.index }
+            if (earliest == null) {
+                sb.append(escaped)
+                continue
+            }
+
+            // Code before comment
+            sb.append(escaped, 0, earliest.index)
+
+            when (earliest.type) {
+                "slash" -> {
+                    sb.append("<span style=\"color:$commentRgb\">")
+                    sb.append(escaped, earliest.index, escaped.length)
+                    sb.append("</span>")
+                }
+                "hash" -> {
+                    sb.append("<span style=\"color:$commentRgb\">")
+                    sb.append(escaped, earliest.index, escaped.length)
+                    sb.append("</span>")
+                }
+                "block" -> {
+                    val rest = escaped.substring(earliest.index)
+                    val endIdx = rest.indexOf("*/")
+                    if (endIdx >= 0) {
+                        sb.append("<span style=\"color:$commentRgb\">")
+                        sb.append(rest, 0, endIdx + 2)
+                        sb.append("</span>")
+                        sb.append(rest, endIdx + 2, rest.length)
+                    } else {
+                        sb.append("<span style=\"color:$commentRgb\">")
+                        sb.append(rest)
+                        sb.append("</span>")
+                        inBlock = true
+                    }
+                }
+            }
+        }
+        return """<html><body style="white-space:pre-wrap;font-family:'Monospaced',monospace;font-size:12px;line-height:1.35;color:$defaultRgb;margin:0;padding:0">$sb</body></html>"""
+    }
+
+    private fun findHashComment(escaped: String): Int? {
+        // # at start of line
+        if (escaped.startsWith("#")) return 0
+        // # preceded only by whitespace
+        val trimmed = escaped.trimStart()
+        return if (trimmed.startsWith("#")) escaped.length - trimmed.length
+        else null
+    }
+
+    private data class CommentSite(val index: Int, val type: String)
+
+    private fun escapeHtml(s: String): String {
+        return s
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+    }
+
+    private fun colorHex(c: JBColor): String {
+        val rgb = c.rgb and 0xFFFFFF
+        return "#%06X".format(rgb)
     }
 
     // ================================================================
@@ -122,17 +221,11 @@ class CodeBlockCard(
     // ================================================================
 
     private fun createActionButton(icon: javax.swing.Icon, tooltip: String, onClick: () -> Unit): JPanel {
-        val presentation = Presentation().apply {
-            this.icon = icon
-            this.description = tooltip
-        }
-        val action = object : AnAction() {
-            override fun actionPerformed(e: AnActionEvent) {
-                onClick()
-            }
-        }
-        val button = ActionButton(action, presentation, ActionPlaces.TOOLBAR, ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE)
-        return button.withTooltip(tooltip)
+        val btn = createToolbarButton(icon, tooltip, onClick = onClick)
+        val wrapper = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0))
+        wrapper.isOpaque = false
+        wrapper.add(btn)
+        return wrapper
     }
 
     private fun copyToClipboard(text: String) {

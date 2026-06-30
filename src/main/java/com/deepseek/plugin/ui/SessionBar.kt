@@ -1,12 +1,6 @@
 package com.deepseek.plugin.ui
 
 import com.intellij.icons.AllIcons
-import com.intellij.openapi.actionSystem.ActionPlaces
-import com.intellij.openapi.actionSystem.ActionToolbar
-import com.intellij.openapi.actionSystem.AnAction
-import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.Presentation
-import com.intellij.openapi.actionSystem.impl.ActionButton
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.FlowLayout
@@ -42,13 +36,13 @@ class SessionBar(
             isOpaque = false
             add(sessionComboBox)
             add(Box.createHorizontalStrut(4))
-            add(createActionButton(
+            add(createToolbarButton(
                 icon = AllIcons.General.Add,
                 tooltip = "新建会话",
                 onClick = onNewSession
             ))
             add(Box.createHorizontalStrut(2))
-            add(createActionButton(
+            add(createToolbarButton(
                 icon = AllIcons.Actions.GC,
                 tooltip = "清除所有会话",
                 onClick = onClearAll
@@ -57,25 +51,10 @@ class SessionBar(
         add(leftPanel, BorderLayout.WEST)
 
         // Right: clear current session
-        val clearBtn = createActionButton(
+        add(createToolbarButton(
             icon = AllIcons.Actions.Close,
             tooltip = "清除当前会话",
             onClick = onClearCurrent
-        )
-        add(clearBtn, BorderLayout.EAST)
-    }
-
-    private fun createActionButton(icon: javax.swing.Icon, tooltip: String, onClick: () -> Unit): JPanel {
-        val presentation = Presentation().apply {
-            this.icon = icon
-            this.description = tooltip
-        }
-        val action = object : AnAction() {
-            override fun actionPerformed(e: AnActionEvent) {
-                onClick()
-            }
-        }
-        val button = ActionButton(action, presentation, ActionPlaces.TOOLBAR, ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE)
-        return button.withTooltip(tooltip)
+        ), BorderLayout.EAST)
     }
 }

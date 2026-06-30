@@ -102,6 +102,11 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         SwingUtilities.invokeLater { doSaveSessions() }
     }.apply { isRepeats = false }
 
+    // ── 思考中动画 ──
+    private val spinnerChars = listOf("◐", "◓", "◑", "◒")
+    private var thinkingTimer: Timer? = null
+    private var spinnerIndex = 0
+
     // ── Selected code preview state ──
     private data class SelectedContext(
         val fileName: String,
@@ -140,6 +145,8 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
     /** Vertical panel that holds all rendered messages. */
     private val messagesPanel = JPanel().apply {
         layout = GridBagLayout()
+        // 底部留 28px 空间，避免滚动到底时最后一条消息被截断
+        border = JBUI.Borders.empty(0, 0, 28, 0)
     }
 
     /** Transparent filler that expands to fill empty vertical space below messages. */
@@ -840,13 +847,24 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         // 先声明回调（引用 streamBubble 而非 eventSource），再启动流式请求
         val onTokenBlock: (String) -> Unit = { token ->
             ApplicationManager.getApplication().invokeLater {
+                // 首个 token 到达时停止思考动画，清除占位文字
+                if (thinkingTimer?.isRunning == true) {
+                    thinkingTimer?.stop()
+                    thinkingTimer = null
+                    streamTextArea.text = ""
+                }
                 streamTextArea.append(token)
+                streamTextArea.revalidate()
+                // 强制立即布局（revalidate 仅标记脏，不会立即执行布局），
+                // 确保 scrollToBottom 时气泡已有正确的最终尺寸
+                messagesPanel.validate()
                 scrollToBottom()
             }
         }
 
         val onCompleteBlock: (String, Usage?) -> Unit = { fullResponse, usage ->
             ApplicationManager.getApplication().invokeLater {
+                stopThinkingAnimation()
                 val oldState = chatState.getAndSet(ChatState.Idle)
                 if (oldState is ChatState.Streaming) {
                     oldState.eventSource.cancel()
@@ -872,6 +890,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
 
         val onErrorBlock: (Throwable) -> Unit = { error ->
             ApplicationManager.getApplication().invokeLater {
+                stopThinkingAnimation()
                 val oldState = chatState.getAndSet(ChatState.Idle)
                 if (oldState is ChatState.Streaming) {
                     oldState.eventSource.cancel()
@@ -1053,6 +1072,8 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         val onTokenBlock: (String) -> Unit = { token ->
             ApplicationManager.getApplication().invokeLater {
                 streamTextArea.append(token)
+                streamTextArea.revalidate()
+                messagesPanel.validate()
                 scrollToBottom()
             }
         }
@@ -1460,7 +1481,12 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         return results.firstOrNull()
     }
 
+    private fun stopThinkingAnimation() {
+        thinkingTimer?.stop()
+        thinkingTimer = null
+    }
     private fun stopStreaming() {
+        stopThinkingAnimation()
         val oldState = chatState.getAndSet(ChatState.Idle)
         if (oldState is ChatState.Streaming) {
             oldState.eventSource.cancel()
@@ -1484,6 +1510,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
 
     override fun dispose() {
         currentInstance = null
+        stopThinkingAnimation()
         // 关闭时同步保存（跳过 debounce，确保数据落盘）
         saveTimer.stop()
         doSaveSessions()
@@ -1495,6 +1522,16 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
 
     private fun scrollToBottom() {
         SwingUtilities.invokeLater {
+            // 优先让最后一条可见的消息呈现到视野中——比直接设 maximum 更可靠
+            for (i in messagesPanel.componentCount - 1 downTo 0) {
+                val c = messagesPanel.getComponent(i)
+                val rect = c.bounds
+                if (rect != null && rect.width > 0 && rect.height > 0) {
+                    messagesPanel.scrollRectToVisible(rect)
+                    return@invokeLater
+                }
+            }
+            // 兜底：直接设置滚动条
             messagesScrollPane.verticalScrollBar.value =
                 messagesScrollPane.verticalScrollBar.maximum
         }
@@ -1546,14 +1583,8 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
             project, MessageBubble.Role.USER, content,
             onDelete = onDeleteAction
         )
-        // 添加 4px 左侧缩进 + 8px 右侧缩进，让气泡不完全贴边
-        val padded = JPanel(BorderLayout()).apply {
-            isOpaque = false
-            border = JBUI.Borders.empty(0, 4, 0, 8)
-            add(bubble, BorderLayout.CENTER)
-        }
-
-        messagesPanel.add(padded, fillWidthConstraints)
+        // 气泡直接加入 messagesPanel（MessageBubble 内部自绘对齐和圆角背景）
+        messagesPanel.add(bubble, fillWidthConstraints)
         // 消息间距
         messagesPanel.add(Box.createVerticalStrut(4), fillWidthConstraints)
 
@@ -1568,15 +1599,9 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
     private fun renderAssistantMessage(content: String) {
         showMessages()
         val bubble = MessageBubble(project, MessageBubble.Role.ASSISTANT, content)
-        // 添加 6px 右侧缩进保持平衡
-        val padded = JPanel(BorderLayout()).apply {
-            isOpaque = false
-            border = JBUI.Borders.empty(0, 0, 0, 8)
-            add(bubble, BorderLayout.CENTER)
-        }
-
-        messagesPanel.add(padded, fillWidthConstraints)
-        messagesPanel.add(Box.createVerticalStrut(4), fillWidthConstraints)
+        // 气泡直接加入 messagesPanel
+        messagesPanel.add(bubble, fillWidthConstraints)
+        messagesPanel.add(Box.createVerticalStrut(12), fillWidthConstraints)
 
         // Link this response to the most recent user question without a response yet
         val lastUserMsg = userMessages.lastOrNull { it.responsePanel == null }
@@ -1590,44 +1615,28 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
      * Shows "思考中... ◐" spinning animation until the first token arrives.
      */
     private fun createStreamingArea(bubble: MessageBubble): JBTextArea {
-        val padded = JPanel(BorderLayout()).apply {
-            isOpaque = false
-            border = JBUI.Borders.empty(0, 0, 0, 8)
-            add(bubble, BorderLayout.CENTER)
-        }
-
-        messagesPanel.add(padded, fillWidthConstraints)
-        messagesPanel.add(Box.createVerticalStrut(4), fillWidthConstraints)
+        // 气泡直接加入 messagesPanel
+        messagesPanel.add(bubble, fillWidthConstraints)
+        messagesPanel.add(Box.createVerticalStrut(12), fillWidthConstraints)
         revalidateAndScroll()
 
         // ── Start thinking animation ──
         val textArea = bubble.streamTextArea!!
-        textArea.text = "... 思考中 ◐"
+        spinnerIndex = 0
+        thinkingTimer = Timer(300) {
+            spinnerIndex = (spinnerIndex + 1) % spinnerChars.size
+            textArea.text = "... 思考中 ${spinnerChars[spinnerIndex]}"
+        }.apply { start() }
         return textArea
     }
 
     /** Remove the streaming bubble and stop the thinking animation. */
     private fun removeStreamingArea(state: ChatState.Streaming) {
         val bubble = state.bubble
-        for (i in messagesPanel.componentCount - 1 downTo 0) {
-            val c = messagesPanel.getComponent(i)
-            // c is now the row; the bubble is nested inside it
-            if (c is JPanel && (c === bubble || findComponent(c, bubble))) {
-                messagesPanel.remove(c)
-                messagesPanel.revalidate()
-                messagesPanel.repaint()
-                return
-            }
-        }
-    }
-
-    /** Recursively check if a component tree contains the given target. */
-    private fun findComponent(parent: java.awt.Container, target: java.awt.Component): Boolean {
-        for (c in parent.components) {
-            if (c === target) return true
-            if (c is java.awt.Container && findComponent(c, target)) return true
-        }
-        return false
+        // 气泡目前已直接位于 messagesPanel 中（无 padded 包装层）
+        messagesPanel.remove(bubble)
+        messagesPanel.revalidate()
+        messagesPanel.repaint()
     }
 
     // ════════════════════════════════════════════════════════════════

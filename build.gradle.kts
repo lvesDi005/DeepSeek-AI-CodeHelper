@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.deepseek.plugin"
-version = "2.3.4"
+version = "2.4.1"
 
 repositories {
     mavenCentral()
@@ -16,8 +16,9 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        create("IC", "2024.3")
+        create("IU", "2024.3")
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
+        // 编译期提供 Java PSI 类；运行时通过 plugin.xml 的 optional 依赖控制
         bundledPlugin("com.intellij.java")
     }
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -29,12 +30,14 @@ intellijPlatform {
     pluginConfiguration {
         name = "DeepSeek AI CodeHelper"
         description = """
-            <h2>DeepSeek AI CodeHelper - IntelliJ IDEA Plugin</h2>
+            <h2>DeepSeek AI CodeHelper - IntelliJ Plugin</h2>
             <ul>
               <li><b>Code Completion</b> - AI-powered inline suggestions + static analysis (annotation-aware + comment-aware)</li>
               <li><b>Chat Panel</b> - Sidebar chat window with streaming replies and file attachments</li>
               <li><b>Agent Actions</b> - Right-click to Ask DeepSeek / Explain Code / Generate / Review / Optimize</li>
             </ul>
+            <p>Compatible with <b>IntelliJ IDEA</b>, <b>PyCharm</b>, <b>DataGrip</b> and other IntelliJ-based IDEs.
+            Java-specific features (annotation-aware completion, static analysis) require the Java plugin.</p>
             <br>
             <p>Configure API Key in <b>Settings -> Tools -> DeepSeek AI</b>.</p>
         """.trimIndent()
@@ -44,6 +47,18 @@ intellijPlatform {
         }
         changeNotes = """
             <h1>中文/Chinese</h3>
+            <h3>v2.4.1</h3>
+            <ul>
+              <li>流式回复消息框随内容自动撑开 — 移除 JBScrollPane 固定高度，streamTextArea 直接放入 BorderLayout，每次 token 追加后 revalidate() 触发布局重算，气泡随 AI 逐字输出逐渐拉长，不再等待完整生成后跳变</li>
+            </ul>
+            <h3>v2.4.0</h3>
+            <ul>
+              <li>支持 PyCharm / DataGrip 等非 Java IDE — Java 依赖改为可选，无 Java 插件的 IDE 中聊天/Agent/AI 补全正常使用，Java 专属功能（静态分析、注解/注释感知补全）优雅降级</li>
+            </ul>
+            <h3>v2.3.5</h3>
+            <ul>
+              <li>修复换行失效、输入框截断</li>
+            </ul>
             <h3>v2.3.4</h3>
             <ul>
               <li>新增代码变更预览 — Generate/Optimize 生成代码后弹出 side-by-side 对比页面，用户审查后再确认是否保存</li>
@@ -163,6 +178,18 @@ intellijPlatform {
               <li>API Key 配置页面</li>
             </ul>
             <h1>English</h3>
+            <h3>v2.4.1</h3>
+            <ul>
+              <li>Streaming message bubble now auto-expands with content — Removed JBScrollPane fixed height, streamTextArea placed directly in BorderLayout, revalidate() triggers layout recalc on each token append, the bubble grows smoothly as AI generates text instead of jumping to full height on completion</li>
+            </ul>
+            <h3>v2.4.0</h3>
+            <ul>
+              <li>Cross-IDE support — Java dependency is now optional; chat panel, Agent actions, and AI completion work in PyCharm / DataGrip etc., Java-specific features (static analysis, annotation/comment-aware completion) gracefully degrade</li>
+            </ul>
+            <h3>v2.3.5</h3>
+            <ul>
+              <li>Fixed broken line breaks and input box truncation</li>
+            </ul>
             <h3>v2.3.4</h3>
             <ul>
               <li>New code diff preview — Generate/Optimize actions now show a side-by-side diff before applying, user reviews and confirms changes</li>

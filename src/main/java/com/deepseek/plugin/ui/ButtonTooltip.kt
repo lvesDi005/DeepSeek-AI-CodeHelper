@@ -1,21 +1,54 @@
 package com.deepseek.plugin.ui
 
-import com.intellij.openapi.actionSystem.impl.ActionButton
-import java.awt.BorderLayout
-import javax.swing.JPanel
+import com.intellij.ui.JBColor
+import com.intellij.util.ui.JBUI
+import java.awt.Color
+import java.awt.Dimension
+import java.awt.Graphics
+import java.awt.Graphics2D
+import java.awt.RenderingHints
+import javax.swing.JButton
+import javax.swing.JComponent
 
 /**
- * Wrap an [ActionButton] in a transparent panel that provides a standard
- * Swing tooltip.  ActionButton's own tooltip system is designed for
- * ActionToolbar and may not show tooltips when used standalone.
+ * Create a small, flat toolbar-style [JButton] with the given [icon] and
+ * a Swing tooltip that shows on mouse hover.
  *
- * The returned [JPanel] can have its [toolTipText] updated at any time
- * to change the tooltip dynamically.
+ * The returned button follows the same pattern as
+ * [com.deepseek.plugin.chat.ChatPanel.createSmallRoundButton] — the tooltip
+ * is set via [JComponent.setToolTipText], which auto-registers the component
+ * with [javax.swing.ToolTipManager].
+ *
+ * @param icon   The icon to display on the button.
+ * @param tooltip The tooltip text shown on hover.
+ * @param size   The width and height of the button in pixels (default 24).
+ * @param onClick Called when the button is clicked.
  */
-fun ActionButton.withTooltip(tip: String): JPanel {
-    val wrapper = JPanel(BorderLayout())
-    wrapper.isOpaque = false
-    wrapper.toolTipText = tip
-    wrapper.add(this, BorderLayout.CENTER)
-    return wrapper
+fun createToolbarButton(
+    icon: javax.swing.Icon,
+    tooltip: String,
+    size: Int = 24,
+    onClick: () -> Unit
+): JButton {
+    val dim = Dimension(JBUI.scale(size), JBUI.scale(size))
+    return object : JButton(icon) {
+        override fun paintComponent(g: Graphics) {
+            val g2 = g.create() as Graphics2D
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g2.color = if (model.isRollover) JBColor(0xE0E0E0, 0x4A4A4A) else Color(0, 0, 0, 0)
+            g2.fillRoundRect(0, 0, width, height, 8, 8)
+            super.paintComponent(g)
+            g2.dispose()
+        }
+    }.apply {
+        toolTipText = tooltip
+        isOpaque = false
+        isContentAreaFilled = false
+        isBorderPainted = false
+        isFocusPainted = false
+        preferredSize = dim
+        minimumSize = dim
+        maximumSize = dim
+        addActionListener { onClick() }
+    }
 }

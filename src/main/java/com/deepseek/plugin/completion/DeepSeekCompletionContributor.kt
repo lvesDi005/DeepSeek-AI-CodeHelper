@@ -13,13 +13,12 @@ import com.intellij.patterns.PlatformPatterns
 import com.intellij.util.ProcessingContext
 
 /**
- * 代码补全入口。
+ * 通用代码补全入口（所有语言）。
  *
- * 注册两个 Provider：
- * 1. [StaticAnalysisCompletionProvider] — 基于 PSI/AST 的静态分析补全（前置过滤）
- * 2. [DeepSeekCompletionProvider] — AI 驱动的 FIM 补全（fallback）
+ * 注册 [DeepSeekCompletionProvider] —— AI 驱动的 FIM 补全。
  *
- * 静态分析能提供足够候选时，AI 请求被跳过以节省 token 和延迟。
+ * Java 专属的静态分析前置过滤见 [JavaCompletionContributor]，
+ * 仅在 IntelliJ IDEA 等包含 Java 插件的 IDE 中生效。
  */
 class DeepSeekCompletionContributor : CompletionContributor() {
 
@@ -28,14 +27,7 @@ class DeepSeekCompletionContributor : CompletionContributor() {
     }
 
     init {
-        // 静态分析 Provider —— 优先执行
-        extend(
-            CompletionType.BASIC,
-            PlatformPatterns.psiElement(),
-            StaticAnalysisCompletionProvider()
-        )
-
-        // AI Provider —— 仅当静态分析候选不足时才会真正触发 API 调用
+        // AI Provider —— 所有语言通用的 FIM 补全
         extend(
             CompletionType.BASIC,
             PlatformPatterns.psiElement(),
@@ -51,7 +43,6 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
     }
 
     private val client = DeepSeekApiClient()
-    private val staticAnalyzer = StaticAnalysisCompletionProvider()
 
     // 防止短时间内重复请求
     @Volatile private var lastRequestTime: Long = 0
@@ -65,21 +56,7 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
         if (!settings.completionEnabled || settings.apiKey.isBlank()) return
         if (parameters.isExtendedCompletion) return
 
-        // ======== 前置过滤：先跑静态分析 ========
-        val project = parameters.editor.project ?: return
-        val file = parameters.originalFile ?: return
-        try {
-            val analysis = staticAnalyzer.analyze(project, file, parameters.offset)
-            if (analysis.isSatisfied) {
-                LOG.debug("StaticAnalysis satisfied (${analysis.candidates.size} candidates, ${analysis.contextType}) — skipping AI")
-                return // 静态分析已足够，跳过 AI API 调用
-            }
-            LOG.debug("StaticAnalysis not satisfied (${analysis.candidates.size} candidates, ${analysis.contextType}) — falling through to AI")
-        } catch (e: Exception) {
-            LOG.warn("StaticAnalysis check failed, proceeding with AI", e)
-        }
-
-        // --- 1. 收集前缀文本 (光标前) ---
+        // 收集前缀文本 (光标前)
         val prefix = getPrefixText(parameters)
         val prefixTrimmed = prefix.trimEnd()
 

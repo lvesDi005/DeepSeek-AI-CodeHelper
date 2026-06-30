@@ -62,6 +62,19 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * HTML changelog content displayed in the update dialog.
          */
         private val CHANGELOG_HTML = """
+            <h3>v2.4.1</h3>
+            <ul>
+              <li>流式回复消息框随内容自动撑开 — 移除 JBScrollPane 固定高度，streamTextArea 直接放入 BorderLayout，每次 token 追加后 revalidate() 触发布局重算，气泡随 AI 逐字输出逐渐拉长，不再等待完整生成后跳变</li>
+            </ul>
+            <h3>v2.4.0</h3>
+            <ul>
+              <li>支持 PyCharm / DataGrip 等非 Java IDE — Java 依赖改为可选，无 Java 插件的 IDE 中聊天/Agent/AI 补全正常使用，Java 专属功能（静态分析、注解/注释感知补全）优雅降级</li>
+              <li>按钮悬浮提示修复 — 用量查看、会话历史、新建会话等 9 个按钮的 tooltip 现在正常显示</li>
+            </ul>
+            <h3>v2.3.5</h3>
+            <ul>
+              <li>修复换行失效、输入框截断</li>
+            </ul>
             <h3>v2.3.4</h3>
             <ul>
               <li>新增代码变更预览 — Generate/Optimize 生成代码后弹出 side-by-side 对比页面，用户审查后再确认是否保存</li>
@@ -186,6 +199,19 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * English version of the changelog HTML.
          */
         private val CHANGELOG_HTML_EN = """
+            <h3>v2.4.1</h3>
+            <ul>
+              <li>Streaming message bubble now auto-expands with content — Removed JBScrollPane fixed height, streamTextArea placed directly in BorderLayout, revalidate() triggers layout recalc on each token append, the bubble grows smoothly as AI generates text instead of jumping to full height on completion</li>
+            </ul>
+            <h3>v2.4.0</h3>
+            <ul>
+              <li>Cross-IDE support — Java dependency is now optional; chat panel, Agent actions, and AI completion work in PyCharm / DataGrip etc., Java-specific features (static analysis, annotation/comment-aware completion) gracefully degrade</li>
+              <li>Button tooltip fix — All 9 toolbar buttons now show tooltips on hover</li>
+            </ul>
+            <h3>v2.3.5</h3>
+            <ul>
+              <li>Fixed broken line breaks and input box truncation</li>
+            </ul>
             <h3>v2.3.4</h3>
             <ul>
               <li>New code diff preview — Generate/Optimize actions now show a side-by-side diff before applying, user reviews and confirms changes</li>

@@ -26,7 +26,7 @@ import kotlin.math.ceil
  * 现代化聊天输入框。
  *
  * 设计要点：
- * - 非等宽字体（聊天输入框用等宽字体会显得老气）
+ * - 等宽字体 + 纯白文字 + 纯黑背景，像素级清晰
  * - 自伸缩高度（4~12 行）
  * - @ 文件引用弹窗
  * - Enter 发送，Shift+Enter 换行
@@ -51,19 +51,29 @@ class AutoResizingTextArea(
         isFocusable = true
         lineWrap = true
         wrapStyleWord = true
-        font = font.deriveFont(Font.PLAIN, 13f)
+        font = Font(Font.MONOSPACED, Font.PLAIN, 13)
         margin = JBUI.insets(10, 14)
         border = EmptyBorder(0, 0, 0, 0)
-        foreground = JBColor(0x1A1A1A, 0xE0E0E0)
+        foreground = JBColor(0x1A1A1A, 0xFFFFFF)
         caretColor = foreground
         selectionColor = JBColor(0x3399FF, 0x536DFE)
         selectedTextColor = JBColor.WHITE
 
         addKeyListener(object : KeyAdapter() {
             override fun keyPressed(e: KeyEvent) {
-                if (e.keyCode == KeyEvent.VK_ENTER && !e.isShiftDown && !e.isControlDown && !e.isAltDown && !e.isMetaDown && !isStreaming()) {
-                    e.consume()
-                    onSend()
+                if (e.keyCode == KeyEvent.VK_ENTER) {
+                    if (e.isShiftDown) {
+                        // Shift+Enter: 显式插入换行，避免某些 LAF/平台下默认行为失效
+                        e.consume()
+                        val doc = document
+                        val pos = caretPosition
+                        try {
+                            doc.insertString(pos, "\n", null)
+                        } catch (_: Exception) {}
+                    } else if (!e.isControlDown && !e.isAltDown && !e.isMetaDown && !isStreaming()) {
+                        e.consume()
+                        onSend()
+                    }
                 }
             }
         })
@@ -71,13 +81,16 @@ class AutoResizingTextArea(
         document.addDocumentListener(object : javax.swing.event.DocumentListener {
             override fun insertUpdate(e: javax.swing.event.DocumentEvent?) {
                 adjustHeight()
+                scrollToCaret()
                 if (!suppressingPopup) checkAtTrigger()
             }
             override fun removeUpdate(e: javax.swing.event.DocumentEvent?) {
                 adjustHeight()
+                scrollToCaret()
             }
             override fun changedUpdate(e: javax.swing.event.DocumentEvent?) {
                 adjustHeight()
+                scrollToCaret()
             }
         })
 
@@ -187,28 +200,47 @@ class AutoResizingTextArea(
         super.addNotify()
         val fm = getFontMetrics(font)
         val lineH = fm.height
-        minHeight = lineH * 4 + 10
-        maxHeight = lineH * 12 + 10
+        minHeight = lineH * 4 + 20
+        maxHeight = Int.MAX_VALUE
         SwingUtilities.invokeLater { adjustHeight() }
     }
 
     override fun getScrollableTracksViewportHeight(): Boolean = false
 
     override fun paintComponent(g: Graphics) {
-        if (text.isEmpty() && !hasFocus()) {
-            val g2 = g.create() as Graphics2D
-            try {
+        val g2 = g.create() as Graphics2D
+        try {
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB)
+            g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+            if (text.isEmpty() && !hasFocus()) {
                 val fm = g2.fontMetrics
-                g2.color = JBColor(Color(0xAAAAAA), Color(0x666666))
+                g2.color = JBColor(Color(0xAAAAAA), Color(0x888888))
                 g2.font = font.deriveFont(Font.PLAIN, 12f)
                 val x = margin.left + 2
                 val y = margin.top + fm.ascent
                 g2.drawString(placeholderText, x, y)
-            } finally {
-                g2.dispose()
             }
+        } finally {
+            g2.dispose()
         }
         super.paintComponent(g)
+    }
+
+    /**
+     * 滚动视口使当前插入符位置可见，方便用户始终看到正在输入的内容。
+     */
+    private fun scrollToCaret() {
+        SwingUtilities.invokeLater {
+            try {
+                val rect = modelToView2D(caretPosition)
+                if (rect != null) {
+                    // 向外扩展 20px 缓冲，让光标不紧贴边缘
+                    scrollRectToVisible(java.awt.Rectangle(
+                        rect.x.toInt(), rect.y.toInt(), rect.width.toInt(), rect.height.toInt() + 20
+                    ))
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     private fun adjustHeight() {
@@ -222,7 +254,7 @@ class AutoResizingTextArea(
                 maxOf(1, ceil(fm.stringWidth(word).toDouble() / avail).toInt())
             }
         }
-        val h = (lineH * lines + 10).coerceIn(minHeight, maxHeight)
+        val h = maxOf(lineH * lines + 20, minHeight)
         if (h != height) {
             preferredSize = Dimension(preferredSize.width, h)
             revalidate()

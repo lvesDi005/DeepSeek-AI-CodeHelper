@@ -4,7 +4,6 @@ import com.deepseek.plugin.ui.CodeBlockCard.Companion.parseResponse
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.util.IconLoader
 import com.intellij.ui.JBColor
-import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
@@ -16,12 +15,14 @@ import java.awt.FlowLayout
 import java.awt.Font
 import java.awt.Graphics
 import java.awt.Graphics2D
-import java.awt.RenderingHints
 import java.awt.GridBagLayout
 import java.awt.GridBagConstraints
 import java.awt.Insets
+import java.awt.RenderingHints
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import kotlin.math.ceil
+import java.awt.FontMetrics
 import javax.swing.BorderFactory
 import javax.swing.Box
 import javax.swing.BoxLayout
@@ -33,6 +34,9 @@ import javax.swing.text.DefaultCaret
 
 /**
  * 深色扁平化聊天消息气泡组件。
+ *
+ * 独立自绘单位 — 每个 MessageBubble 自行绘制圆角背景，
+ * 不依赖父容器背景板，避免一个气泡变化时影响其他气泡显示。
  *
  * 设计语言：
  * ─────────────────────────────────────────────
@@ -60,24 +64,47 @@ import javax.swing.text.DefaultCaret
  */
 class MessageBubble(
     private val project: Any? = null,
-    role: Role,
+    val role: Role,
     content: String = "",
     segments: List<ResponseSegment>? = null,
     /** 用户消息右上角删除按钮的回调（传 null 则不显示删除按钮） */
     private val onDelete: (() -> Unit)? = null,
     /** 代码文件标签列表（显示在用户消息中，带 ☕ 图标） */
     private val fileTabs: List<String> = emptyList()
-) : JPanel(BorderLayout()) {
+) : JPanel(GridBagLayout()) {
 
     /** 消息创建时间（HH:mm 格式） */
     val timestamp: String = formatTimestamp(System.currentTimeMillis())
 
-    /** Streaming: 用于增量追加 token 的文本区域 */
-    val streamTextArea: JBTextArea? = if (role == Role.STREAMING) JBTextArea() else null
-
-    /** Streaming: 包裹文本区域的滚动面板 */
-    val streamScrollPane: JBScrollPane? =
-        if (role == Role.STREAMING) JBScrollPane() else null
+    /** Streaming: 用于增量追加 token 的文本区域（无滚动面板，随内容自然撑开）
+     *  重写 getPreferredSize() 以正确反映 lineWrap 后的视觉行数，
+     *  避免一长段文本(无换行符)只算1行导致气泡被压扁 */
+    val streamTextArea: JBTextArea? = if (role == Role.STREAMING)
+        object : JBTextArea() {
+            override fun getPreferredSize(): Dimension {
+                val size = super.getPreferredSize()
+                if (!lineWrap || width <= 0) return size
+                val ins = insets
+                val lineH = getRowHeight()
+                val avail = width - ins.left - ins.right
+                if (avail <= 0 || lineH <= 0) return size
+                val fm = getFontMetrics(font)
+                val txt = text ?: ""
+                val logicalLines = txt.split("\n")
+                var totalH = 0
+                for (line in logicalLines) {
+                    if (line.isEmpty()) {
+                        totalH += lineH
+                    } else {
+                        val lineW = fm.stringWidth(line)
+                        val wrappedLines = ceil(lineW.toDouble() / avail).toInt()
+                        totalH += lineH * maxOf(1, wrappedLines)
+                    }
+                }
+                return Dimension(size.width, totalH + ins.top + ins.bottom)
+            }
+        }
+    else null
 
     enum class Role {
         USER,
@@ -85,15 +112,52 @@ class MessageBubble(
         STREAMING
     }
 
+    /** 当前气泡画圆角背景的锚点方向（USER=右对齐→左边空，ASSISTANT=左对齐→右边空） */
+    private val anchor: Int
+        get() = if (role == Role.USER) GridBagConstraints.EAST else GridBagConstraints.WEST
+
+    // ── 可视化内容面板（即圆角矩形内的全部内容）──
+    private lateinit var contentPanel: JPanel
+
     init {
-        alignmentX = Component.LEFT_ALIGNMENT
         isOpaque = false
+        alignmentX = Component.LEFT_ALIGNMENT
 
         when (role) {
             Role.USER -> setupUserMessage(content)
             Role.ASSISTANT -> setupAssistantMessage(content, segments)
             Role.STREAMING -> setupStreamingArea()
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  自绘圆角背景 — 仅绘制在 contentPanel 区域，不占用对齐留白
+    // ════════════════════════════════════════════════════════════════
+
+    override fun paintComponent(g: Graphics) {
+        if (!::contentPanel.isInitialized) return
+        val g2 = g.create() as Graphics2D
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        val arc = 18
+        val b = contentPanel.bounds
+        g2.color = JBColor(0xF8F9FA, 0x24242A)
+        g2.fillRoundRect(b.x, b.y, b.width, b.height, arc, arc)
+        g2.color = JBColor(0xE8EAED, 0x3A3A3A)
+        g2.drawRoundRect(b.x, b.y, b.width, b.height, arc, arc)
+        g2.dispose()
+    }
+
+    /**
+     * 将 [contentPanel] 添加到本组件（GridBagLayout）并设置锚点对齐。
+     * 由各 setupXxxMessage 方法在构建完 contentPanel 后调用。
+     */
+    private fun attachContent() {
+        val c = GridBagConstraints().apply {
+            fill = GridBagConstraints.HORIZONTAL
+            weightx = 1.0
+            anchor = this@MessageBubble.anchor
+        }
+        add(contentPanel, c)
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -109,10 +173,8 @@ class MessageBubble(
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
                 g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
                 val size = minOf(width, height)
-                // 紫色圆形背景
                 g2.color = JBColor(0x7C3AED, 0x7C3AED)
                 g2.fillOval(0, 0, size, size)
-                // 按比例缩放 SVG 图标到圆形内（留 4px 边距保证完全展示）
                 val padding = 4
                 val targetSize = size - padding * 2
                 val scale = targetSize.toDouble() / icon.iconWidth
@@ -143,7 +205,7 @@ class MessageBubble(
             foreground = JBColor(0x666666, 0x888888)
         }
 
-        // ── 删除按钮（复用清空按钮图标 AllIcons.Actions.Close） ──
+        // ── 删除按钮 ──
         val deleteBtn = JLabel(AllIcons.Actions.Close).apply {
             toolTipText = "删除此消息"
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
@@ -155,7 +217,7 @@ class MessageBubble(
         }
         if (onDelete == null) deleteBtn.isVisible = false
 
-        // ── 头部行：左(头像 + me + 时间) | 右(删除) ──
+        // ── 头部行 ──
         val headerLeft = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
             isOpaque = false
             add(avatar)
@@ -216,8 +278,8 @@ class MessageBubble(
             border = EmptyBorder(0, 0, 0, 0)
         }
 
-        // ── 组装内层布局 ──
-        val innerContent = JPanel().apply {
+        // ── 组装内容面板 ──
+        contentPanel = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             isOpaque = false
             border = EmptyBorder(12, 16, 16, 16)
@@ -232,60 +294,17 @@ class MessageBubble(
             add(textArea)
         }
 
-        // ── 外层卡片（大圆角绘制） ──
-        val card = object : JPanel(BorderLayout()) {
-            override fun paintComponent(g: Graphics) {
-                val g2 = g.create() as Graphics2D
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-                val arc = 18
-                g2.color = JBColor(0xF8F9FA, 0x24242A)
-                g2.fillRoundRect(0, 0, width - 1, height - 1, arc, arc)
-                g2.color = JBColor(0xE8EAED, 0x3A3A3A)
-                g2.drawRoundRect(0, 0, width - 1, height - 1, arc, arc)
-                g2.dispose()
-            }
-        }.apply {
-            isOpaque = false
-            add(innerContent, BorderLayout.CENTER)
-        }
-
-        // ── 右对齐 ──
-        val wrapper = JPanel(GridBagLayout()).apply {
-            isOpaque = false
-            val c = GridBagConstraints()
-            c.fill = GridBagConstraints.HORIZONTAL
-            c.weightx = 1.0
-            c.anchor = GridBagConstraints.EAST
-            add(card, c)
-        }
-
-        add(wrapper, BorderLayout.CENTER)
+        attachContent()
     }
 
     // ════════════════════════════════════════════════════════════════
-    //  AI 回复 — 左对齐卡片 + 环形图标 + 名称 + 内容块标记
-    //  每个内容块（文字/代码/表格）前显示对应的彩色类型徽章
+    //  AI 回复 — 左对齐卡片 + 环形图标 + 名称 + 内容块
     // ════════════════════════════════════════════════════════════════
 
     private fun setupAssistantMessage(
         content: String,
         segments: List<ResponseSegment>?
     ) {
-        val card = object : JPanel(BorderLayout()) {
-            override fun paintComponent(g: Graphics) {
-                val g2 = g.create() as Graphics2D
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-                val arc = 18
-                g2.color = JBColor(0xF8F9FA, 0x24242A)
-                g2.fillRoundRect(0, 0, width - 1, height - 1, arc, arc)
-                g2.color = JBColor(0xE8EAED, 0x3A3A3A)
-                g2.drawRoundRect(0, 0, width - 1, height - 1, arc, arc)
-                g2.dispose()
-            }
-        }.apply {
-            isOpaque = false
-        }
-
         val header = createModernHeader()
 
         val contentBody = JPanel().apply {
@@ -300,9 +319,7 @@ class MessageBubble(
             val isFirst = i == 0
             when (seg) {
                 is ResponseSegment.Text -> {
-                    if (!isFirst) {
-                        contentBody.add(Box.createVerticalStrut(8))
-                    }
+                    if (!isFirst) contentBody.add(Box.createVerticalStrut(8))
                     val mdPane = MarkdownRenderer.createPane(
                         markdownText = seg.content,
                         fontSize = 13,
@@ -312,9 +329,7 @@ class MessageBubble(
                     contentBody.add(mdPane)
                 }
                 is ResponseSegment.Code -> {
-                    if (!isFirst) {
-                        contentBody.add(Box.createVerticalStrut(10))
-                    }
+                    if (!isFirst) contentBody.add(Box.createVerticalStrut(10))
                     val codeCard = CodeBlockCard(
                         project = project as? com.intellij.openapi.project.Project,
                         code = seg.content,
@@ -324,9 +339,7 @@ class MessageBubble(
                     contentBody.add(codeCard)
                 }
                 is ResponseSegment.Table -> {
-                    if (!isFirst) {
-                        contentBody.add(Box.createVerticalStrut(8))
-                    }
+                    if (!isFirst) contentBody.add(Box.createVerticalStrut(8))
                     val tablePanel = MessageTable(seg.headers, seg.rows)
                     contentBody.add(tablePanel)
                 }
@@ -337,27 +350,20 @@ class MessageBubble(
             contentBody.add(Box.createVerticalStrut(2))
         }
 
-        val innerContent = JPanel(BorderLayout()).apply {
+        contentPanel = JPanel(BorderLayout()).apply {
             isOpaque = false
             border = EmptyBorder(12, 16, 16, 16)
             add(header, BorderLayout.NORTH)
             add(contentBody, BorderLayout.CENTER)
         }
 
-        card.add(innerContent, BorderLayout.CENTER)
-
-        val outer = JPanel(GridBagLayout()).apply {
-            isOpaque = false
-            val c = GridBagConstraints()
-            c.fill = GridBagConstraints.HORIZONTAL
-            c.weightx = 1.0
-            c.anchor = GridBagConstraints.WEST
-            add(card, c)
-        }
-
-        add(outer, BorderLayout.CENTER)
+        attachContent()
     }
-    /** 加载 action.svg 作为 AI 品牌图标（按比例缩放） */
+
+    // ════════════════════════════════════════════════════════════════
+    //  AI 品牌环形图标
+    // ════════════════════════════════════════════════════════════════
+
     private fun createRingIcon(): JPanel {
         val icon = IconLoader.getIcon("/icons/action.svg", MessageBubble::class.java)
         return object : JPanel() {
@@ -368,7 +374,6 @@ class MessageBubble(
                 val size = minOf(width, height)
                 g2.color = JBColor(0x7C3AED, 0x7C3AED)
                 g2.fillOval(0, 0, size, size)
-                // 按比例缩放 SVG 图标到圆形内（留 3px 边距保证完全展示）
                 val padding = 3
                 val targetSize = size - padding * 2
                 val scale = targetSize.toDouble() / icon.iconWidth
@@ -389,25 +394,18 @@ class MessageBubble(
         }
     }
 
-    /**
-     * 创建 AI 消息头部 — 环形图标 + "DP Helper"
-     */
     private fun createModernHeader(): JPanel {
         val ringIcon = createRingIcon()
-
         val nameLabel = JLabel("DP Helper").apply {
             font = font.deriveFont(Font.PLAIN, 12f)
             foreground = JBColor(0x888888, 0xAAAAAA)
         }
-
-        val header = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
+        return JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
             isOpaque = false
             border = EmptyBorder(0, 0, 8, 0)
             add(ringIcon)
             add(nameLabel)
         }
-
-        return header
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -415,21 +413,6 @@ class MessageBubble(
     // ════════════════════════════════════════════════════════════════
 
     private fun setupStreamingArea() {
-        val card = object : JPanel(BorderLayout()) {
-            override fun paintComponent(g: Graphics) {
-                val g2 = g.create() as Graphics2D
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-                val arc = 18
-                g2.color = JBColor(0xF8F9FA, 0x24242A)
-                g2.fillRoundRect(0, 0, width - 1, height - 1, arc, arc)
-                g2.color = JBColor(0xE8EAED, 0x3A3A3A)
-                g2.drawRoundRect(0, 0, width - 1, height - 1, arc, arc)
-                g2.dispose()
-            }
-        }.apply {
-            isOpaque = false
-        }
-
         val ringIcon = createRingIcon()
         val nameLabel = JLabel("DP Helper").apply {
             font = font.deriveFont(Font.PLAIN, 12f)
@@ -462,33 +445,14 @@ class MessageBubble(
             text = "... 思考中 \u25D0"
         }
 
-        streamScrollPane!!.apply {
-            border = EmptyBorder(0, 0, 0, 0)
-            isOpaque = false
-            viewport.isOpaque = false
-            setViewportView(streamTextArea)
-            preferredSize = Dimension(100, 60)
-        }
-
-        val innerContent = JPanel(BorderLayout()).apply {
+        contentPanel = JPanel(BorderLayout()).apply {
             isOpaque = false
             border = EmptyBorder(12, 16, 16, 16)
             add(header, BorderLayout.NORTH)
-            add(streamScrollPane, BorderLayout.CENTER)
+            add(streamTextArea!!, BorderLayout.CENTER)
         }
 
-        card.add(innerContent, BorderLayout.CENTER)
-
-        val outer = JPanel(GridBagLayout()).apply {
-            isOpaque = false
-            val c = GridBagConstraints()
-            c.fill = GridBagConstraints.HORIZONTAL
-            c.weightx = 1.0
-            c.anchor = GridBagConstraints.WEST
-            add(card, c)
-        }
-
-        add(outer, BorderLayout.CENTER)
+        attachContent()
     }
 
     companion object {

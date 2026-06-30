@@ -14,7 +14,7 @@
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
-    <depends>com.intellij.java</depends>
+    <depends optional="true" config-file="javaExtras.xml">com.intellij.java</depends>
 
     <!-- Application-level services -->
     <extensions defaultExtensionNs="com.intellij">

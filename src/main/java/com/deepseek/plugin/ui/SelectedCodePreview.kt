@@ -1,11 +1,6 @@
 package com.deepseek.plugin.ui
 
 import com.intellij.icons.AllIcons
-import com.intellij.openapi.actionSystem.ActionPlaces
-import com.intellij.openapi.actionSystem.AnAction
-import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.Presentation
-import com.intellij.openapi.actionSystem.impl.ActionButton
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
@@ -60,19 +55,12 @@ class SelectedCodePreview(
             add(infoLabel, BorderLayout.WEST)
 
             // Dismiss button
-            val dismissBtn = ActionButton(
-                object : AnAction(null, null, AllIcons.Actions.Close) {
-                    override fun actionPerformed(e: AnActionEvent) {
-                        onDismiss()
-                    }
-                },
-                Presentation().apply {
-                    icon = AllIcons.Actions.Close
-                    description = "移除选中代码引用"
-                },
-                ActionPlaces.TOOLBAR,
-                Dimension(16, 16)
-            ).withTooltip("移除选中代码引用")
+            val dismissBtn = createToolbarButton(
+                icon = AllIcons.Actions.Close,
+                tooltip = "移除选中代码引用",
+                size = 16,
+                onClick = onDismiss
+            )
 
             val actionsPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 0, 0)).apply {
                 isOpaque = false

@@ -1,12 +1,6 @@
 package com.deepseek.plugin.ui
 
 import com.intellij.icons.AllIcons
-import com.intellij.openapi.actionSystem.ActionPlaces
-import com.intellij.openapi.actionSystem.ActionToolbar
-import com.intellij.openapi.actionSystem.AnAction
-import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.Presentation
-import com.intellij.openapi.actionSystem.impl.ActionButton
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
@@ -93,19 +87,12 @@ class FileAttachmentPreview(
         card.add(infoPanel, BorderLayout.CENTER)
 
         // Remove button (right)
-        val removeBtn = ActionButton(
-            object : AnAction(AllIcons.Actions.Close) {
-                override fun actionPerformed(e: AnActionEvent) {
-                    onRemove(index)
-                }
-            },
-            Presentation().apply {
-                this.icon = AllIcons.Actions.Close
-                this.description = "移除 ${file.name}"
-            },
-            ActionPlaces.TOOLBAR,
-            Dimension(16, 16)
-        ).withTooltip("移除 ${file.name}")
+        val removeBtn = createToolbarButton(
+            icon = AllIcons.Actions.Close,
+            tooltip = "移除 ${file.name}",
+            size = 16,
+            onClick = { onRemove(index) }
+        )
 
         val actionsPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 0, 0))
         actionsPanel.isOpaque = false

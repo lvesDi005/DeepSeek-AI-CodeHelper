@@ -55,7 +55,7 @@ class ChatInputBar(
 ) : JPanel(BorderLayout()) {
 
     companion object {
-        private val C_INPUT_BG = JBColor(Color(0xFFFFFF), Color(0x1E1E1E))
+        private val C_INPUT_BG = JBColor(Color(0xFFFFFF), Color(0x000000))
         private val C_INPUT_BORDER = JBColor(Color(0xD0D0D0), Color(0x3C3C3C))
         private val C_INPUT_BORDER_FOCUS = JBColor(0x1A73E8, 0x64B5F6)
         private val C_TOOLBAR_BG = JBColor(Color(0xF5F5F5), Color(0x2D2D2D))
