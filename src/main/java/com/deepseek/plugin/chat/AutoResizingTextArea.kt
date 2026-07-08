@@ -42,7 +42,7 @@ class AutoResizingTextArea(
 
     private var minHeight: Int = 0
     private var maxHeight: Int = 0
-    private val placeholderText = "输入消息...   @引用文件  ·  Enter发送  ·  Shift+Enter换行"
+    private val placeholderText = "输入消息...  ·  Enter发送  ·  Shift+Enter换行"
     private val refPattern = Regex("@[\\w.\\-/]+")
     private var suppressingPopup = false
 

@@ -65,7 +65,7 @@ class WelcomePanel : JPanel(BorderLayout()) {
         content.add(Box.createVerticalStrut(6))
 
         // ── Tagline ──
-        val tagline = JLabel("AI-powered coding assistant for IntelliJ IDEA").apply {
+        val tagline = JLabel("AI-powered coding assistant for JETBRAINS").apply {
             font = font.deriveFont(Font.PLAIN, 12f)
             foreground = JBColor(0x888888, 0x999999)
             alignmentX = Component.CENTER_ALIGNMENT
@@ -83,7 +83,8 @@ class WelcomePanel : JPanel(BorderLayout()) {
         content.add(Box.createVerticalStrut(10))
 
         val tips = listOf(
-            TipEntry("Ctrl + Enter", "发送消息"),
+            TipEntry("Enter", "发送消息"),
+            TipEntry("Shift + Enter", "换行"),
             TipEntry("选中代码", "自动填入输入框作为上下文"),
             TipEntry("上传文件", "支持代码文件和图片"),
             TipEntry("💬 Q&A / 🤖 Agent", "模式切换 — Agent 模式可自动操作文件"),

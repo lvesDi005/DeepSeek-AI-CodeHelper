@@ -29,6 +29,10 @@
         <applicationService
             serviceImplementation="com.deepseek.plugin.settings.DeepSeekSettings"/>
 
+        <!-- Project Service: 变更管理（按项目隔离） -->
+        <projectService
+            serviceImplementation="com.deepseek.plugin.store.ChangeManagementStore"/>
+
         <!-- Chat Tool Window -->
         <toolWindow
             id="DeepSeek AI CodeHelper"

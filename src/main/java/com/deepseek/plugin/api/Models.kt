@@ -10,9 +10,9 @@ data class ChatRequest(
     val temperature: Double = 0.7,
     @SerializedName("max_tokens") val maxTokens: Int = 4096,
     val stream: Boolean = false,
-    val topP: Double = 1.0,
-    val frequencyPenalty: Double = 0.0,
-    val presencePenalty: Double = 0.0
+    @SerializedName("top_p") val topP: Double = 1.0,
+    @SerializedName("frequency_penalty") val frequencyPenalty: Double = 0.0,
+    @SerializedName("presence_penalty") val presencePenalty: Double = 0.0
 )
 
 data class ChatMessage(
@@ -57,9 +57,9 @@ data class FimRequest(
     val suffix: String? = null,
     @SerializedName("max_tokens") val maxTokens: Int = 256,
     val temperature: Double = 0.0,
-    val topP: Double = 0.95,
-    val frequencyPenalty: Double = 0.0,
-    val presencePenalty: Double = 0.0,
+    @SerializedName("top_p") val topP: Double = 0.95,
+    @SerializedName("frequency_penalty") val frequencyPenalty: Double = 0.0,
+    @SerializedName("presence_penalty") val presencePenalty: Double = 0.0,
     val stop: List<String>? = null
 )
 

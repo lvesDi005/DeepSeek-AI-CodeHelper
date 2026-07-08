@@ -13,7 +13,6 @@ import java.awt.Font
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import javax.swing.Box
-import javax.swing.JEditorPane
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.Timer
@@ -55,7 +54,7 @@ class CodeBlockCard(
     private fun createHeader(language: String, showInsert: Boolean): JPanel {
         val header = JPanel(BorderLayout())
         header.background = JBColor(0xE8E8E8, 0x333337)
-        header.border = JBUI.Borders.empty(6, 14, 6, 8)
+        header.border = JBUI.Borders.empty(4, 10, 4, 6)
         header.isOpaque = true
 
         // Language badge (left)
@@ -91,23 +90,26 @@ class CodeBlockCard(
 
     private fun createCodeArea(): JPanel {
         val bg = JBColor(0xF5F5F5, 0x1A1A1A)
-        val defaultFg = JBColor(0x333333, 0xD4D4D4)
-        val commentFg = JBColor(0x999999, 0x6A9955)
-        val html = buildHighlightedHtml(code, defaultFg, commentFg)
+        val fg = JBColor(0x333333, 0xD4D4D4)
 
-        val editorPane = JEditorPane("text/html", html).apply {
+        val textArea = JBTextArea(code).apply {
             isEditable = false
-            isFocusable = false
-            putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, true)
-            font = JBUI.Fonts.create("Monospaced", 12)
+            isFocusable = true
             background = bg
-            margin = JBUI.insets(8, 14)
+            foreground = fg
+            font = JBUI.Fonts.create("Monospaced", JBUI.Fonts.label().size)
+            lineWrap = false
+            tabSize = 4
+            margin = JBUI.insets(4, 10)
+            border = JBUI.Borders.empty()
+            caretColor = fg
+            // Allow text selection for copy (isEditable=false still allows selection in JBTextArea)
         }
 
         return JPanel(BorderLayout()).apply {
             isOpaque = true
             background = bg
-            add(editorPane, BorderLayout.CENTER)
+            add(textArea, BorderLayout.CENTER)
         }
     }
 
@@ -190,7 +192,7 @@ class CodeBlockCard(
                 }
             }
         }
-        return """<html><body style="white-space:pre-wrap;font-family:'Monospaced',monospace;font-size:12px;line-height:1.35;color:$defaultRgb;margin:0;padding:0">$sb</body></html>"""
+        return """<html><body style="white-space:pre-wrap;word-break:break-all;font-family:'Monospaced',monospace;font-size:${JBUI.Fonts.label().size}px;line-height:1.25;color:$defaultRgb;margin:0;padding:0">$sb</body></html>"""
     }
 
     private fun findHashComment(escaped: String): Int? {

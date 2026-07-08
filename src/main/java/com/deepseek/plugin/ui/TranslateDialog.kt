@@ -1,11 +1,14 @@
 package com.deepseek.plugin.ui
 
+import com.deepseek.plugin.api.DOMAIN_RESTRICTION_PROMPT
 import com.deepseek.plugin.api.HttpClientProvider
 import com.deepseek.plugin.settings.DeepSeekSettings
 import com.google.gson.Gson
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
+import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import okhttp3.MediaType.Companion.toMediaType
@@ -35,7 +38,7 @@ import javax.swing.SwingUtilities
 import javax.swing.border.AbstractBorder
 
 /**
- * 翻译对话框 — IDEA 深色主题双栏翻译界面。
+ * 翻译对话框 — 主题自适应双栏翻译界面。
  *
  * ┌───────────────────────────────────────────────┐
  * │  ┌──────────────┐    ┌──────────────┐         │
@@ -65,8 +68,8 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
         selectedIndex = 1
     }
 
-    private val leftTextArea = DarkTextArea("输入文本")
-    private val rightTextArea = DarkTextArea("翻译")
+    private val leftTextArea = ThemeAwareTextArea("输入文本")
+    private val rightTextArea = ThemeAwareTextArea("翻译")
 
     init {
         title = "翻译"
@@ -81,14 +84,14 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
 
     override fun createCenterPanel(): JComponent {
         val root = JPanel(BorderLayout()).apply {
-            background = Color(0x2B2B2B)
+            background = JBColor(0xE8E8E8, 0x2B2B2B)
             border = JBUI.Borders.empty(14, 16, 18, 16)
             preferredSize = Dimension(660, 380)
         }
 
         // ── 双栏主体 ──
         val body = JPanel(GridBagLayout()).apply {
-            background = Color(0x2B2B2B)
+            background = JBColor(0xE8E8E8, 0x2B2B2B)
         }
 
         val c = GridBagConstraints()
@@ -124,13 +127,13 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
 
         // ── 底部「翻译」按钮 ──
         val bottomWrap = JPanel(BorderLayout()).apply {
-            background = Color(0x2B2B2B)
+            background = JBColor(0xE8E8E8, 0x2B2B2B)
             border = JBUI.Borders.empty(10, 0, 0, 0)
         }
         translateBtn = JButton("翻  译").apply {
             font = font.deriveFont(Font.BOLD, 12f)
-            foreground = Color(0xCCCCCC)
-            background = Color(0x4E4E50)
+            foreground = JBColor(0x333333, 0xCCCCCC)
+            background = JBColor(0xE0E0E0, 0x4E4E50)
             isOpaque = true
             isContentAreaFilled = true
             isBorderPainted = false
@@ -140,7 +143,7 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
             addActionListener { performTranslation() }
         }
         val btnCenter = JPanel(FlowLayout(FlowLayout.CENTER, 0, 0)).apply {
-            background = Color(0x2B2B2B)
+            background = JBColor(0xE8E8E8, 0x2B2B2B)
             add(translateBtn)
         }
         bottomWrap.add(btnCenter, BorderLayout.CENTER)
@@ -150,20 +153,20 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
     }
 
     // ================================================================
-    // 输入卡片 — 深灰 4px 圆角面板
+    // 输入卡片 — 圆角面板
     // ================================================================
 
-    private fun createInputCard(langCombo: JComboBox<String>, textArea: DarkTextArea): JPanel {
+    private fun createInputCard(langCombo: JComboBox<String>, textArea: ThemeAwareTextArea): JPanel {
         val card = object : JPanel(BorderLayout(0, 0)) {
             override fun paintComponent(g: Graphics) {
                 val g2 = g.create() as Graphics2D
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-                g2.color = Color(0x3C3F41)
+                g2.color = JBColor(0xFFFFFF, 0x3C3F41)
                 g2.fillRoundRect(0, 0, width, height, 4, 4)
                 g2.dispose()
             }
         }.apply {
-            isOpaque = false
+            isOpaque = true
             border = JBUI.Borders.empty(0)
         }
 
@@ -175,8 +178,10 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
         val scrollPane = JBScrollPane(textArea).apply {
             border = JBUI.Borders.empty(2, 0, 6, 0)
             viewportBorder = JBUI.Borders.empty()
-            isOpaque = false
-            viewport.isOpaque = false
+            isOpaque = true
+            background = JBColor(0xFFFFFF, 0x3C3F41)
+            viewport.isOpaque = true
+            viewport.background = JBColor(0xFFFFFF, 0x3C3F41)
         }
         card.add(scrollPane, BorderLayout.CENTER)
 
@@ -184,14 +189,14 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
     }
 
     // ================================================================
-    // 下拉框暗色样式
+    // 下拉框主题自适应样式
     // ================================================================
 
     private fun styleDropdown(combo: JComboBox<String>) {
         combo.apply {
             font = font.deriveFont(12f)
-            foreground = Color(0xD4D4D4)
-            background = Color(0x2B2B2B)
+            foreground = JBColor(0x333333, 0xD4D4D4)
+            background = JBColor(0xF0F0F0, 0x2B2B2B)
             isOpaque = true
             setBorder(BorderFactory.createCompoundBorder(
                 object : AbstractBorder() {
@@ -199,18 +204,18 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
                     override fun paintBorder(c: java.awt.Component, g: Graphics, x: Int, y: Int, w: Int, h: Int) {
                         val g2 = g.create() as Graphics2D
                         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-                        g2.color = Color(0x505254)
+                        g2.color = JBColor(0xC0C0C0, 0x505254)
                         g2.drawRoundRect(x, y, w - 1, h - 1, 4, 4)
                         g2.dispose()
                     }
                 },
                 JBUI.Borders.empty(0)
             ))
-            setRenderer(createDarkRenderer())
+            setRenderer(createThemeAwareRenderer())
         }
     }
 
-    private fun createDarkRenderer() = object : ListCellRenderer<String> {
+    private fun createThemeAwareRenderer() = object : ListCellRenderer<String> {
         private val label = JLabel().apply {
             isOpaque = true
             border = JBUI.Borders.empty(4, 10)
@@ -227,33 +232,33 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
             label.text = value ?: ""
             label.background = when {
                 isSelected -> Color(0x4B6EAF)
-                else -> Color(0x3C3F41)
+                else -> JBColor(0xF0F0F0, 0x3C3F41)
             }
             label.foreground = when {
                 isSelected -> Color.WHITE
-                else -> Color(0xD4D4D4)
+                else -> JBColor(0x333333, 0xD4D4D4)
             }
             return label
         }
     }
 
     // ================================================================
-    // 暗色文本区域（带占位文字）
+    // 主题自适应文本区域（带占位文字）
     // ================================================================
 
-    private class DarkTextArea(private val placeholder: String) : JTextArea() {
+    private class ThemeAwareTextArea(private val placeholder: String) : JTextArea() {
         init {
             lineWrap = true
             wrapStyleWord = true
             font = font.deriveFont(13f)
-            foreground = Color(0xD4D4D4)
-            background = Color(0x3C3F41)
-            caretColor = Color(0xD4D4D4)
+            foreground = JBColor(0x333333, 0xD4D4D4)
+            background = JBColor(0xFFFFFF, 0x3C3F41)
+            caretColor = JBColor(0x333333, 0xD4D4D4)
             margin = JBUI.insets(10)
             selectionColor = Color(0x4B6EAF)
             selectedTextColor = Color.WHITE
             tabSize = 2
-            isOpaque = false
+            isOpaque = true
         }
 
         override fun paintComponent(g: Graphics) {
@@ -270,7 +275,7 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
             if (text.isEmpty() && !isFocusOwner) {
                 val g3 = g.create() as Graphics2D
                 g3.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-                g3.color = Color(0x6C6C6C)
+                g3.color = JBColor(0x999999, 0x6C6C6C)
                 g3.font = font.deriveFont(Font.PLAIN, 13f)
                 val fm = g3.fontMetrics
                 val x = margin.left
@@ -310,11 +315,11 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
                 val cy = height / 2
                 val r = minOf(width, height) / 2 - 1
 
-                g2.color = if (hovered) Color(0x5A5A5D) else Color(0x4E4E50)
+                g2.color = if (hovered) JBColor(0xD0D0D0, 0x5A5A5D) else JBColor(0xE0E0E0, 0x4E4E50)
                 g2.fillOval(cx - r, cy - r, r * 2, r * 2)
 
                 g2.font = g2.font.deriveFont(Font.PLAIN, 16f)
-                g2.color = Color(0xAAAAAA)
+                g2.color = JBColor(0x666666, 0xAAAAAA)
                 val fm = g2.fontMetrics
                 val txt = "\u21C4"
                 val tx = cx - fm.stringWidth(txt) / 2
@@ -358,7 +363,7 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
         rightTextArea.text = "翻译中..."
         translateBtn.isEnabled = false
 
-        Thread {
+        ApplicationManager.getApplication().executeOnPooledThread {
             val result = translateWithAgnes(sourceText, sourceLang, targetLang)
             SwingUtilities.invokeLater {
                 result.fold(
@@ -370,7 +375,7 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
                 )
                 translateBtn.isEnabled = true
             }
-        }.apply { isDaemon = true }.start()
+        }
     }
 
     /** 使用 Agnes API 执行翻译 */
@@ -384,10 +389,9 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
             return Result.failure(Exception("请在设置中配置 Agnes API Key"))
         }
 
-        val prompt = "请将以下${sourceLang}文本翻译为${targetLang}，只返回翻译结果，不要添加任何解释：\n\n$text"
-
         val messages = listOf(
-            mapOf("role" to "user", "content" to prompt)
+            mapOf("role" to "system", "content" to DOMAIN_RESTRICTION_PROMPT),
+            mapOf("role" to "user", "content" to "请将以下${sourceLang}文本翻译为${targetLang}，只返回翻译结果，不要添加任何解释：\n\n$text")
         )
         val bodyMap = mapOf(
             "model" to settings.agnesModel.ifBlank { "agnes-2.0-flash" },
@@ -408,7 +412,7 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
             .build()
 
         return try {
-            val response = HttpClientProvider.chatSyncClient.newCall(request).execute()
+            val response = HttpClientProvider.translateClient.newCall(request).execute()
             val responseBody = response.body?.string() ?: ""
             if (!response.isSuccessful) {
                 return Result.failure(Exception("API error ${response.code}: $responseBody"))

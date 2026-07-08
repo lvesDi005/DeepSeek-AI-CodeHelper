@@ -49,6 +49,16 @@ class AgnesProvider : LlmProvider {
     override fun model(settings: DeepSeekSettings): String = settings.agnesModel.ifBlank { "agnes-2.0-flash" }
 }
 
+/** NVIDIA NIM API */
+class NvidiaProvider : LlmProvider {
+    override val id = "nvidia"
+    override val displayName = "NVIDIA"
+
+    override fun baseUrl(settings: DeepSeekSettings): String = settings.nvidiaBaseUrl.trimEnd('/')
+    override fun apiKey(settings: DeepSeekSettings): String = settings.nvidiaApiKey
+    override fun model(settings: DeepSeekSettings): String = settings.nvidiaModel.ifBlank { "z-ai/glm-5.2" }
+}
+
 // ============== 注册表 ==============
 
 /**
@@ -63,6 +73,7 @@ object LlmProviderRegistry {
     init {
         register(DeepSeekProvider())
         register(AgnesProvider())
+        register(NvidiaProvider())
     }
 
     fun register(provider: LlmProvider) {

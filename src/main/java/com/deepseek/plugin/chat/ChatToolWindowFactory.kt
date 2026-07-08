@@ -62,9 +62,75 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * HTML changelog content displayed in the update dialog.
          */
         private val CHANGELOG_HTML = """
+            <h3>v2.5.4</h3>
+            <ul>
+              <li>NVIDIA NIM 模型支持 — 新增 NVIDIA API Provider（z-ai/glm-5.2、minimaxai/minimax-m3、stepfun-ai/step-3.7-flash），支持下拉框选择模型</li>
+              <li>Agent 规划/编码阶段使用当前 Provider 模型 — Phase 1（规划）+ Phase 2（编码）不再硬编码 DeepSeek，改为使用 Settings 中选中的 Provider + Model</li>
+              <li>Agent Pipeline 各 Phase 独立配置 — Settings 新增「Agent Pipeline (Agent 流水线配置)」区域，可分别为意图确认、规划、编码、审查四个阶段指定 Provider + Model</li>
+              <li>设置按钮 + 弹出菜单 — 状态栏左侧新增 ⚙ 齿轮设置按钮，弹出菜单包含：Q&A/Agent 模式切换 + 快捷进入 Agent Pipeline Phase 设置</li>
+              <li>修复 NVIDIA API 请求格式 — topP/frequencyPenalty/presencePenalty 参数改为 snake_case，兼容 OpenAI 协议规范</li>
+              <li>Q&A 意图分类 — 问答模式下先调用 Phase 0 模型识别用户意图，普通问题直接回答（不扫描项目），报错/选中代码时自动读取源文件上下文</li>
+              <li>模型目录弹窗 — Settings 中新增「View Models」按钮，点击弹窗展示各品牌商的可用模型列表</li>
+            </ul>
+            <h3>v2.5.3</h3>
+            <ul>
+              <li>图片解析设置升级 — 设置中「StepFun Image Parsing (图像解析)」改为一级标题「Image Parsing (图像解析)」，新增下拉框选择解析模型：Agnes Image 2.1 Flash / StepFun，默认 Agnes</li>
+              <li>密钥复用 — Agnes复用自已配置的 API Key，无需额外输入；StepFun 保留独立密钥输入</li>
+              <li>剪贴板粘贴图片 — 输入框支持 Ctrl+V 直接粘贴剪贴板图片，自动添加为附件</li>
+              <li>图片解析无需模态弹窗 — 图片直接展示在用户消息气泡中，AI 流式气泡显示「解析中...」状态，解析完成后自动喂给 AI 进行二次优化输出，全程无弹窗打断</li>
+            </ul>
+            <h3>v2.5.2</h3>
+            <ul>
+              <li>深度领域限制 — 为插件内所有大模型交互注入 CS-only 领域限制提示词，锁定模型为纯计算机科学领域专用 AI 助手</li>
+              <li>智能体自我介绍 — 非 CS 话题越界时，模型以完整但简洁的自我介绍替代冷冰冰的拒绝话术，引导用户回到技术话题</li>
+              <li>绝对越狱防御 — 对非 CS 话题执行主题白名单过滤，逐字输出固定自我解释，严禁添加任何额外内容</li>
+              <li>边缘裁决准则 — 涉及技术伦理或选型对比时，仅从时间复杂度、吞吐量等纯技术量化指标分析</li>
+              <li>输出格式规范 — 强制结构化 Markdown 分层回复、代码语法高亮标注语言类型、承认未知概念禁止幻觉</li>
+              <li>全覆盖注入 — 限制生效于全部 6 条 LLM 路径：Q&A / Agent 多阶段 / 右键菜单 Agent / 代码补全 / Agentic Search / 翻译</li>
+            </ul>
+            <h3>v2.5.1</h3>
+            <ul>
+              <li>变更管理面板— Agent 模式修改文件后，不再在源目录生成 .bak 文件，改为统一记录在「变更管理」面板中</li>
+              <li>工具栏新增「变更管理」按钮（使用原生图标），点击进入变更管理页面</li>
+              <li>每次 Agent 操作自动创建变更记录，标题格式：「对xx需求的变更」+ 时间戳</li>
+              <li>记录可展开查看具体修改的文件列表</li>
+              <li>↩ 每个文件提供「回滚」按钮，一键还原原始内容</li>
+              <li>👁 每个文件提供「查看变更」按钮，打开 IntelliJ Diff 窗口对比差异</li>
+            </ul>
+            <h3>v2.5.0</h3>
+            <ul>
+              <li>引入多智能体分工协作 — Agent 模式拆分为三个专用 Agent 流水线作业</li>
+              <li>规划 Agent（DeepSeek-V4-Pro）— 分析需求，制定代码修改计划</li>
+              <li>编码 Agent（DeepSeek-V4-Flash）— 根据计划生成具体的代码修改</li>
+              <li>审查 Agent（Agnes-2.0-Flash）— 审查代码质量、安全性和正确性</li>
+              <li>Q&A 模式保持单智能体，不受影响</li>
+              <li>API 客户端扩展 — 新增 chatStreamWithExplicitConfig 和 chatSyncWithExplicitConfig 方法，支持按 Agent 指定不同模型/Provider</li>
+              <li>Agent 模式文件操作备份机制保持不变，修改前自动创建 .bak 备份</li>
+            </ul>
+            <h3>v2.4.4</h3>
+            <ul>
+              <li>增加技能设置功能 — 会话栏新增齿轮图标设置按钮，点击进入全区域技能管理面板</li>
+              <li>支持上传技能文件（.md/.txt/.yaml）— 按钮上传和拖拽上传两种方式</li>
+              <li>技能列表管理 — 启用/停用切换、内容预览、删除技能</li>
+              <li>技能注入系统提示 — 已启用的技能内容自动追加到 Agent 模式的 system prompt 中，约束和规范 AI 行为</li>
+              <li>社区 Skill 库链接 — 设置面板内提供指向社区 Skill 库的快捷跳转</li>
+            </ul>
+            <h3>v2.4.3</h3>
+            <ul>
+              <li>引入 Agentic Search（Agentic 代码搜索）— 替代 RAG 进行代码检索：模型可像人类程序员一样自主调用 grep/glob/read 工具「搜索→阅读→判断→再搜索」，代码精确匹配远超 BM25 语义检索</li>
+              <li>RAG 回归文本/文档检索 — RagIndexer 仅索引 .md/.txt/.rst 等文档文件，代码搜索使用 AgenticSearch（grep/glob/read）实现零延迟、高精度匹配</li>
+              <li>新增 Agentic Search 配置 — 可在设置中启用/禁用，配置搜索轮次（1=单轮快速模式，>1=多轮深度搜索模式）</li>
+              <li>增加查询自动分类 — 系统自动判断用户问题是代码相关还是文档相关，选择最优检索策略</li>
+            </ul>
+            <h3>v2.4.2</h3>
+            <ul>
+              <li>引入 RAG（BM25 + 按行分块）— 用于文本/文档检索</li>
+            </ul>
             <h3>v2.4.1</h3>
             <ul>
               <li>流式回复消息框随内容自动撑开 — 移除 JBScrollPane 固定高度，streamTextArea 直接放入 BorderLayout，每次 token 追加后 revalidate() 触发布局重算，气泡随 AI 逐字输出逐渐拉长，不再等待完整生成后跳变</li>
+              <li>每个消息气泡独立自绘圆角背景 — 扁平化架构，移除 card/outer/wrapper/padded 四层嵌套，MessageBubble 改为 GridBagLayout 自绘，一个气泡尺寸变化不影响其他气泡布局</li>
+              <li>代码块排版紧凑化 — 字体 13→12、内边距 14x18→8x14、HTML 行高设为 1.35，代码显示更紧凑</li>
             </ul>
             <h3>v2.4.0</h3>
             <ul>
@@ -199,9 +265,75 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * English version of the changelog HTML.
          */
         private val CHANGELOG_HTML_EN = """
+            <h3>v2.5.4</h3>
+            <ul>
+              <li>NVIDIA NIM Support — New NVIDIA API Provider with model selection dropdown: z-ai/glm-5.2, minimaxai/minimax-m3, stepfun-ai/step-3.7-flash</li>
+              <li>Agent Phase 1+2 Uses Current Provider — Planning and Coding phases no longer hardcode DeepSeek; they use the provider and model selected in Settings</li>
+              <li>Per-Phase Agent Pipeline Configuration — New "Agent Pipeline" settings section lets you assign independent Provider + Model for each phase: Intent Confirmation, Planning, Coding, Review</li>
+              <li>Settings Button + Popup Menu — Gear icon on the status bar left side replaces the mode dropdown; popup menu includes Q&A/Agent mode switch and quick access to Agent Pipeline Phase settings</li>
+              <li>Fixed NVIDIA API Request Format — topP/frequencyPenalty/presencePenalty parameters now use snake_case for OpenAI protocol compatibility</li>
+              <li>Q&A Intent Classification — Q&A mode now classifies user intent via Phase 0 model first: general questions answered directly (no project scan), errors/selected code trigger source file reading + project scan</li>
+              <li>Model Catalog Dialog — New "View Models" button in Settings shows a dialog listing all available models per provider</li>
+            </ul>
+            <h3>v2.5.3</h3>
+            <ul>
+              <li>Image Parsing Settings Upgrade — Changed "StepFun Image Parsing" to a top-level "Image Parsing" section with a dropdown to select the parsing model: Agnes Image 2.1 Flash / StepFun (default: Agnes)</li>
+              <li>Key Reuse — Agnes reuse already-configured API keys; StepFun retains its own dedicated key field</li>
+              <li>Clipboard Image Paste — Input area now supports Ctrl+V to paste images from clipboard, automatically added as attachments</li>
+              <li>No More Modal Dialogs — Images are displayed inline in the user message bubble; the AI streaming bubble shows "Parsing..." status; parsed results are automatically fed to the AI for a second-pass optimization — all without blocking popups</li>
+            </ul>
+            <h3>v2.5.2</h3>
+            <ul>
+              <li>Deep Domain Restriction — Injected a CS-only domain restriction prompt into every LLM interaction path within the plugin, locking the model as a pure computer science AI assistant</li>
+              <li>Agent Self-Introduction — When users ask non-CS questions, the model responds with a concise self-introduction instead of a cold rejection, gently guiding them back to technical topics</li>
+              <li>Absolute Jailbreak Defense — Topic whitelist filtering for non-CS subjects; verbatim output of the fixed self-intro with no additional content allowed</li>
+              <li>Edge Case Ruling — When addressing technical ethics or technology comparison, analysis is limited to purely quantitative metrics (time complexity, throughput, etc.)</li>
+              <li>Output Format Standards — Enforced structured Markdown hierarchical replies, syntax-highlighted code blocks with language labels, and admitting unknown concepts instead of hallucinating</li>
+              <li>Full Coverage — Restriction applied to all 6 LLM paths: Q&A, multi-stage Agent, right-click Agent actions, code completion (FIM), Agentic Search, and Translation</li>
+            </ul>
+            <h3>v2.5.1</h3>
+            <ul>
+               <li>Change Management Panel — Agent mode no longer creates .bak files; all changes are now recorded in the unified Change Management panel</li>
+               <li>New "Change Management" toolbar button (native icon) to access the panel</li>
+               <li>Each Agent operation auto-creates a change record with title format: "Change for 'xxx request'" + timestamp</li>
+               <li>Records are expandable to show the list of modified files</li>
+               <li>↩ Each file has a "Rollback" button to restore original content with one click</li>
+               <li>👁 Each file has a "View Changes" button that opens the IntelliJ Diff window</li>
+            </ul>
+            <h3>v2.5.0</h3>
+            <ul>
+              <li>Multi-Agent collaboration introduced — Agent mode split into three specialized agents working in a pipeline</li>
+              <li>Planner Agent (DeepSeek-V4-Pro) — analyzes requirements and produces a structured code modification plan</li>
+              <li>Coder Agent (DeepSeek-V4-Flash) — generates concrete code changes based on the plan</li>
+              <li>Reviewer Agent (Agnes-2.0-Flash) — reviews code quality, security, and correctness</li>
+              <li>Q&A mode remains single-agent, unaffected</li>
+              <li>API client extended — new chatStreamWithExplicitConfig and chatSyncWithExplicitConfig methods for per-agent model/provider configuration</li>
+              <li>Agent mode file backup mechanism preserved — .bak backup created before every file modification</li>
+            </ul>
+            <h3>v2.4.4</h3>
+            <ul>
+              <li>New Skill Settings — gear icon added to the toolbar for accessing the full-area skill management panel</li>
+              <li>Upload skill files (.md/.txt/.yaml) — via file chooser button or drag-and-drop</li>
+              <li>Skill list management — enable/disable toggle, content preview, delete skill</li>
+              <li>Skills injected into system prompt — enabled skills are automatically appended to the Agent mode system prompt to constrain and guide AI behavior</li>
+              <li>Community Skill Library link — quick-access link in the settings panel to the community-maintained skill collection</li>
+            </ul>
+            <h3>v2.4.3</h3>
+            <ul>
+              <li>Agentic Search replaces RAG for code retrieval — the model autonomously calls grep/glob/read tools like a human programmer: search, read, judge, re-search. Deterministic exact matching far beyond BM25 semantic retrieval</li>
+              <li>RAG scoped to text/document retrieval — indexes only .md/.txt/.rst etc. documentation files</li>
+              <li>New Agentic Search settings — enable/disable, configure search rounds (1=fast single-round, >1=deep multi-round)</li>
+              <li>Auto query classification — system detects code vs doc queries for optimal search strategy</li>
+            </ul>
+            <h3>v2.4.2</h3>
+            <ul>
+              <li>RAG (BM25 + line-based chunking) — for text/document retrieval</li>
+            </ul>
             <h3>v2.4.1</h3>
             <ul>
               <li>Streaming message bubble now auto-expands with content — Removed JBScrollPane fixed height, streamTextArea placed directly in BorderLayout, revalidate() triggers layout recalc on each token append, the bubble grows smoothly as AI generates text instead of jumping to full height on completion</li>
+              <li>Each message bubble is now a self-contained unit — Flattened architecture, removed 4 layers of nesting (card/outer/wrapper/padded), MessageBubble uses GridBagLayout and self-draws its rounded background; one bubble's resize no longer affects others</li>
+              <li>Tighter code block layout — Font 13→12, padding 14×18→8×14, HTML line-height set to 1.35 for a more compact display</li>
             </ul>
             <h3>v2.4.0</h3>
             <ul>

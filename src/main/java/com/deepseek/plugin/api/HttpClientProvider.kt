@@ -1,5 +1,6 @@
 package com.deepseek.plugin.api
 
+import com.intellij.openapi.application.ApplicationManager
 import okhttp3.OkHttpClient
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.TimeUnit
@@ -16,6 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * - [chatSyncClient]：非流式 Chat 请求，callTimeout=90s。
  * - [completionClient]：FIM 补全请求，callTimeout=30s 快速响应。
  * - [stepFunClient]：图片解析，write 超时更长（上传大图），callTimeout=180s。
+ * - [translateClient]：翻译请求，使用独立线程池和连接池，与 Chat 互不阻塞。
  */
 object HttpClientProvider {
 
@@ -67,6 +69,37 @@ object HttpClientProvider {
         .writeTimeout(60, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .callTimeout(180, TimeUnit.SECONDS)
+        .build()
+
+    // ══════════════════════════════════════════════════════════════
+    //  翻译客户端 — 完全独立的连接池和调度器，与 Chat 互不干扰
+    // ══════════════════════════════════════════════════════════════
+
+    /** 翻译专用连接池 */
+    private val translateConnectionPool = okhttp3.ConnectionPool(
+        maxIdleConnections = 2,
+        keepAliveDuration = 5,
+        timeUnit = TimeUnit.MINUTES
+    )
+
+    /** 翻译专用 Dispatcher（独立线程池） */
+    private val translateDispatcher = okhttp3.Dispatcher().apply {
+        maxRequests = 4
+        maxRequestsPerHost = 2
+    }
+
+    /**
+     * 翻译客户端 — 使用完全独立的 Dispatcher 和 ConnectionPool，
+     * 与 Chat / FIM / StepFun 不共享任何线程或连接资源，
+     * 确保翻译请求不会阻塞对话或其他功能。
+     */
+    val translateClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(90, TimeUnit.SECONDS)
+        .connectionPool(translateConnectionPool)
+        .dispatcher(translateDispatcher)
         .build()
 
     // ══════════════════════════════════════════════════════════════

@@ -15,20 +15,20 @@ import java.util.Base64
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * 支持图片解析的 StepFun API 客户端.
+ * 图片解析客户端，支持多供应商.
  *
- * 使用 StepFun 的 step-1o-turbo-vision 视觉语言模型将图片解析为文本描述,
- * 然后将描述文本注入到 DeepSeek Chat 的上下文中.
+ * 根据 settings.imageParsingModel 选择图片解析供应商：
+ * - "agnes"   → 使用 Agnes API (复用 Agnes 密钥)
+ * - "stepfun"  → 使用 StepFun API (使用独立的 StepFun 密钥)
+ *
+ * 将图片解析为文本描述，然后注入到 Chat 上下文中。
  */
 class StepFunApiClient {
 
-    companion object {
-        private const val BASE_URL = "https://api.stepfun.com/v1"
-        private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
-        private val gson = Gson()
-    }
+    private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
+    private val gson = Gson()
 
-    /** 使用共享连接池的 StepFun 客户端 */
+    /** 使用共享连接池的 HTTP 客户端 */
     private val client get() = HttpClientProvider.stepFunClient
 
     /** 追踪当前正在执行的 HTTP Call，用于强制取消 */
@@ -40,6 +40,32 @@ class StepFunApiClient {
      */
     fun cancelCurrentCall() {
         currentCall.getAndSet(null)?.cancel()
+    }
+
+    // ── 供应商配置 ──
+
+    private data class ProviderConfig(
+        val baseUrl: String,
+        val apiKey: String,
+        val model: String,
+        val displayName: String
+    )
+
+    private fun resolveProvider(settings: DeepSeekSettings): ProviderConfig {
+        return when (settings.imageParsingModel) {
+            "stepfun" -> ProviderConfig(
+                baseUrl = "https://api.stepfun.com/v1",
+                apiKey = settings.stepFunApiKey,
+                model = "step-1o-turbo-vision",
+                displayName = "StepFun"
+            )
+            else -> ProviderConfig(  // "agnes" (default)
+                baseUrl = settings.agnesBaseUrl.trimEnd('/'),
+                apiKey = settings.agnesApiKey,
+                model = settings.agnesModel.ifBlank { "agnes-2.0-flash" },
+                displayName = "Agnes Image 2.1 Flash"
+            )
+        }
     }
 
     // ── 请求/响应模型 ──
@@ -97,8 +123,16 @@ class StepFunApiClient {
      */
     fun parseImage(imagePath: String, prompt: String = "请详细描述这张图片中的内容"): Result<String> {
         val settings = DeepSeekSettings.instance
-        if (settings.stepFunApiKey.isBlank()) {
-            return Result.failure(IOException("StepFun API Key 未配置，请在 Settings → Tools → DeepSeek AI 中设置"))
+        val provider = resolveProvider(settings)
+
+        if (provider.apiKey.isBlank()) {
+            val providerField = when (settings.imageParsingModel) {
+                "stepfun" -> "StepFun API Key"
+                else -> "API Key (Agnes section)"
+            }
+            return Result.failure(IOException(
+                "${provider.displayName} API Key 未配置，请在 Settings → Tools → DeepSeek AI 的 $providerField 中设置"
+            ))
         }
 
         // H3: 图片解析限流检查（每分钟最多 10 次）
@@ -111,7 +145,7 @@ class StepFunApiClient {
             ?: return Result.failure(IOException("无法读取图片文件: $imagePath"))
 
         val request = VisionRequest(
-            model = settings.stepFunModel,
+            model = provider.model,
             messages = listOf(
                 VisionMessage(
                     role = "user",
@@ -126,8 +160,8 @@ class StepFunApiClient {
 
         val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
         val httpRequest = Request.Builder()
-            .url("$BASE_URL/chat/completions")
-            .header("Authorization", "Bearer ${settings.stepFunApiKey}")
+            .url("${provider.baseUrl}/chat/completions")
+            .header("Authorization", "Bearer ${provider.apiKey}")
             .header("Content-Type", "application/json")
             .post(body)
             .build()
@@ -139,12 +173,12 @@ class StepFunApiClient {
                 val responseBody = response.body?.string() ?: ""
                 if (!response.isSuccessful) {
                     val errMsg = tryParseError(responseBody, response.code)
-                    Result.failure(IOException("StepFun API error ${response.code}: $errMsg"))
+                    Result.failure(IOException("${provider.displayName} API error ${response.code}: $errMsg"))
                 } else {
                     val visionResp = gson.fromJson(responseBody, VisionResponse::class.java)
                     val content = visionResp.choices?.firstOrNull()?.message?.content ?: ""
                     if (content.isBlank()) {
-                        Result.failure(IOException("StepFun 返回了空内容"))
+                        Result.failure(IOException("${provider.displayName} 返回了空内容"))
                     } else {
                         Result.success(content.trim())
                     }

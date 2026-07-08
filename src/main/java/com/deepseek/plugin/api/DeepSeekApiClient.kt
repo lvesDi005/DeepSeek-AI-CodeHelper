@@ -101,24 +101,45 @@ class DeepSeekApiClient {
     }
 
     private fun chatSync(settings: DeepSeekSettings, messages: List<ChatMessage>): Result<String> {
+        return chatSyncWithExplicitConfig(
+            baseUrl = provider(settings).baseUrl(settings),
+            apiKey = provider(settings).apiKey(settings),
+            model = provider(settings).model(settings),
+            temperature = settings.temperature,
+            maxTokens = settings.maxTokens,
+            messages = messages
+        )
+    }
+
+    /**
+     * 同步调用 —— 使用显式指定的 API 配置（用于多 Agent 分工）。
+     */
+    fun chatSyncWithExplicitConfig(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        temperature: Double = 0.7,
+        maxTokens: Int = 4096,
+        messages: List<ChatMessage>
+    ): Result<String> {
         // H3: 请求限流检查
         if (!HttpClientProvider.chatRateLimiter.tryAcquire()) {
             return Result.failure(RateLimitException())
         }
         return retryWithBackoff {
             val request = ChatRequest(
-                model = provider(settings).model(settings),
+                model = model,
                 messages = messages,
-                temperature = settings.temperature,
-                maxTokens = settings.maxTokens,
+                temperature = temperature,
+                maxTokens = maxTokens,
                 stream = false
             )
 
             val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
 
             val httpRequest = Request.Builder()
-                .url("${provider(settings).baseUrl(settings)}/chat/completions")
-                .header("Authorization", "Bearer ${provider(settings).apiKey(settings)}")
+                .url("$baseUrl/chat/completions")
+                .header("Authorization", "Bearer $apiKey")
                 .header("Content-Type", "application/json")
                 .post(body)
                 .build()
@@ -148,34 +169,71 @@ class DeepSeekApiClient {
 
     // ============ 流式调用 (Chat Panel) ============
 
+    /**
+     * 流式调用 —— 使用 settings 中的默认配置（模型/Provider）。
+     * 保留现有接口不变。
+     */
     fun chatStream(
         messages: List<ChatMessage>,
         onToken: (String) -> Unit,
         onComplete: (fullResponse: String, usage: Usage?) -> Unit,
         onError: (Throwable) -> Unit
     ): EventSource {
-        // H3: 请求限流检查
+        val settings = DeepSeekSettings.instance
+        return chatStreamWithExplicitConfig(
+            baseUrl = provider(settings).baseUrl(settings),
+            apiKey = provider(settings).apiKey(settings),
+            model = provider(settings).model(settings),
+            temperature = settings.temperature,
+            maxTokens = settings.maxTokens,
+            messages = messages,
+            onToken = onToken,
+            onComplete = onComplete,
+            onError = onError
+        )
+    }
+
+    /**
+     * 流式调用 —— 使用显式指定的 API 配置（用于多 Agent 分工，每个 Agent 使用不同模型/Provider）。
+     *
+     * @param baseUrl  API base URL（如 "https://api.deepseek.com/v1"）
+     * @param apiKey   API Key
+     * @param model    模型名（如 "deepseek-v4-pro"、"deepseek-v4-flash"、"agnes-2.0-flash"）
+     * @param temperature 温度
+     * @param maxTokens 最大 Token 数
+     */
+    fun chatStreamWithExplicitConfig(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        temperature: Double = 0.7,
+        maxTokens: Int = 4096,
+        messages: List<ChatMessage>,
+        onToken: (String) -> Unit,
+        onComplete: (fullResponse: String, usage: Usage?) -> Unit,
+        onError: (Throwable) -> Unit
+    ): EventSource {
+        // 请求限流检查
         if (!HttpClientProvider.chatRateLimiter.tryAcquire()) {
             onError(RateLimitException())
             return object : EventSource {
                 override fun cancel() {}
-                override fun request() = Request.Builder().url("https://api.deepseek.com/v1/chat/completions").build()
+                override fun request() = Request.Builder().url("$baseUrl/chat/completions").build()
             }
         }
-        val settings = DeepSeekSettings.instance
         val request = ChatRequest(
-            model = provider(settings).model(settings),
+            model = model,
             messages = messages,
-            temperature = settings.temperature,
-            maxTokens = settings.maxTokens,
+            temperature = temperature,
+            maxTokens = maxTokens,
             stream = true
         )
 
         val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
 
         val httpRequest = Request.Builder()
-            .url("${provider(settings).baseUrl(settings)}/chat/completions")
-            .header("Authorization", "Bearer ${provider(settings).apiKey(settings)}")
+            .url("$baseUrl/chat/completions")
+            .header("Authorization", "Bearer $apiKey")
             .header("Content-Type", "application/json")
             .post(body)
             .build()
@@ -288,6 +346,9 @@ class DeepSeekApiClient {
      */
     private fun buildFimPrompt(prefix: String, suffix: String, language: String, fileContext: String): String {
         val sb = StringBuilder()
+        // 领域限制（第一原则，不可更改）
+        sb.appendLine(DOMAIN_RESTRICTION_PROMPT)
+        sb.appendLine()
         // 系统指令：告诉模型它在做什么
         sb.append("You are a ${language} code completion engine. Given code before and after the cursor, ")
         sb.append("output ONLY the tokens that naturally belong between them.\n")

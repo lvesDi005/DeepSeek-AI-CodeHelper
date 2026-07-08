@@ -1,6 +1,7 @@
 package com.deepseek.plugin.agent
 
 import com.deepseek.plugin.api.DeepSeekApiClient
+import com.deepseek.plugin.api.DOMAIN_RESTRICTION_PROMPT
 import com.deepseek.plugin.settings.DeepSeekSettings
 import com.deepseek.plugin.ui.CodeBlockCard
 import com.deepseek.plugin.ui.MessageTable
@@ -99,7 +100,7 @@ abstract class BaseAgentAction : AnAction() {
                     "```\n$selectedText\n```"
                 }
 
-                val result = client.chatSync(systemPrompt, userMessage)
+                val result = client.chatSync("$DOMAIN_RESTRICTION_PROMPT\n\n$systemPrompt", userMessage)
                 result.fold(
                     onSuccess = { response ->
                         ApplicationManager.getApplication().invokeLater {
