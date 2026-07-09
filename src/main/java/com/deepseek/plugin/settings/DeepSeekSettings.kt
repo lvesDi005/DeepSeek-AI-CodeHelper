@@ -40,8 +40,13 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
     var nvidiaModel: String = "z-ai/glm-5.2"
     var nvidiaBaseUrl: String = "https://integrate.api.nvidia.com/v1"
 
+    // OpenRouter 配置
+    var openrouterApiKey: String = ""
+    var openrouterModel: String = "poolside/laguna-xs-2.1:free"
+    var openrouterBaseUrl: String = "https://openrouter.ai/api/v1"
+
     // 图片解析配置
-    var imageParsingModel: String = "agnes"         // "agnes" | "stepfun"
+    var imageParsingModel: String = "agnes"         // "agnes" | "stepfun" | "nvidia"
     var stepFunApiKey: String = ""                  // 仅 StepFun 需要独立密钥
 
     // 版本跟踪 — 用户上次看到的版本号，用于显示更新记录弹窗
@@ -49,6 +54,9 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
 
     // 更新日志语言偏好: "zh" | "en"
     var changelogLanguage: String = "zh"
+
+    // UI 界面语言: "zh" | "en"
+    var language: String = "zh"
 
     // Agentic Search 配置
     var agenticSearchEnabled: Boolean = true   // 是否启用 Agentic Search（替代 RAG 的代码搜索）

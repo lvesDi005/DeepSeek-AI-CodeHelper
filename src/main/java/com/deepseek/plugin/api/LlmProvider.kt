@@ -59,6 +59,16 @@ class NvidiaProvider : LlmProvider {
     override fun model(settings: DeepSeekSettings): String = settings.nvidiaModel.ifBlank { "z-ai/glm-5.2" }
 }
 
+/** OpenRouter API — 聚合多模型 */
+class OpenRouterProvider : LlmProvider {
+    override val id = "openrouter"
+    override val displayName = "OpenRouter"
+
+    override fun baseUrl(settings: DeepSeekSettings): String = settings.openrouterBaseUrl.trimEnd('/')
+    override fun apiKey(settings: DeepSeekSettings): String = settings.openrouterApiKey
+    override fun model(settings: DeepSeekSettings): String = settings.openrouterModel.ifBlank { "poolside/laguna-xs-2.1:free" }
+}
+
 // ============== 注册表 ==============
 
 /**
@@ -74,6 +84,7 @@ object LlmProviderRegistry {
         register(DeepSeekProvider())
         register(AgnesProvider())
         register(NvidiaProvider())
+        register(OpenRouterProvider())
     }
 
     fun register(provider: LlmProvider) {

@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicReference
  * 根据 settings.imageParsingModel 选择图片解析供应商：
  * - "agnes"   → 使用 Agnes API (复用 Agnes 密钥)
  * - "stepfun"  → 使用 StepFun API (使用独立的 StepFun 密钥)
+ * - "nvidia"  → 使用 NVIDIA API (复用 NVIDIA 密钥)
  *
  * 将图片解析为文本描述，然后注入到 Chat 上下文中。
  */
@@ -58,6 +59,12 @@ class StepFunApiClient {
                 apiKey = settings.stepFunApiKey,
                 model = "step-1o-turbo-vision",
                 displayName = "StepFun"
+            )
+            "nvidia" -> ProviderConfig(
+                baseUrl = settings.nvidiaBaseUrl.trimEnd('/'),
+                apiKey = settings.nvidiaApiKey,
+                model = "meta/llama-4-maverick-17b-128e-instruct",
+                displayName = "NVIDIA Llama Vision"
             )
             else -> ProviderConfig(  // "agnes" (default)
                 baseUrl = settings.agnesBaseUrl.trimEnd('/'),
@@ -128,6 +135,7 @@ class StepFunApiClient {
         if (provider.apiKey.isBlank()) {
             val providerField = when (settings.imageParsingModel) {
                 "stepfun" -> "StepFun API Key"
+                "nvidia" -> "NVIDIA API Key"
                 else -> "API Key (Agnes section)"
             }
             return Result.failure(IOException(

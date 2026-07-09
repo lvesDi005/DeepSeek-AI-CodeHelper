@@ -1,5 +1,6 @@
 package com.deepseek.plugin.agent
 
+import com.deepseek.plugin.i18n.I18n
 import com.deepseek.plugin.ui.CodeDiffUtil
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.project.Project
@@ -15,8 +16,8 @@ Answer questions about the provided code concisely and clearly.
 If the user asks a question, answer it directly. If no explicit question is asked,
 provide a helpful analysis of what the code does."""
 
-    override val progressTitle = "Asking DeepSeek..."
-    override val emptySelectionMessage = "Select code or open a file to ask questions about it."
+    override val progressTitle = I18n.tr("agent.asking")
+    override val emptySelectionMessage = I18n.tr("agent.select.code.ask")
 }
 
 /**
@@ -33,8 +34,8 @@ Explain the provided code in detail:
 4. Potential issues or edge cases
 Be thorough but clear. Use Chinese if the code/context appears Chinese."""
 
-    override val progressTitle = "Explaining Code..."
-    override val emptySelectionMessage = "Select code to explain."
+    override val progressTitle = I18n.tr("agent.explaining")
+    override val emptySelectionMessage = I18n.tr("agent.select.code.explain")
 }
 
 /**
@@ -52,8 +53,8 @@ production-ready code. Include:
 - Follow best practices for the language/framework
 Return ONLY the generated code (wrapped in ```language ... ```). No explanations unless asked."""
 
-    override val progressTitle = "Generating Code..."
-    override val emptySelectionMessage = "Type a description of the code you want to generate, or select existing code as context."
+    override val progressTitle = I18n.tr("agent.generating")
+    override val emptySelectionMessage = I18n.tr("agent.select.code.generate")
 
     override fun showResult(project: Project, originalCode: String, response: String) {
         val code = extractCodeBlock(response) ?: response
@@ -107,8 +108,8 @@ class ReviewAction : BaseAgentAction() {
 
 Format your response with clear sections. Be constructive, not judgmental."""
 
-    override val progressTitle = "Reviewing Code..."
-    override val emptySelectionMessage = "Select code to review."
+    override val progressTitle = I18n.tr("agent.reviewing")
+    override val emptySelectionMessage = I18n.tr("agent.select.code.review")
 }
 
 /**
@@ -125,8 +126,8 @@ class OptimizeAction : BaseAgentAction() {
 - Preserve the original behavior exactly
 Return ONLY the optimized code wrapped in ```language ... ```. Add brief inline comments noting what changed."""
 
-    override val progressTitle = "Optimizing Code..."
-    override val emptySelectionMessage = "Select code to optimize."
+    override val progressTitle = I18n.tr("agent.optimizing")
+    override val emptySelectionMessage = I18n.tr("agent.select.code.optimize")
 
     override fun showResult(project: Project, originalCode: String, response: String) {
         val code = extractCodeBlock(response) ?: response

@@ -1,5 +1,6 @@
 package com.deepseek.plugin.ui
 
+import com.deepseek.plugin.i18n.I18n
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
@@ -57,7 +58,7 @@ object CodeDiffUtil {
         onApply: () -> Unit
     ): Boolean {
         if (originalCode == newCode) {
-            Messages.showInfoMessage(project, "生成的代码与原始代码相同，无需变更。", "无变更")
+            Messages.showInfoMessage(project, I18n.tr("diff.no.change"), I18n.tr("diff.no.change.title"))
             return false
         }
         showDiffAndApply(project, originalCode, newCode, onApply)
@@ -75,10 +76,10 @@ object CodeDiffUtil {
     ) : DialogWrapper(project, true) {
 
         init {
-            title = "预览代码变更"
+            title = I18n.tr("diff.preview.title")
             isResizable = true
-            setOKButtonText("应用更改")
-            setCancelButtonText("取消")
+            setOKButtonText(I18n.tr("diff.apply"))
+            setCancelButtonText(I18n.tr("chat.cancel"))
             init()
         }
 
@@ -89,8 +90,8 @@ object CodeDiffUtil {
 
             // ── 标题行 ──
             val headerPanel = JPanel(GridLayout(1, 2))
-            headerPanel.add(createHeaderLabel("原始代码", JBColor(0x666666, 0x999999)))
-            headerPanel.add(createHeaderLabel("生成的代码", JBColor(0x4477AA, 0x6699CC)))
+            headerPanel.add(createHeaderLabel(I18n.tr("diff.original"), JBColor(0x666666, 0x999999)))
+            headerPanel.add(createHeaderLabel(I18n.tr("diff.generated"), JBColor(0x4477AA, 0x6699CC)))
             panel.add(headerPanel, BorderLayout.NORTH)
 
             // ── 左右对比区域 ──

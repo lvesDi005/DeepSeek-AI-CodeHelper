@@ -9,6 +9,7 @@ import java.awt.FlowLayout
 import java.awt.Font
 import javax.swing.JLabel
 import javax.swing.JPanel
+import com.deepseek.plugin.i18n.I18n
 import javax.swing.border.CompoundBorder
 
 /**
@@ -57,7 +58,7 @@ class SelectedCodePreview(
             // Dismiss button
             val dismissBtn = createToolbarButton(
                 icon = AllIcons.Actions.Close,
-                tooltip = "移除选中代码引用",
+                tooltip = I18n.tr("selected.code.remove"),
                 size = 16,
                 onClick = onDismiss
             )

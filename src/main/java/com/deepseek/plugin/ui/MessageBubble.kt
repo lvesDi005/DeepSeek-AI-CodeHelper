@@ -1,6 +1,7 @@
 package com.deepseek.plugin.ui
 
 import com.deepseek.plugin.ui.CodeBlockCard.Companion.parseResponse
+import com.deepseek.plugin.i18n.I18n
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.util.IconLoader
 import com.intellij.ui.JBColor
@@ -207,7 +208,7 @@ class MessageBubble(
 
         // ── 删除按钮 ──
         val deleteBtn = JLabel(AllIcons.Actions.Close).apply {
-            toolTipText = "删除此消息"
+            toolTipText = I18n.tr("bubble.delete")
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
@@ -221,7 +222,7 @@ class MessageBubble(
         val headerLeft = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
             isOpaque = false
             add(avatar)
-            val nameLabel = JLabel("me").apply {
+            val nameLabel = JLabel(I18n.tr("bubble.me")).apply {
                 font = font.deriveFont(Font.PLAIN, 12f)
                 foreground = JBColor(0x888888, 0xAAAAAA)
             }
@@ -396,7 +397,7 @@ class MessageBubble(
 
     private fun createModernHeader(): JPanel {
         val ringIcon = createRingIcon()
-        val nameLabel = JLabel("DP Helper").apply {
+        val nameLabel = JLabel(I18n.tr("bubble.dp.helper")).apply {
             font = font.deriveFont(Font.PLAIN, 12f)
             foreground = JBColor(0x888888, 0xAAAAAA)
         }
@@ -414,11 +415,11 @@ class MessageBubble(
 
     private fun setupStreamingArea() {
         val ringIcon = createRingIcon()
-        val nameLabel = JLabel("DP Helper").apply {
+        val nameLabel = JLabel(I18n.tr("bubble.dp.helper")).apply {
             font = font.deriveFont(Font.PLAIN, 12f)
             foreground = JBColor(0x888888, 0xAAAAAA)
         }
-        val thinkingLabel = JLabel("思考中...").apply {
+        val thinkingLabel = JLabel(I18n.tr("bubble.thinking")).apply {
             font = font.deriveFont(Font.ITALIC, 10f)
             foreground = JBColor(0x999999, 0x888888)
         }

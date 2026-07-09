@@ -1,6 +1,7 @@
 package com.deepseek.plugin.ui
 
 import com.deepseek.plugin.settings.SkillData
+import com.deepseek.plugin.i18n.I18n
 import com.deepseek.plugin.settings.SkillStore
 import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
@@ -34,7 +35,10 @@ import javax.swing.border.CompoundBorder
  */
 class SkillSettingsPanel(
     private val project: Project,
-    private val onClose: () -> Unit
+    private val onClose: () -> Unit,
+    /** When false, the header bar (title + hint + close button) is hidden.
+     *  Used when this panel is embedded inside [UnifiedSettingsPanel]. */
+    private val showHeader: Boolean = true
 ) : JPanel(BorderLayout()) {
 
     private val skillStore = SkillStore(project.basePath)
@@ -48,61 +52,63 @@ class SkillSettingsPanel(
         background = JBColor(Color(0xF0F0F0), Color(0x3C3F41))
         border = JBUI.Borders.empty()
 
-        // ── Header bar with title, hint link, and close button ──
-        val headerPanel = JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            isOpaque = false
-            border = CompoundBorder(
-                JBUI.Borders.empty(8, 12, 8, 12),
-                JBUI.Borders.customLineBottom(JBColor(Color(0xD0D0D0), Color(0x555555)))
+        // ── Header bar with title, hint link, and close button (conditional) ──
+        if (showHeader) {
+            val headerPanel = JPanel().apply {
+                layout = BoxLayout(this, BoxLayout.Y_AXIS)
+                isOpaque = false
+                border = CompoundBorder(
+                    JBUI.Borders.empty(8, 12, 8, 12),
+                    JBUI.Borders.customLineBottom(JBColor(Color(0xD0D0D0), Color(0x555555)))
+                )
+                maximumSize = Dimension(Short.MAX_VALUE.toInt(), 80)
+            }
+
+            // Title row
+            val titleRow = JPanel(BorderLayout()).apply {
+                isOpaque = false
+                maximumSize = Dimension(Short.MAX_VALUE.toInt(), 30)
+            }
+
+            val titleLabel = JLabel(I18n.tr("skill.title")).apply {
+                font = JBUI.Fonts.label().asBold()
+                foreground = JBColor(Color(0x1A1A1A), Color(0xBBBBBB))
+            }
+            titleRow.add(titleLabel, BorderLayout.WEST)
+
+            val closeButton = createToolbarButton(
+                icon = AllIcons.Actions.Close,
+                tooltip = I18n.tr("skill.back"),
+                onClick = { onClose() }
             )
-            maximumSize = Dimension(Short.MAX_VALUE.toInt(), 80)
+            titleRow.add(closeButton, BorderLayout.EAST)
+
+            headerPanel.add(titleRow)
+
+            // Hint row — clickable link to community skill library
+            val hintRow = JPanel(FlowLayout(FlowLayout.LEFT, 0, 2)).apply {
+                isOpaque = false
+                maximumSize = Dimension(Short.MAX_VALUE.toInt(), 24)
+            }
+
+            val hintLabel = JLabel(
+                I18n.tr("skill.community.hint"),
+            ).apply {
+                font = JBUI.Fonts.smallFont()
+                foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
+                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                addMouseListener(object : MouseAdapter() {
+                    override fun mouseClicked(e: MouseEvent) {
+                        BrowserUtil.browse("https://github.com/lvesDi005/useful-skill")
+                    }
+                })
+            }
+            hintRow.add(hintLabel)
+
+            headerPanel.add(hintRow)
+
+            add(headerPanel, BorderLayout.NORTH)
         }
-
-        // Title row
-        val titleRow = JPanel(BorderLayout()).apply {
-            isOpaque = false
-            maximumSize = Dimension(Short.MAX_VALUE.toInt(), 30)
-        }
-
-        val titleLabel = JLabel("⚙ 技能设置").apply {
-            font = JBUI.Fonts.label().asBold()
-            foreground = JBColor(Color(0x1A1A1A), Color(0xBBBBBB))
-        }
-        titleRow.add(titleLabel, BorderLayout.WEST)
-
-        val closeButton = createToolbarButton(
-            icon = AllIcons.Actions.Close,
-            tooltip = "返回对话",
-            onClick = { onClose() }
-        )
-        titleRow.add(closeButton, BorderLayout.EAST)
-
-        headerPanel.add(titleRow)
-
-        // Hint row — clickable link to community skill library
-        val hintRow = JPanel(FlowLayout(FlowLayout.LEFT, 0, 2)).apply {
-            isOpaque = false
-            maximumSize = Dimension(Short.MAX_VALUE.toInt(), 24)
-        }
-
-        val hintLabel = JLabel(
-            "<html>没有合适的 Skill？试试社区 Skill 库 →https://github.com/lvesDi005/useful-skill",
-        ).apply {
-            font = JBUI.Fonts.smallFont()
-            foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            addMouseListener(object : MouseAdapter() {
-                override fun mouseClicked(e: MouseEvent) {
-                    BrowserUtil.browse("https://github.com/lvesDi005/useful-skill")
-                }
-            })
-        }
-        hintRow.add(hintLabel)
-
-        headerPanel.add(hintRow)
-
-        add(headerPanel, BorderLayout.NORTH)
 
         // ── Center: skill list in a scroll pane ──
         val scrollPane = JBScrollPane(skillListPanel).apply {
@@ -132,7 +138,7 @@ class SkillSettingsPanel(
         setupDropTarget(this)
 
         // Hint text — centered above the button
-        val dropHintLabel = JLabel("将文件拖拽至此处上传，或点击下方按钮选择文件", SwingConstants.CENTER).apply {
+        val dropHintLabel = JLabel(I18n.tr("skill.drop.hint"), SwingConstants.CENTER).apply {
             font = JBUI.Fonts.smallFont()
             foreground = JBColor(Color.GRAY, Color(0x888888))
             alignmentX = Component.CENTER_ALIGNMENT
@@ -141,7 +147,7 @@ class SkillSettingsPanel(
         bottomPanel.add(Box.createVerticalStrut(6))
 
         // Upload button — centered
-        val uploadButton = JButton("📄 上传技能文件", AllIcons.General.Add).apply {
+        val uploadButton = JButton(I18n.tr("skill.upload"), AllIcons.General.Add).apply {
             addActionListener { chooseAndUploadSkill() }
             font = JBUI.Fonts.label()
             alignmentX = Component.CENTER_ALIGNMENT
@@ -186,11 +192,11 @@ class SkillSettingsPanel(
      */
     private fun chooseAndUploadSkill() {
         val fileChooser = JFileChooser().apply {
-            dialogTitle = "选择技能文件"
+            dialogTitle = I18n.tr("skill.choose.title")
             fileSelectionMode = JFileChooser.FILES_ONLY
             isMultiSelectionEnabled = true
             fileFilter = javax.swing.filechooser.FileNameExtensionFilter(
-                "技能文件 (*.md, *.txt, *.yaml, *.yml, *.json)",
+                I18n.tr("skill.file.filter"),
                 "md", "txt", "yaml", "yml", "json"
             )
         }
@@ -212,8 +218,8 @@ class SkillSettingsPanel(
         val name = file.nameWithoutExtension
         if (skills.any { it.name == name }) {
             Messages.showWarningDialog(
-                "技能 \"$name\" 已存在，请先删除或重命名文件后再上传。",
-                "重复技能"
+                I18n.tr("skill.duplicate.warning", name),
+                I18n.tr("skill.duplicate.title")
             )
             return
         }
@@ -221,12 +227,12 @@ class SkillSettingsPanel(
         val content = try {
             file.readText(Charsets.UTF_8).trim()
         } catch (e: Exception) {
-            Messages.showErrorDialog("无法读取文件: ${e.message}", "读取失败")
+            Messages.showErrorDialog(I18n.tr("skill.read.error", e.message), I18n.tr("skill.read.error.title"))
             return
         }
 
         if (content.isEmpty()) {
-            Messages.showWarningDialog("文件 \"${file.name}\" 内容为空。", "空文件")
+            Messages.showWarningDialog(I18n.tr("skill.empty.file", file.name), I18n.tr("skill.empty.file.title"))
             return
         }
 
@@ -247,7 +253,7 @@ class SkillSettingsPanel(
         skillListPanel.removeAll()
 
         if (skills.isEmpty()) {
-            val emptyLabel = JLabel("暂无技能文件，请上传 Markdown/文本文件作为 AI 技能约束。", SwingConstants.CENTER).apply {
+            val emptyLabel = JLabel(I18n.tr("skill.empty"), SwingConstants.CENTER).apply {
                 font = JBUI.Fonts.label()
                 foreground = JBColor(Color(0x888888), Color(0x777777))
                 alignmentX = Component.LEFT_ALIGNMENT
@@ -330,7 +336,7 @@ class SkillSettingsPanel(
         // View button
         val viewButton = createToolbarButton(
             icon = AllIcons.Actions.Preview,
-            tooltip = "查看内容",
+            tooltip = I18n.tr("skill.preview"),
             size = 28,
             onClick = { showSkillPreview(skill) }
         )
@@ -338,14 +344,14 @@ class SkillSettingsPanel(
         // Delete button
         val deleteButton = createToolbarButton(
             icon = AllIcons.Actions.GC,
-            tooltip = "删除技能",
+            tooltip = I18n.tr("skill.delete"),
             size = 28,
             onClick = {
                 val confirm = Messages.showYesNoDialog(
-                    "确定删除技能 \"${skill.name}\" 吗？",
-                    "删除技能",
-                    "删除",
-                    "取消",
+                    I18n.tr("skill.delete.confirm", skill.name),
+                    I18n.tr("skill.delete"),
+                    I18n.tr("skill.delete.yes"),
+                    I18n.tr("skill.delete.no"),
                     Messages.getQuestionIcon()
                 )
                 if (confirm == Messages.YES) {
@@ -390,7 +396,7 @@ class SkillSettingsPanel(
                 super.dispose()
             }
         }
-        dialog.title = "技能预览 - ${skill.name}"
+        dialog.title = I18n.tr("skill.preview") + " - ${skill.name}"
         dialog.contentPane = panel
         dialog.pack()
         dialog.setLocationRelativeTo(this)

@@ -2,6 +2,7 @@ package com.deepseek.plugin.ui
 
 import com.deepseek.plugin.api.DOMAIN_RESTRICTION_PROMPT
 import com.deepseek.plugin.api.HttpClientProvider
+import com.deepseek.plugin.i18n.I18n
 import com.deepseek.plugin.settings.DeepSeekSettings
 import com.google.gson.Gson
 import com.intellij.openapi.application.ApplicationManager
@@ -56,8 +57,8 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
 
     // ── 语言列表 ──
     private val languages = listOf(
-        "中文", "English", "日本語", "한국어", "Français",
-        "Deutsch", "Español", "Русский", "Português", "Italiano"
+        I18n.tr("lang.zh"), I18n.tr("lang.en"), I18n.tr("lang.ja"), I18n.tr("lang.ko"), I18n.tr("lang.fr"),
+        I18n.tr("lang.de"), I18n.tr("lang.es"), I18n.tr("lang.ru"), I18n.tr("lang.pt"), I18n.tr("lang.it")
     )
 
     // ── UI 组件 ──
@@ -68,11 +69,11 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
         selectedIndex = 1
     }
 
-    private val leftTextArea = ThemeAwareTextArea("输入文本")
-    private val rightTextArea = ThemeAwareTextArea("翻译")
+    private val leftTextArea = ThemeAwareTextArea(I18n.tr("translate.placeholder.source"))
+    private val rightTextArea = ThemeAwareTextArea(I18n.tr("translate.placeholder.target"))
 
     init {
-        title = "翻译"
+        title = I18n.tr("translate.title")
         isResizable = true
         isModal = false
         init()
@@ -130,7 +131,7 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
             background = JBColor(0xE8E8E8, 0x2B2B2B)
             border = JBUI.Borders.empty(10, 0, 0, 0)
         }
-        translateBtn = JButton("翻  译").apply {
+        translateBtn = JButton(I18n.tr("translate.button")).apply {
             font = font.deriveFont(Font.BOLD, 12f)
             foreground = JBColor(0x333333, 0xCCCCCC)
             background = JBColor(0xE0E0E0, 0x4E4E50)
@@ -299,7 +300,7 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
                 isBorderPainted = false
                 isFocusPainted = false
                 cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-                toolTipText = "互换语言"
+                toolTipText = I18n.tr("translate.swap")
 
                 addMouseListener(object : java.awt.event.MouseAdapter() {
                     override fun mouseEntered(e: java.awt.event.MouseEvent) { hovered = true; repaint() }
@@ -360,7 +361,7 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
         val sourceLang = leftLangCombo.selectedItem?.toString() ?: "中文"
         val targetLang = rightLangCombo.selectedItem?.toString() ?: "English"
 
-        rightTextArea.text = "翻译中..."
+        rightTextArea.text = I18n.tr("translate.progress")
         translateBtn.isEnabled = false
 
         ApplicationManager.getApplication().executeOnPooledThread {
@@ -369,8 +370,8 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
                 result.fold(
                     onSuccess = { rightTextArea.text = it },
                     onFailure = {
-                        rightTextArea.text = "翻译失败: ${it.message}"
-                        Messages.showErrorDialog(window, "翻译失败: ${it.message}", "翻译错误")
+                        rightTextArea.text = I18n.tr("translate.error", it.message)
+                        Messages.showErrorDialog(window, I18n.tr("translate.error", it.message), I18n.tr("translate.error"))
                     }
                 )
                 translateBtn.isEnabled = true
@@ -386,7 +387,7 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
     ): Result<String> {
         val settings = DeepSeekSettings.instance
         if (settings.agnesApiKey.isBlank()) {
-            return Result.failure(Exception("请在设置中配置 Agnes API Key"))
+            return Result.failure(Exception(I18n.tr("translate.no.key")))
         }
 
         val messages = listOf(

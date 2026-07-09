@@ -7,14 +7,19 @@ import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
-import javax.swing.BorderFactory
+import java.awt.Graphics
+import java.awt.Graphics2D
+import java.awt.Image
+import java.awt.RenderingHints
 import javax.swing.Box
 import javax.swing.BoxLayout
+import javax.swing.Icon
+import javax.swing.ImageIcon
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.SwingConstants
-import javax.swing.border.CompoundBorder
 import javax.swing.border.EmptyBorder
+import com.deepseek.plugin.i18n.I18n
 
 /**
  * A panel that displays attached file cards in a horizontal flow layout.
@@ -23,9 +28,9 @@ import javax.swing.border.EmptyBorder
  * Layout:
  * ┌──────────────────────────────────────────────┐
  * │ ┌──────────┐  ┌──────────┐                   │
- * │ │ 📄       │  │ 📄       │                   │
- * │ │ app.java │  │ data.xml │                   │
- * │ │ 2.3 KB ✕ │  │ 1.1 KB ✕ │                   │
+ * │ │ image    │  │ 📄       │                   │
+ * │ │ demo.png │  │ app.java │                   │
+ * │ │ 2.3 KB ✕ │  │ 2.3 KB ✕ │                   │
  * │ └──────────┘  └──────────┘                   │
  * └──────────────────────────────────────────────┘
  */
@@ -37,10 +42,7 @@ class FileAttachmentPreview(
     init {
         layout = BoxLayout(this, BoxLayout.X_AXIS)
         background = JBColor(0xF8F9FA, 0x2A2A2A)
-        border = CompoundBorder(
-            JBUI.Borders.customLine(JBColor(0xDADCE0, 0x444444), 1, 1, 0, 1),
-            JBUI.Borders.empty(4, 6, 4, 6)
-        )
+        border = JBUI.Borders.empty(4, 6, 4, 6)
 
         for ((index, file) in files.withIndex()) {
             add(createFileCard(file, index))
@@ -50,18 +52,56 @@ class FileAttachmentPreview(
         add(Box.createHorizontalGlue())
     }
 
+    private fun isImageFile(name: String): Boolean {
+        val ext = name.substringAfterLast('.', "").lowercase()
+        return ext in setOf("png", "jpg", "jpeg", "gif", "bmp")
+    }
+
     private fun createFileCard(file: AttachedFile, index: Int): JPanel {
         val cardBg = JBColor(0xFFFFFF, 0x3C3C3C)
-        val card = JPanel(BorderLayout())
-        card.background = cardBg
-        card.border = BorderFactory.createLineBorder(JBColor(0xE0E0E0, 0x555555), 1)
+        val radius = 8
+        val card = object : JPanel(BorderLayout()) {
+            override fun paintComponent(g: Graphics) {
+                val g2 = g.create() as Graphics2D
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                g2.color = cardBg
+                g2.fillRoundRect(0, 0, width, height, radius, radius)
+                g2.color = JBColor(0xE0E0E0, 0x555555)
+                g2.drawRoundRect(0, 0, width - 1, height - 1, radius, radius)
+                g2.dispose()
+                super.paintComponent(g)
+            }
+        }
         card.preferredSize = Dimension(160, 52)
         card.maximumSize = Dimension(160, 52)
         card.minimumSize = Dimension(120, 48)
+        card.isOpaque = false
 
-        // Icon (left)
-        val icon = getFileTypeIcon(file.name)
-        val iconLabel = JLabel(icon)
+        // Icon (left) — thumbnail for images, generic icon otherwise
+        val icon = getPreviewIcon(file)
+        val iconLabel = if (isImageFile(file.name)) {
+            // JLabel with custom tooltip showing full image
+            object : JLabel(icon) {
+                override fun createToolTip(): javax.swing.JToolTip {
+                    val fullIcon = ImageIcon(file.absolutePath)
+                    val maxShowW = 600
+                    val maxShowH = 400
+                    val scale = minOf(maxShowW.toDouble() / fullIcon.iconWidth, maxShowH.toDouble() / fullIcon.iconHeight, 1.0)
+                    val sw = (fullIcon.iconWidth * scale).toInt().coerceAtLeast(1)
+                    val sh = (fullIcon.iconHeight * scale).toInt().coerceAtLeast(1)
+                    val scaledIcon = ImageIcon(fullIcon.image.getScaledInstance(sw, sh, Image.SCALE_SMOOTH))
+
+                    val tip = javax.swing.JToolTip()
+                    tip.component = this
+                    tip.layout = BorderLayout()
+                    tip.add(JLabel(scaledIcon))
+                    tip.preferredSize = Dimension(sw, sh)
+                    return tip
+                }
+            }.apply { toolTipText = file.name }
+        } else {
+            JLabel(icon)
+        }
         iconLabel.verticalAlignment = SwingConstants.CENTER
         iconLabel.border = EmptyBorder(0, 6, 0, 4)
         card.add(iconLabel, BorderLayout.WEST)
@@ -89,7 +129,7 @@ class FileAttachmentPreview(
         // Remove button (right)
         val removeBtn = createToolbarButton(
             icon = AllIcons.Actions.Close,
-            tooltip = "移除 ${file.name}",
+            tooltip = I18n.tr("file.remove") + " " + file.name,
             size = 16,
             onClick = { onRemove(index) }
         )
@@ -102,7 +142,29 @@ class FileAttachmentPreview(
         return card
     }
 
-    private fun getFileTypeIcon(fileName: String): javax.swing.Icon {
+    private fun getPreviewIcon(file: AttachedFile): Icon {
+        if (isImageFile(file.name)) {
+            createImageThumbnail(file.absolutePath, 48, 36)?.let { return it }
+        }
+        return getFileTypeIcon(file.name)
+    }
+
+    private fun createImageThumbnail(path: String, maxW: Int, maxH: Int): Icon? {
+        return try {
+            val icon = ImageIcon(path)
+            var w = icon.iconWidth
+            var h = icon.iconHeight
+            if (w <= 0 || h <= 0) return null
+            val scale = minOf(maxW.toDouble() / w, maxH.toDouble() / h, 1.0)
+            w = (w * scale).toInt().coerceAtLeast(1)
+            h = (h * scale).toInt().coerceAtLeast(1)
+            ImageIcon(icon.image.getScaledInstance(w, h, Image.SCALE_SMOOTH))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun getFileTypeIcon(fileName: String): Icon {
         val ext = fileName.substringAfterLast('.', "").lowercase()
         return when (ext) {
             "java" -> AllIcons.FileTypes.Java

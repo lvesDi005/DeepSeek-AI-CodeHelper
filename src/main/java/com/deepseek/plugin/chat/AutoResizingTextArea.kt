@@ -9,12 +9,16 @@ import java.awt.Font
 import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.RenderingHints
+import java.awt.Toolkit
+import java.awt.datatransfer.DataFlavor
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.io.File
+import javax.imageio.ImageIO
 import javax.swing.DefaultListModel
 import javax.swing.JList
 import javax.swing.JPopupMenu
@@ -37,7 +41,9 @@ class AutoResizingTextArea(
     cols: Int,
     private val project: Project,
     private val onSend: () -> Unit,
-    private val isStreaming: () -> Boolean
+    private val isStreaming: () -> Boolean,
+    /** Called when the user pastes an image from clipboard. Receives a temp file. */
+    private val onImagePasted: ((File) -> Unit)? = null
 ) : javax.swing.JTextArea(rows, cols) {
 
     private var minHeight: Int = 0
@@ -194,6 +200,53 @@ class AutoResizingTextArea(
         caretPosition = atPos - 1 + entry.length + 2
         suppressingPopup = false
         requestFocusInWindow()
+    }
+
+    /** Shared image-paste logic used by both paste() override and Ctrl+V key listener. */
+    private fun tryPasteImage(): Boolean {
+        return try {
+            val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+            if (clipboard.isDataFlavorAvailable(DataFlavor.imageFlavor)) {
+                val image = clipboard.getData(DataFlavor.imageFlavor) as? java.awt.Image
+                if (image != null) {
+                    // 保存到项目根目录的 images/ 文件夹
+                    val projectDir = project.basePath ?: System.getProperty("java.io.tmpdir")
+                    val imagesDir = File(projectDir, "images")
+                    imagesDir.mkdirs()
+                    val imageFile = File(imagesDir, "image_${System.currentTimeMillis()}.png")
+                    ImageIO.write(bufferedImageFrom(image), "png", imageFile)
+                    onImagePasted?.invoke(imageFile)
+                    true
+                } else false
+            } else false
+        } catch (_: Exception) { false }
+    }
+
+    override fun paste() {
+        if (tryPasteImage()) return
+        super.paste()
+    }
+
+    override fun processKeyEvent(e: KeyEvent) {
+        // Ctrl+V: try image paste first
+        if (e.id == KeyEvent.KEY_PRESSED && e.keyCode == KeyEvent.VK_V &&
+            (e.isControlDown || e.isMetaDown) && !e.isAltDown && !e.isShiftDown) {
+            if (tryPasteImage()) {
+                e.consume()
+                return
+            }
+        }
+        super.processKeyEvent(e)
+    }
+
+    private fun bufferedImageFrom(image: java.awt.Image): java.awt.image.BufferedImage {
+        val w = image.getWidth(null).coerceAtLeast(1)
+        val h = image.getHeight(null).coerceAtLeast(1)
+        val bi = java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+        val g = bi.createGraphics()
+        g.drawImage(image, 0, 0, null)
+        g.dispose()
+        return bi
     }
 
     override fun addNotify() {

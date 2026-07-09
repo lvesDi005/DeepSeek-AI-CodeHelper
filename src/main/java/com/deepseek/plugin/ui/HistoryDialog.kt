@@ -1,6 +1,7 @@
 package com.deepseek.plugin.ui
 
 import com.deepseek.plugin.chat.ChatSession
+import com.deepseek.plugin.i18n.I18n
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
@@ -24,30 +25,33 @@ import javax.swing.ListSelectionModel
 import javax.swing.SwingUtilities
 
 /**
- * Dialog showing session history for quick switching.
+ * Dialog showing session history for quick switching, with a "clear" button
+ * to delete all sessions.
  *
  * @param project       IntelliJ project (for dialog parent)
  * @param sessions      All chat sessions
  * @param currentSessionIndex Index of the currently active session
  * @param onSwitch      Called when the user selects a session to switch to
+ * @param onClearAll    Called when the user clicks "clear" to delete all sessions
  */
 class HistoryDialog(
     project: Project,
     private val sessions: List<ChatSession>,
     private val currentSessionIndex: Int,
-    private val onSwitch: (Int) -> Unit
+    private val onSwitch: (Int) -> Unit,
+    private val onClearAll: () -> Unit
 ) : DialogWrapper(project, true) {
 
     private data class SessionItem(val index: Int, val session: ChatSession) {
         override fun toString(): String {
             val msgCount = session.messages.size
             val tokens = if (session.totalTokens > 0) " · ${session.totalTokens} tokens" else ""
-            return "${session.name}  ($msgCount 条消息$tokens)"
+            return "${session.name}  ($msgCount ${I18n.tr("history.messages")}$tokens)"
         }
     }
 
     init {
-        title = "会话历史"
+        title = I18n.tr("history.title")
         init()
     }
 
@@ -87,11 +91,18 @@ class HistoryDialog(
             }
         })
 
-        val openBtn = JButton("进入会话")
+        val openBtn = JButton(I18n.tr("history.open"))
         openBtn.addActionListener {
             val item = sessionList.selectedValue as? SessionItem ?: return@addActionListener
             closeDialog(openBtn)
             onSwitch(item.index)
+        }
+
+        // "clear" text button at the far left of the OK button
+        val clearBtn = JButton(I18n.tr("history.clear"))
+        clearBtn.addActionListener {
+            closeDialog(clearBtn)
+            onClearAll()
         }
 
         val panel = JPanel(BorderLayout(0, 8)).apply {
@@ -100,9 +111,12 @@ class HistoryDialog(
                 preferredSize = Dimension(350, 220)
                 border = JBUI.Borders.customLine(JBColor.border())
             }, BorderLayout.CENTER)
-            add(JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply {
-                add(openBtn)
-            }, BorderLayout.SOUTH)
+            val btnPanel = JPanel(BorderLayout()).apply {
+                isOpaque = false
+                add(clearBtn, BorderLayout.WEST)
+                add(openBtn, BorderLayout.EAST)
+            }
+            add(btnPanel, BorderLayout.SOUTH)
         }
         return panel
     }

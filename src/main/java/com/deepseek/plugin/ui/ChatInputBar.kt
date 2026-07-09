@@ -18,6 +18,7 @@ import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JComponent
 import javax.swing.JPanel
+import com.deepseek.plugin.i18n.I18n
 
 /**
  * 一体化聊天输入组件。
@@ -152,7 +153,7 @@ class ChatInputBar(
                 maximumSize = Dimension(Short.MAX_VALUE.toInt(), 8)
                 isOpaque = false
                 cursor = Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR)
-                toolTipText = "拖动调整输入区高度，双击重置"
+                toolTipText = I18n.tr("input.drag.resize")
 
                 // 监听输入框的焦点变化，控制分隔栏的显隐
                 inputScrollPane.components.forEach { comp: java.awt.Component ->

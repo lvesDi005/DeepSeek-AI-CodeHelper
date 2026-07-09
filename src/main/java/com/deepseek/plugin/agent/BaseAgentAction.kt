@@ -2,6 +2,7 @@ package com.deepseek.plugin.agent
 
 import com.deepseek.plugin.api.DeepSeekApiClient
 import com.deepseek.plugin.api.DOMAIN_RESTRICTION_PROMPT
+import com.deepseek.plugin.i18n.I18n
 import com.deepseek.plugin.settings.DeepSeekSettings
 import com.deepseek.plugin.ui.CodeBlockCard
 import com.deepseek.plugin.ui.MessageTable
@@ -62,8 +63,8 @@ abstract class BaseAgentAction : AnAction() {
         if (settings.apiKey.isBlank()) {
             com.intellij.openapi.ui.Messages.showWarningDialog(
                 project,
-                "Please configure your DeepSeek API Key in Settings → Tools → DeepSeek AI.",
-                "API Key Required"
+                I18n.tr("agent.config.required"),
+                I18n.tr("agent.config.title")
             )
             return
         }
@@ -83,7 +84,7 @@ abstract class BaseAgentAction : AnAction() {
         
 
         if (selectedText.isBlank() && editor == null) {
-            com.intellij.openapi.ui.Messages.showInfoMessage(project, emptySelectionMessage, "DeepSeek AI")
+            com.intellij.openapi.ui.Messages.showInfoMessage(project, emptySelectionMessage, I18n.tr("agent.title"))
             return
         }
 
@@ -92,7 +93,7 @@ abstract class BaseAgentAction : AnAction() {
         ) {
             override fun run(indicator: ProgressIndicator) {
                 indicator.isIndeterminate = true
-                indicator.text = "Calling DeepSeek..."
+                indicator.text = I18n.tr("agent.calling")
 
                 val userMessage = if (selectedText.isBlank()) {
                     emptySelectionMessage
@@ -111,8 +112,8 @@ abstract class BaseAgentAction : AnAction() {
                         ApplicationManager.getApplication().invokeLater {
                             com.intellij.openapi.ui.Messages.showErrorDialog(
                                 project,
-                                "API Error: ${error.message}",
-                                "DeepSeek AI"
+                                I18n.tr("agent.api.error", error.message),
+                                I18n.tr("agent.title")
                             )
                         }
                     }
@@ -186,7 +187,7 @@ abstract class BaseAgentAction : AnAction() {
 
         val dialog = object : DialogWrapper(project, true) {
             init {
-                title = "DeepSeek AI"
+                title = I18n.tr("agent.title")
                 init()
             }
             override fun createCenterPanel(): JComponent = scrollPane

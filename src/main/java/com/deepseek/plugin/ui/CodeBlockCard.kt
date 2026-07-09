@@ -1,5 +1,6 @@
 package com.deepseek.plugin.ui
 
+import com.deepseek.plugin.i18n.I18n
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -67,13 +68,13 @@ class CodeBlockCard(
         val actionsPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 2, 0))
         actionsPanel.isOpaque = false
 
-        val copyBtn = createActionButton(AllIcons.Actions.Copy, "复制代码") {
+        val copyBtn = createActionButton(AllIcons.Actions.Copy, I18n.tr("code.copy")) {
             copyToClipboard(code)
         }
         actionsPanel.add(copyBtn)
 
         if (showInsert) {
-            val insertBtn = createActionButton(AllIcons.Actions.Edit, "插入到光标位置") {
+            val insertBtn = createActionButton(AllIcons.Actions.Edit, I18n.tr("code.insert")) {
                 insertCodeAtCursor(project, code)
             }
             actionsPanel.add(Box.createHorizontalStrut(4))

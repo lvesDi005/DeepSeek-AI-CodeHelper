@@ -41,6 +41,7 @@ class ChatToolWindowFactory : ToolWindowFactory {
             val previousVersion = settings.lastSeenVersion.ifBlank { null }
 
             val dialog = ChangelogDialog(
+                project = project,
                 previousVersion = previousVersion,
                 currentVersion = currentVersion,
                 changeLogHtml = CHANGELOG_HTML,
@@ -54,6 +55,11 @@ class ChatToolWindowFactory : ToolWindowFactory {
 
             // Persist the new version so the dialog doesn't show again
             settings.lastSeenVersion = currentVersion
+
+            // Navigate to settings page if user clicked the setup link
+            if (dialog.navigateToSettingsOnClose) {
+                ChatPanel.currentInstance?.showSettingsPage("apiConfig")
+            }
         }
     }
 
@@ -64,7 +70,7 @@ class ChatToolWindowFactory : ToolWindowFactory {
         private val CHANGELOG_HTML = """
             <h3>v2.5.4</h3>
             <ul>
-              <li>NVIDIA NIM 模型支持 — 新增 NVIDIA API Provider（z-ai/glm-5.2、minimaxai/minimax-m3、stepfun-ai/step-3.7-flash），支持下拉框选择模型</li>
+              <li>NVIDIA NIM 模型支持+OpenRouter 模型支持— 新增 NVIDIA API Provider（z-ai/glm-5.2、minimaxai/minimax-m3、stepfun-ai/step-3.7-flash）+OpenRouter API Provider，支持下拉框选择模型</li>
               <li>Agent 规划/编码阶段使用当前 Provider 模型 — Phase 1（规划）+ Phase 2（编码）不再硬编码 DeepSeek，改为使用 Settings 中选中的 Provider + Model</li>
               <li>Agent Pipeline 各 Phase 独立配置 — Settings 新增「Agent Pipeline (Agent 流水线配置)」区域，可分别为意图确认、规划、编码、审查四个阶段指定 Provider + Model</li>
               <li>设置按钮 + 弹出菜单 — 状态栏左侧新增 ⚙ 齿轮设置按钮，弹出菜单包含：Q&A/Agent 模式切换 + 快捷进入 Agent Pipeline Phase 设置</li>
@@ -267,7 +273,7 @@ class ChatToolWindowFactory : ToolWindowFactory {
         private val CHANGELOG_HTML_EN = """
             <h3>v2.5.4</h3>
             <ul>
-              <li>NVIDIA NIM Support — New NVIDIA API Provider with model selection dropdown: z-ai/glm-5.2, minimaxai/minimax-m3, stepfun-ai/step-3.7-flash</li>
+              <li>NVIDIA NIM Support+OpenRouter Support — New NVIDIA API Provider with model selection dropdown: z-ai/glm-5.2, minimaxai/minimax-m3, stepfun-ai/step-3.7-flash</li>
               <li>Agent Phase 1+2 Uses Current Provider — Planning and Coding phases no longer hardcode DeepSeek; they use the provider and model selected in Settings</li>
               <li>Per-Phase Agent Pipeline Configuration — New "Agent Pipeline" settings section lets you assign independent Provider + Model for each phase: Intent Confirmation, Planning, Coding, Review</li>
               <li>Settings Button + Popup Menu — Gear icon on the status bar left side replaces the mode dropdown; popup menu includes Q&A/Agent mode switch and quick access to Agent Pipeline Phase settings</li>

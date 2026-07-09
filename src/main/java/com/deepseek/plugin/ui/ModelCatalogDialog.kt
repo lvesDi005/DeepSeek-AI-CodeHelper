@@ -33,7 +33,9 @@ class ModelCatalogDialog : DialogWrapper(true) {
         ModelEntry("nvidia", "NVIDIA NIM", "minimaxai/minimax-m3", "MiniMax M3 推理均衡，适合代码审查"),
         ModelEntry("nvidia", "NVIDIA NIM", "stepfun-ai/step-3.7-flash", "阶跃星辰 Flash，速度快成本低"),
         // StepFun (image parsing)
-        ModelEntry("stepfun", "StepFun", "step-1o-turbo-vision", "多模态视觉解析（图片解析专用）")
+        ModelEntry("stepfun", "StepFun", "step-1o-turbo-vision", "多模态视觉解析（图片解析专用）"),
+        // OpenRouter
+        ModelEntry("openrouter", "OpenRouter", "poolside/laguna-xs-2.1:free", "Poolside Laguna XS 免费版，适合代码生成")
     )
 
     init {

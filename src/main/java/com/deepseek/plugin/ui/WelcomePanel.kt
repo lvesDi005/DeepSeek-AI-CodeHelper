@@ -1,6 +1,7 @@
 package com.deepseek.plugin.ui
 
 import com.deepseek.plugin.PluginVersion
+import com.deepseek.plugin.i18n.I18n
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import java.awt.*
@@ -56,7 +57,7 @@ class WelcomePanel : JPanel(BorderLayout()) {
         }
 
         // ── Plugin name ──
-        val nameLabel = JLabel("DeepSeek AI CodeHelper").apply {
+        val nameLabel = JLabel(I18n.tr("welcome.title")).apply {
             font = font.deriveFont(Font.BOLD, 18f)
             foreground = JBColor(0x1A1A1A, 0xE0E0E0)
             alignmentX = Component.CENTER_ALIGNMENT
@@ -65,7 +66,7 @@ class WelcomePanel : JPanel(BorderLayout()) {
         content.add(Box.createVerticalStrut(6))
 
         // ── Tagline ──
-        val tagline = JLabel("AI-powered coding assistant for JETBRAINS").apply {
+        val tagline = JLabel(I18n.tr("welcome.subtitle")).apply {
             font = font.deriveFont(Font.PLAIN, 12f)
             foreground = JBColor(0x888888, 0x999999)
             alignmentX = Component.CENTER_ALIGNMENT
@@ -74,7 +75,7 @@ class WelcomePanel : JPanel(BorderLayout()) {
         content.add(Box.createVerticalStrut(24))
 
         // ── Quick tips section ──
-        val tipsTitle = JLabel("快速开始").apply {
+        val tipsTitle = JLabel(I18n.tr("welcome.quickstart")).apply {
             font = font.deriveFont(Font.BOLD, 13f)
             foreground = JBColor(0x333333, 0xBBBBBB)
             alignmentX = Component.CENTER_ALIGNMENT
@@ -83,12 +84,12 @@ class WelcomePanel : JPanel(BorderLayout()) {
         content.add(Box.createVerticalStrut(10))
 
         val tips = listOf(
-            TipEntry("Enter", "发送消息"),
-            TipEntry("Shift + Enter", "换行"),
-            TipEntry("选中代码", "自动填入输入框作为上下文"),
-            TipEntry("上传文件", "支持代码文件和图片"),
-            TipEntry("💬 Q&A / 🤖 Agent", "模式切换 — Agent 模式可自动操作文件"),
-            TipEntry("清除会话", "工具栏按钮一键清空当前对话"),
+            TipEntry("Enter", I18n.tr("send")),
+            TipEntry("Shift + Enter", I18n.tr("newline")),
+            TipEntry("选中代码", I18n.tr("autoFill")),
+            TipEntry("上传文件", I18n.tr("supportedFiles")),
+            TipEntry("💬 Q&A / 🤖 Agent", I18n.tr("modeSwitch")),
+            TipEntry("清除会话", I18n.tr("clearSession")),
         )
 
         for ((i, tip) in tips.withIndex()) {
@@ -101,7 +102,7 @@ class WelcomePanel : JPanel(BorderLayout()) {
         content.add(Box.createVerticalStrut(20))
 
         // ── Version info ──
-        val versionLabel = JLabel("v${PluginVersion.current}").apply {
+        val versionLabel = JLabel(I18n.tr("welcome.version") + "${PluginVersion.current}").apply {
             font = font.deriveFont(Font.PLAIN, 10f)
             foreground = JBColor(0xAAAAAA, 0x666666)
             alignmentX = Component.CENTER_ALIGNMENT

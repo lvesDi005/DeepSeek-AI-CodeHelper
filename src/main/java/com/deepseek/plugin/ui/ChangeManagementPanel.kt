@@ -1,5 +1,6 @@
 package com.deepseek.plugin.ui
 
+import com.deepseek.plugin.i18n.I18n
 import com.deepseek.plugin.store.ChangeManagementStore
 import com.deepseek.plugin.store.ChangeRecord
 import com.deepseek.plugin.store.FileChangeInfo
@@ -62,7 +63,7 @@ class ChangeManagementPanel(
             maximumSize = Dimension(Short.MAX_VALUE.toInt(), 30)
         }
 
-        val titleLabel = JLabel("📋 变更管理").apply {
+        val titleLabel = JLabel(I18n.tr("change.title")).apply {
             font = JBUI.Fonts.label().asBold()
             foreground = JBColor(Color(0x1A1A1A), Color(0xBBBBBB))
         }
@@ -70,7 +71,7 @@ class ChangeManagementPanel(
 
         val closeButton = createToolbarButton(
             icon = AllIcons.Actions.Close,
-            tooltip = "返回对话",
+            tooltip = I18n.tr("change.back"),
             onClick = { onClose() }
         )
         titleRow.add(closeButton, BorderLayout.EAST)
@@ -97,7 +98,7 @@ class ChangeManagementPanel(
         recordListPanel.removeAll()
         val records = changeStore.records
         if (records.isEmpty()) {
-            val emptyLabel = JLabel("暂无变更记录").apply {
+            val emptyLabel = JLabel(I18n.tr("change.empty")).apply {
                 font = JBUI.Fonts.label()
                 foreground = JBColor(Color(0x999999), Color(0x777777))
                 alignmentX = Component.CENTER_ALIGNMENT
@@ -130,7 +131,7 @@ class ChangeManagementPanel(
     inner class ChangeRecordCard(private val record: ChangeRecord) : JPanel() {
 
         private var expanded = false
-        private val expandIcon = JLabel("▶").apply {
+        private val expandIcon = JLabel(I18n.tr("change.collapse")).apply {
             font = JBUI.Fonts.label().asBold()
             foreground = JBColor(Color(0x888888), Color(0x999999))
         }
@@ -178,7 +179,7 @@ class ChangeManagementPanel(
 
             val rollbackThisBtn = createToolbarButton(
                 icon = AllIcons.Actions.Rollback,
-                tooltip = "回滚本条记录",
+                tooltip = I18n.tr("change.rollback"),
                 size = 22,
                 onClick = { rollbackThisRecord() }
             )
@@ -186,7 +187,7 @@ class ChangeManagementPanel(
 
             val deleteThisBtn = createToolbarButton(
                 icon = AllIcons.Actions.GC,
-                tooltip = "删除本条记录",
+                tooltip = I18n.tr("change.delete"),
                 size = 22,
                 onClick = { deleteThisRecord() }
             )
@@ -206,7 +207,7 @@ class ChangeManagementPanel(
         }
 
         private fun refreshExpandState() {
-            expandIcon.text = if (expanded) "▼" else "▶"
+            expandIcon.text = if (expanded) I18n.tr("change.expand") else I18n.tr("change.collapse")
             contentPanel.isVisible = expanded
             revalidate()
             repaint()
@@ -228,10 +229,10 @@ class ChangeManagementPanel(
             val count = record.changes.size
             val confirmed = Messages.showYesNoDialog(
                 project,
-                "确认回滚「${record.title}」？\n共涉及 $count 个文件，\n- 修改的文件将恢复为原始内容\n- 新建的文件将被删除",
-                "回滚本条记录",
-                "回滚全部",
-                "取消",
+                I18n.tr("change.confirm.rollback", record.title, count),
+                I18n.tr("change.rollback.dialog.title"),
+                I18n.tr("change.confirm.rollback.all"),
+                I18n.tr("chat.cancel"),
                 Messages.getQuestionIcon()
             )
             if (confirmed != Messages.YES) return
@@ -257,11 +258,11 @@ class ChangeManagementPanel(
                 com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
                     refreshRecords()
                     val msg = when {
-                        failCount == 0 -> "✅ 已成功回滚 ${record.title}（$successCount/$count 个文件）"
-                        successCount > 0 -> "⚠️ 部分回滚完成：$successCount 个成功，$failCount 个失败\n失败文件：${failDetails.joinToString("、")}"
-                        else -> "❌ 回滚失败：$failCount/$count 个文件均失败"
+                        failCount == 0 -> I18n.tr("change.result.success", record.title, successCount, count)
+                        successCount > 0 -> I18n.tr("change.result.partial", successCount, failCount, failDetails.joinToString(", "))
+                        else -> I18n.tr("change.result.failed", failCount, count)
                     }
-                    Messages.showInfoMessage(project, msg, "批量回滚结果")
+                    Messages.showInfoMessage(project, msg, I18n.tr("change.rollback"))
                 }
             }
         }
@@ -272,17 +273,17 @@ class ChangeManagementPanel(
         private fun deleteThisRecord() {
             val confirmed = Messages.showYesNoDialog(
                 project,
-                "确认删除「${record.title}」？\n文件不会被回滚，仅移除变更记录。",
-                "删除记录",
-                "删除",
-                "取消",
+                I18n.tr("change.delete.record", record.title),
+                I18n.tr("change.delete.dialog.title"),
+                I18n.tr("change.delete"),
+                I18n.tr("chat.cancel"),
                 Messages.getQuestionIcon()
             )
             if (confirmed != Messages.YES) return
 
             changeStore.removeRecord(record)
             refreshRecords()
-            Messages.showInfoMessage(project, "已删除「${record.title}」", "删除成功")
+            Messages.showInfoMessage(project, I18n.tr("change.delete.record", record.title), I18n.tr("change.delete"))
         }
     }
 
@@ -308,7 +309,7 @@ class ChangeManagementPanel(
 
             // ── 文件路径标签 ──
             val fileName = File(change.filePath).name
-            val fileIcon = if (change.isNew) "✨" else "📄"
+            val fileIcon = if (change.isNew) I18n.tr("change.file.icon") else I18n.tr("change.file.icon.default")
             val fileLabel = JLabel("$fileIcon $fileName").apply {
                 font = JBUI.Fonts.label()
                 foreground = JBColor(Color(0x555555), Color(0xAAAAAA))
@@ -324,7 +325,7 @@ class ChangeManagementPanel(
             // 查看变更按钮
             val viewChangesBtn = createToolbarButton(
                 icon = AllIcons.Actions.Diff,
-                tooltip = "查看变更",
+                tooltip = I18n.tr("change.view"),
                 size = 22,
                 onClick = { showDiff(change) }
             )
@@ -333,7 +334,7 @@ class ChangeManagementPanel(
             // 回滚按钮
             val rollbackBtn = createToolbarButton(
                 icon = AllIcons.Actions.Rollback,
-                tooltip = "回滚此文件",
+                tooltip = I18n.tr("change.rollback.file"),
                 size = 22,
                 onClick = { rollbackFile(change) }
             )
@@ -351,10 +352,10 @@ class ChangeManagementPanel(
      * 打开 IntelliJ Diff 窗口，对比原始内容与当前文件内容。
      */
     private fun showDiff(change: FileChangeInfo) {
+        val fileName = File(change.filePath).name
         try {
             val file = File(change.filePath)
             val currentContent = if (file.exists()) file.readBytes() else ByteArray(0)
-            val fileName = file.name
 
             val contentFactory = DiffContentFactory.getInstance()
             // Convert ByteArray to String for DiffContentFactory API compatibility
@@ -368,15 +369,15 @@ class ChangeManagementPanel(
             val rightContent = contentFactory.create(project, currentText, virtualFile)
 
             val request = SimpleDiffRequest(
-                "变更对比: $fileName",
+                I18n.tr("change.diff.title", fileName),
                 leftContent,
                 rightContent,
-                if (change.isNew) "(新建文件)" else "备份版本",
-                "当前版本"
+                if (change.isNew) I18n.tr("change.diff.new.file") else I18n.tr("change.diff.backup"),
+                I18n.tr("change.diff.current")
             )
             DiffManager.getInstance().showDiff(project, request)
         } catch (e: Exception) {
-            Messages.showErrorDialog(project, "打开差异对比失败: ${e.message}", "差异对比错误")
+            Messages.showErrorDialog(project, I18n.tr("change.diff.title", fileName) + ": ${e.message}", I18n.tr("change.diff.title", fileName))
         }
     }
 
@@ -386,16 +387,16 @@ class ChangeManagementPanel(
     private fun rollbackFile(change: FileChangeInfo) {
         val fileName = File(change.filePath).name
         val confirmMsg = if (change.isNew) {
-            "确认删除新建文件 $fileName ？"
+            I18n.tr("change.confirm.rollback", fileName, 1)
         } else {
-            "确认将 $fileName 回滚到备份版本？\n当前文件内容将被覆盖。"
+            I18n.tr("change.confirm.rollback", fileName, 1)
         }
         val confirmed = Messages.showYesNoDialog(
             project,
             confirmMsg,
-            if (change.isNew) "删除文件" else "回滚文件",
-            if (change.isNew) "删除" else "回滚",
-            "取消",
+            if (change.isNew) I18n.tr("change.rollback.dialog.title") else I18n.tr("change.rollback.dialog.title"),
+            if (change.isNew) I18n.tr("change.delete") else I18n.tr("change.rollback"),
+            I18n.tr("chat.cancel"),
             Messages.getQuestionIcon()
         )
         if (confirmed != Messages.YES) return
@@ -403,9 +404,9 @@ class ChangeManagementPanel(
         WriteCommandAction.runWriteCommandAction(project) {
             val success = changeStore.rollbackFile(change)
             if (success) {
-                Messages.showInfoMessage(project, "✅ $fileName 已成功回滚", "回滚成功")
+                Messages.showInfoMessage(project, I18n.tr("change.result.success", fileName, 1, 1), I18n.tr("change.rollback"))
             } else {
-                Messages.showErrorDialog(project, "❌ $fileName 回滚失败", "回滚失败")
+                Messages.showErrorDialog(project, I18n.tr("change.result.failed", 1, 1), I18n.tr("change.rollback"))
             }
         }
     }

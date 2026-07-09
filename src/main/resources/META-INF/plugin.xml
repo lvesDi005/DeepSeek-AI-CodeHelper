@@ -3,14 +3,14 @@
     <name>DeepSeek AI Assistant</name>
     <vendor url="https://github.com/lvesDi005/DeepSeek-AI-CodeHelper">lvesDi005</vendor>
     <description><![CDATA[
-        <h2>DeepSeek AI Assistant for IntelliJ IDEA</h2>
+        <h2>DeepSeek AI Assistant for JETBRAINS</h2>
         <ul>
           <li><b>Code Completion</b> — AI-powered inline suggestions as you type</li>
           <li><b>Chat Panel</b> — Ask anything in a side-panel chat window</li>
           <li><b>Agent Actions</b> — Right-click to Ask / Explain / Generate / Review / Optimize</li>
         </ul>
         <br>
-        <p>Configure your API Key in <b>Settings → Tools → DeepSeek AI</b>.</p>
+        <p>Configure your API Key in the ⚙Settings</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -18,20 +18,9 @@
 
     <!-- Application-level services -->
     <extensions defaultExtensionNs="com.intellij">
-        <!-- Settings -->
-        <applicationConfigurable
-            parentId="tools"
-            instance="com.deepseek.plugin.settings.DeepSeekSettingsConfigurable"
-            id="com.deepseek.plugin.settings.DeepSeekSettingsConfigurable"
-            displayName="DeepSeek AI CodeHelper"/>
-
         <!-- Application Service -->
         <applicationService
             serviceImplementation="com.deepseek.plugin.settings.DeepSeekSettings"/>
-
-        <!-- Project Service: 变更管理（按项目隔离） -->
-        <projectService
-            serviceImplementation="com.deepseek.plugin.store.ChangeManagementStore"/>
 
         <!-- Chat Tool Window -->
         <toolWindow
@@ -46,10 +35,17 @@
             implementationClass="com.deepseek.plugin.completion.DeepSeekCompletionContributor"
             order="last"/>
 
+        <!-- Paste Image Handler — 拦截编辑器粘贴，检测图片保存到聊天附件 -->
+        <editorActionHandler
+            action="EditorPaste"
+            order="first"
+            implementationClass="com.deepseek.plugin.handler.PasteImageHandler"/>
+
         <!-- Notification group -->
         <notificationGroup
             id="DeepSeek AI CodeHelper"
             displayType="BALLOON"/>
+
     </extensions>
 
     <!-- Right-click context menu actions -->

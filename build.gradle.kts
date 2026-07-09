@@ -30,7 +30,7 @@ intellijPlatform {
     pluginConfiguration {
         name = "DeepSeek AI CodeHelper"
         description = """
-            <h2>DeepSeek AI CodeHelper - IntelliJ Plugin</h2>
+            <h2>DeepSeek AI CodeHelper - JETBRAINS Plugin</h2>
             <ul>
               <li><b>Code Completion</b> - AI-powered inline suggestions + static analysis (annotation-aware + comment-aware)</li>
               <li><b>Chat Panel</b> - Sidebar chat window with streaming replies and file attachments</li>
@@ -39,7 +39,7 @@ intellijPlatform {
             <p>Compatible with <b>IntelliJ IDEA</b>, <b>PyCharm</b>, <b>DataGrip</b> and other IntelliJ-based IDEs.
             Java-specific features (annotation-aware completion, static analysis) require the Java plugin.</p>
             <br>
-            <p>Configure API Key in <b>Settings -> Tools -> DeepSeek AI</b>.</p>
+            <p>Configure API Key in ⚙Settings</p>
         """.trimIndent()
         ideaVersion {
             sinceBuild = "241"
@@ -49,7 +49,7 @@ intellijPlatform {
             <h1>中文/Chinese</h1>
             <h3>v2.5.4</h3>
             <ul>
-              <li>NVIDIA NIM 模型支持 — 新增 NVIDIA API Provider（z-ai/glm-5.2、minimaxai/minimax-m3、stepfun-ai/step-3.7-flash），支持下拉框选择模型</li>
+              <li>NVIDIA NIM 模型支持+OpenRouter 模型支持— 新增 NVIDIA API Provider（z-ai/glm-5.2、minimaxai/minimax-m3、stepfun-ai/step-3.7-flash）+OpenRouter API Provider，支持下拉框选择模型</li>
               <li>Agent 规划/编码阶段使用当前 Provider 模型 — Phase 1（规划）+ Phase 2（编码）不再硬编码 DeepSeek，改为使用 Settings 中选中的 Provider + Model</li>
               <li>Agent Pipeline 各 Phase 独立配置 — Settings 新增「Agent Pipeline (Agent 流水线配置)」区域，可分别为意图确认、规划、编码、审查四个阶段指定 Provider + Model</li>
               <li>设置按钮 + 弹出菜单 — 状态栏左侧新增 ⚙ 齿轮设置按钮，弹出菜单包含：Q&A/Agent 模式切换 + 快捷进入 Agent Pipeline Phase 设置</li>
@@ -243,7 +243,7 @@ intellijPlatform {
             <h1>English</h1>
             <h3>v2.5.4</h3>
             <ul>
-              <li>NVIDIA NIM Support — New NVIDIA API Provider with model selection dropdown: z-ai/glm-5.2, minimaxai/minimax-m3, stepfun-ai/step-3.7-flash</li>
+              <li>NVIDIA NIM Support+OpenRouter Support — New NVIDIA API Provider with model selection dropdown: z-ai/glm-5.2, minimaxai/minimax-m3, stepfun-ai/step-3.7-flash</li>
               <li>Agent Phase 1+2 Uses Current Provider — Planning and Coding phases no longer hardcode DeepSeek; they use the provider and model selected in Settings</li>
               <li>Per-Phase Agent Pipeline Configuration — New "Agent Pipeline" settings section lets you assign independent Provider + Model for each phase: Intent Confirmation, Planning, Coding, Review</li>
               <li>Settings Button + Popup Menu — Gear icon on the status bar left side replaces the mode dropdown; popup menu includes Q&A/Agent mode switch and quick access to Agent Pipeline Phase settings</li>

@@ -1,5 +1,8 @@
 package com.deepseek.plugin.ui
 
+import com.deepseek.plugin.chat.ChatPanel
+import com.deepseek.plugin.i18n.I18n
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
@@ -7,12 +10,14 @@ import com.intellij.util.ui.JBDimension
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Container
+import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
 import javax.swing.*
 
 class ChangelogDialog(
+    private val project: Project,
     private val previousVersion: String?,
     private val currentVersion: String,
     private val changeLogHtml: String,
@@ -24,7 +29,11 @@ class ChangelogDialog(
     var selectedLanguage: String = initialLanguage
         private set
 
-    private val languageCombo = JComboBox(arrayOf("中文", "English"))
+    /** When true, the caller should navigate to the settings page after the dialog closes. */
+    var navigateToSettingsOnClose: Boolean = false
+        private set
+
+    private val languageCombo = JComboBox(arrayOf(I18n.tr("lang.zh"), I18n.tr("lang.en")))
     private val changelogPane = JEditorPane("text/html", null).apply {
         isEditable = false
         border = JBUI.Borders.empty(4)
@@ -46,9 +55,9 @@ class ChangelogDialog(
         }
 
         title = if (initialLanguage == "en") {
-            "DeepSeek AI CodeHelper \u2014 Release Notes"
+            I18n.tr("changelog.title.en")
         } else {
-            "DeepSeek AI CodeHelper \u2014 更新记录"
+            I18n.tr("changelog.title.zh")
         }
 
         init()
@@ -110,11 +119,32 @@ class ChangelogDialog(
         }
         root.add(scrollPane, BorderLayout.CENTER)
 
+        // ── 首次安装时显示 API 配置引导链接 ──
+        if (previousVersion == null) {
+            val isEn = selectedLanguage == "en"
+            val setupLink = JLabel("<html><a href='#'>⚙ " + (if (isEn) I18n.tr("changelog.setup.en") else I18n.tr("changelog.setup.zh")) + "</a></html>")
+            setupLink.apply {
+                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                font = font.deriveFont(12f)
+                addMouseListener(object : java.awt.event.MouseAdapter() {
+                    override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                        navigateToSettingsOnClose = true
+                        close(DialogWrapper.OK_EXIT_CODE)
+                    }
+                })
+            }
+            val linkPanel = JPanel(FlowLayout(FlowLayout.CENTER, 0, 6)).apply {
+                isOpaque = false
+                add(setupLink)
+            }
+            root.add(linkPanel, BorderLayout.SOUTH)
+        }
+
         return root
     }
 
     override fun createActions(): Array<Action> {
-        val okText = if (selectedLanguage == "en") "Got it" else "知道了"
+        val okText = if (selectedLanguage == "en") I18n.tr("changelog.ok.en") else I18n.tr("changelog.ok.zh")
         return arrayOf(okAction.apply {
             putValue(Action.NAME, okText)
         })
@@ -129,11 +159,11 @@ class ChangelogDialog(
     private fun updateDialogLanguage() {
         val isEn = selectedLanguage == "en"
         title = if (isEn) {
-            "DeepSeek AI CodeHelper \u2014 Release Notes"
+            I18n.tr("changelog.title.en")
         } else {
-            "DeepSeek AI CodeHelper \u2014 更新记录"
+            I18n.tr("changelog.title.zh")
         }
-        okAction.putValue(Action.NAME, if (isEn) "Got it" else "知道了")
+        okAction.putValue(Action.NAME, if (isEn) I18n.tr("changelog.ok.en") else I18n.tr("changelog.ok.zh"))
 
         // Update header labels if they've been created
         val centerPanel = rootPane?.contentPane
@@ -149,14 +179,14 @@ class ChangelogDialog(
     private fun applyHeaderLabels(titleLabel: JLabel, versionLabel: JLabel) {
         val isEn = selectedLanguage == "en"
         titleLabel.text = if (isEn) {
-            "\uD83D\uDE80 DeepSeek AI CodeHelper Update"
+            I18n.tr("changelog.header.en")
         } else {
-            "\uD83D\uDE80 DeepSeek AI CodeHelper 更新"
+            I18n.tr("changelog.header.zh")
         }
         versionLabel.text = if (previousVersion != null) {
             "$previousVersion \u2192 $currentVersion"
         } else {
-            if (isEn) "Current version: $currentVersion" else "当前版本: $currentVersion"
+            if (isEn) I18n.tr("changelog.version.en", currentVersion) else I18n.tr("changelog.version.zh", currentVersion)
         }
     }
 
