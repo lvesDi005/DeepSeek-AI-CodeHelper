@@ -446,10 +446,11 @@ dp-connection/
 ## 开发指南
 
 ### 环境设置
-1. 安装 IntelliJ IDEA 2025.1+
+1. 安装 IntelliJ IDEA 2024.1+
 2. 安装 Kotlin 插件
 3. 安装 Gradle
 4. 克隆项目并在 IDE 中打开
+5. jdk17构建
 
 ### 常用 Gradle 任务
 
