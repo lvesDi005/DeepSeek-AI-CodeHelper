@@ -15,9 +15,6 @@ import com.deepseek.plugin.search.AgenticSearch
 import com.deepseek.plugin.search.ToolUseEngine
 import com.deepseek.plugin.store.SessionStore
 import com.deepseek.plugin.settings.DeepSeekSettings
-import com.deepseek.plugin.store.ChangeManagementStore
-import com.deepseek.plugin.store.ChangeRecord
-import com.deepseek.plugin.store.FileChangeInfo
 import com.deepseek.plugin.ui.AttachedFile
 import com.deepseek.plugin.ui.ChangeManagementPanel
 import com.deepseek.plugin.ui.ChatInputBar
@@ -47,7 +44,6 @@ import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectRootManager
-import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.*
@@ -59,6 +55,7 @@ import java.awt.BorderLayout
 import java.awt.CardLayout
 import java.awt.Color
 import java.awt.Component
+import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
@@ -74,7 +71,7 @@ import javax.swing.text.DefaultHighlighter
 import javax.swing.Timer
 
 enum class ChatMode {
-    Q_A, AGENT
+    Q_A, Q_A_SCAN, AGENT
 }
 
 data class ChatSession(
@@ -87,13 +84,20 @@ data class ChatSession(
 class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable {
 
     companion object {
+        // Context search limits
+        private const val MAX_SEARCH_KEYWORDS = 5
+        private const val MAX_FILES_PER_KEYWORD = 3
+        private const val MAX_FILE_SIZE = 15000
+        private const val MAX_CONTEXT_LINES = 300
+        // Phase 0 retry
+        private const val MAX_PHASE0_RETRIES = 1
         /** 当前活动的 ChatPanel 实例，供外部 Action 向聊天面板推送内容 */
         @JvmStatic
         var currentInstance: ChatPanel? = null
             private set
     }
 
-    private val client = DeepSeekApiClient()
+    internal val client = DeepSeekApiClient()
     private val stepFunClient = StepFunApiClient()
     private val contextProvider = ProjectContextProvider(project)
     private val ragRetriever = RagRetriever(project)
@@ -102,18 +106,27 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     private val sessions = mutableListOf<ChatSession>()
     private var currentSessionIndex = 0
     /** 线程安全的聊天状态机 — 替代 isStreaming + currentEventSource + streamBuffer + streamingBubble + … */
-    private val chatState = AtomicReference<ChatState>(ChatState.Idle)
+    internal val chatState = AtomicReference<ChatState>(ChatState.Idle)
     private var sessionCounter = 1
     private var currentMode = ChatMode.Q_A
 
     /** 意图确认阶段的回调 — 非 null 时正在等待用户补充说明 */
-    private var pendingConfirmation: ((clarification: String) -> Unit)? = null
+    internal var pendingConfirmation: ((clarification: String) -> Unit)? = null
 
     /** 统一设置页面 — 覆盖整个插件区域，含顶部图标导航栏 */
-    private val unifiedSettingsPanel: UnifiedSettingsPanel
+    internal val unifiedSettingsPanel: UnifiedSettingsPanel
 
     /** 变更管理面板 — 覆盖整个插件区域 */
     private val changeManagementPanel: ChangeManagementPanel
+
+    internal val fileOperationExecutor = FileOperationExecutor(
+        project = project,
+        addMessageLabel = { addMessageLabel(it) },
+        getSourceRootPaths = { getSourceRootPaths() }
+    )
+
+    private var pipelineTotalTokens: Int = 0
+    private var phase0RetryCount: Int = 0
 
     /** 输入区默认/最小/最大高度 */
     private val defaultInputHeight = 160
@@ -136,7 +149,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     private var spinnerIndex = 0
 
     // ── Selected code preview state ──
-    private data class SelectedContext(
+    internal data class SelectedContext(
         val fileName: String,
         val startLine: Int,
         val endLine: Int,
@@ -171,7 +184,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     private val sessionComboBox = JComboBox<String>()
 
     /** Vertical panel that holds all rendered messages. */
-    private val messagesPanel = JPanel().apply {
+    internal val messagesPanel = JPanel().apply {
         layout = GridBagLayout()
         // 底部留 28px 空间，避免滚动到底时最后一条消息被截断
         border = JBUI.Borders.empty(0, 0, 28, 0)
@@ -217,18 +230,18 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         messagesScrollPane.repaint()
     }
 
-    private val inputArea = AutoResizingTextArea(4, 0, project, { sendMessage() }, { isStreaming },
+    internal val inputArea = AutoResizingTextArea(4, 0, project, { sendMessage() }, { isStreaming },
         onImagePasted = { file -> addFileAttachment(file) }
     )
 
     // ── Combined send/stop button ──
 
-    private val sendStopButton = JButton(I18n.tr("chat.send.enter")).apply {
+    internal val sendStopButton = JButton(I18n.tr("chat.send.enter")).apply {
         toolTipText = I18n.tr("chat.tooltip.send")
         addActionListener { if (isStreaming) stopStreaming() else sendMessage() }
     }
 
-    private val messageHistory: MutableList<ChatMessage>
+    internal val messageHistory: MutableList<ChatMessage>
         get() = currentSession().messages
 
     init {
@@ -303,6 +316,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             inputScrollPane = inputScrollPane,
             selectedCodePanel = selectedCodePreviewPanel,
             fileAttachmentPanel = fileAttachmentPanel,
+            modeSelector = createModeDropdown(),
             settingsButton = createSettingsButton(),
             uploadButton = createUploadButton(),
             translateButton = createTranslateButton(),
@@ -412,6 +426,12 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     /**
      * Set the selected code context and update the preview card above the input.
      */
+    internal fun consumeSelectedContext(): SelectedContext? {
+        val ctx = selectedContext
+        selectedContext = null
+        return ctx
+    }
+
     private fun setSelectedContext(context: SelectedContext?) {
         selectedContext = context
         selectedCodePreviewPanel.removeAll()
@@ -451,10 +471,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 val g2 = g.create() as Graphics2D
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
                 g2.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE)
-                // 圆角悬停背景
                 g2.color = if (model.isRollover) JBColor(0xE0E0E0, 0x4A4A4A) else Color(0, 0, 0, 0)
                 g2.fillRoundRect(0, 0, width, height, 8, 8)
-                // 绘制三条横线（hamburger menu 图标）
                 g2.color = JBColor(0x555555, 0xAAAAAA)
                 g2.stroke = BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
                 val cx = width / 2
@@ -468,7 +486,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 g2.dispose()
             }
         }.apply {
-            toolTipText = I18n.tr("chat.tooltip.mode.select")
+            toolTipText = I18n.tr("chat.settings")
             isOpaque = false
             isContentAreaFilled = false
             isBorderPainted = false
@@ -479,20 +497,17 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             addActionListener {
                 val popupMenu = JPopupMenu()
 
-                val qaItem = JRadioButtonMenuItem(I18n.tr("chat.mode.qa"))
-                val agentItem = JRadioButtonMenuItem(I18n.tr("chat.mode.agent"))
-                val modeGroup = ButtonGroup()
-                modeGroup.add(qaItem)
-                modeGroup.add(agentItem)
-                qaItem.isSelected = currentMode == ChatMode.Q_A
-                agentItem.isSelected = currentMode == ChatMode.AGENT
+                val streamingItem = JCheckBoxMenuItem(I18n.tr("chat.streaming.toggle"), DeepSeekSettings.instance.streamingEnabled).apply {
+                    addActionListener { DeepSeekSettings.instance.streamingEnabled = isSelected }
+                }
 
-                qaItem.addActionListener { currentMode = ChatMode.Q_A }
-                agentItem.addActionListener { currentMode = ChatMode.AGENT }
-
-                popupMenu.add(qaItem)
-                popupMenu.add(agentItem)
+                popupMenu.add(streamingItem)
                 popupMenu.addSeparator()
+
+                val phase0Item = JCheckBoxMenuItem(I18n.tr("chat.agent.phase0.toggle"), DeepSeekSettings.instance.agentPhase0Enabled).apply {
+                    addActionListener { DeepSeekSettings.instance.agentPhase0Enabled = isSelected }
+                }
+                popupMenu.add(phase0Item)
 
                 val phaseItem = JMenuItem(I18n.tr("chat.agent.pipeline.settings"))
                 phaseItem.addActionListener {
@@ -624,7 +639,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
      * Image files are NOT processed here — they are handled asynchronously
      * in [sendMessageWithImages] so the UI shows "解析中..." instead of a modal dialog.
      */
-    private fun buildTextFileContext(): String {
+    internal fun buildTextFileContext(): String {
         if (attachedFiles.isEmpty()) return ""
 
         val sb = StringBuilder()
@@ -867,7 +882,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
      */
     // ===== Session management =====
 
-    private fun currentSession() = sessions[currentSessionIndex]
+    internal fun currentSession() = sessions[currentSessionIndex]
 
     private fun createNewSession() {
         // 当前会话为空时阻止创建新会话，给出友好提示
@@ -997,24 +1012,35 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
      * Fixed width = half the send button width.
      */
     private fun createModeDropdown(): JComponent {
-        val combo = JComboBox(arrayOf(I18n.tr("chat.mode.qa"), I18n.tr("chat.mode.agent"))).apply {
+        val combo = JComboBox(arrayOf(
+            I18n.tr("chat.mode.qa"),
+            I18n.tr("chat.mode.qa.scan"),
+            I18n.tr("chat.mode.agent")
+        )).apply {
             font = font.deriveFont(Font.PLAIN, 11f)
-            // Let IntelliJ LAF handle colors for natural look
             isOpaque = false
-            // Fixed width for mode selector
-            val fixedW = 100
-            val fixedH = preferredSize.height
-            preferredSize = Dimension(fixedW, fixedH)
-            maximumSize = Dimension(fixedW, fixedH)
-            minimumSize = Dimension(fixedW, fixedH)
+            selectedIndex = when (currentMode) {
+                ChatMode.Q_A -> 0
+                ChatMode.Q_A_SCAN -> 1
+                ChatMode.AGENT -> 2
+            }
             addActionListener {
-                val newMode = if (selectedIndex == 0) ChatMode.Q_A else ChatMode.AGENT
+                val newMode = when (selectedIndex) {
+                    1 -> ChatMode.Q_A_SCAN
+                    2 -> ChatMode.AGENT
+                    else -> ChatMode.Q_A
+                }
                 if (newMode != currentMode) {
                     currentMode = newMode
-                    // tooltip removed — no hover popup on buttons
                 }
             }
         }
+        // 以最长选项文字"Q&A 全文扫描"的自然宽度为准，全局固定不随窗口伸缩
+        val fixedW = combo.preferredSize.width
+        val fixedH = combo.preferredSize.height
+        combo.preferredSize = Dimension(fixedW, fixedH)
+        combo.minimumSize = Dimension(fixedW, fixedH)
+        combo.maximumSize = Dimension(fixedW, fixedH)
         return combo
     }
 
@@ -1043,6 +1069,11 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             return
         }
 
+        if (currentMode == ChatMode.Q_A_SCAN) {
+            sendQAScanMessage(text)
+            return
+        }
+
         if (currentMode == ChatMode.AGENT) {
             sendAgentMessage(text)
             return
@@ -1066,11 +1097,145 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             return
         }
 
-        // 无图片 → 先意图分类，再决定是否读取源文件
+        // 无图片 → 直接回答，无需项目检索
         attachedFiles.clear()
         refreshFileAttachmentPanel()
-        classifyAndRespond(text)
+        respondDirectly(text)
         return
+    }
+
+    // ==================================================================
+    // Q&A Full Scan mode — scan project context then respond as Q&A
+    // ==================================================================
+
+    /**
+     * Q&A 全文扫描模式：先扫描项目获取相关上下文（文件结构 + 相关源码），
+     * 再以 Q&A 方式回答（不走 Agent Pipeline）。
+     */
+    private fun sendQAScanMessage(userText: String) {
+        val settings = DeepSeekSettings.instance
+        if (settings.apiKey.isBlank() && settings.agnesApiKey.isBlank() && settings.nvidiaApiKey.isBlank()) {
+            addMessageLabel(I18n.tr("chat.api.key.required"))
+            return
+        }
+
+        inputArea.text = ""
+
+        // 1. 构建初始文本（包含编辑器选中代码 + 已上传文件上下文）
+        val fileContext = buildTextFileContext()
+        val initialText = buildString {
+            val ctx = selectedContext
+            if (ctx != null) {
+                appendLine("[${ctx.fileName}:${ctx.startLine}-${ctx.endLine}]")
+                appendLine("```")
+                appendLine(ctx.snippet)
+                appendLine("```")
+                appendLine()
+            }
+            if (fileContext.isNotEmpty()) {
+                append(fileContext)
+                appendLine()
+            }
+            append(userText)
+        }
+        setSelectedContext(null)
+
+        // 把用户消息展示到聊天区（含选中代码上下文）
+        messageHistory.add(ChatMessage("user", initialText))
+        renderUserMessage(initialText)
+        currentSession().lastActiveTime = System.currentTimeMillis()
+        saveSessions()
+
+        // 2. 显示分析状态
+        val analysisLabel = JLabel("🤔 AI 正在分析是否需要扫描项目上下文...").apply {
+            font = font.deriveFont(Font.ITALIC, 11f)
+            foreground = JBColor(0x888888, 0x999999)
+            border = JBUI.Borders.empty(4, 16, 4, 16)
+        }
+        messagesPanel.add(analysisLabel, fillWidthConstraints)
+        revalidateAndScroll()
+
+        // 3. 后台分析：让 AI 判断是否需要上下文 & 扫描范围
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val provider = LlmProviderRegistry.get(settings.provider)
+                val analysisResult = client.chatSyncWithExplicitConfig(
+                    baseUrl = provider.baseUrl(settings),
+                    apiKey = provider.apiKey(settings),
+                    model = provider.model(settings),
+                    temperature = 0.3,
+                    maxTokens = 150,
+                    messages = listOf(
+                        ChatMessage("system", buildString {
+                            appendLine("你是一个智能分析器。请判断用户的问题是否需要项目的源码上下文来准确回答。")
+                            appendLine()
+                            appendLine("判断规则：")
+                            appendLine("- 如果问题是通用的编程知识（如「写一个 for 循环」「什么是多态」），不需要上下文 → none")
+                            appendLine("- 如果问题涉及用户项目中的具体代码（如「补全这个接口」「修复这个 bug」「这个类在哪里」），需要上下文")
+                            appendLine("  - 只需要知道文件结构和目录 → structure")
+                            appendLine("  - 需要读取相关源文件的完整内容才能准确回答 → full")
+                            appendLine()
+                            appendLine("请只输出以下 JSON 格式（不要加其他内容）：")
+                            appendLine("{\"needContext\": \"none\"|\"structure\"|\"full\"}")
+                            appendLine("注意：用户消息开头可能包含从编辑器中选中的代码片段（以文件名标注），这本身就已经是用户提供的上下文。")
+                            appendLine("如果仅靠选中的代码片段就能回答问题，则不需要额外扫描项目。")
+                        }),
+                        ChatMessage("user", initialText)
+                    )
+                )
+
+                val decision = analysisResult.getOrNull()?.let { json ->
+                    try {
+                        val parsed = com.google.gson.JsonParser.parseString(json).asJsonObject
+                        parsed.get("needContext")?.asString ?: "none"
+                    } catch (_: Exception) { "none" }
+                } ?: "none"
+
+                // 4. 根据 AI 决策构建上下文
+                val context = buildString {
+                    when (decision) {
+                        "structure" -> {
+                            appendLine("【项目结构参考】")
+                            append(buildProjectStructure())
+                        }
+                        "full" -> {
+                            appendLine("【项目结构参考】")
+                            append(buildProjectStructure())
+                            appendLine().appendLine()
+                            val related = buildRelatedFileContext(userText)
+                            if (related.isNotBlank()) {
+                                appendLine("【相关源文件内容】")
+                                append(related)
+                            }
+                        }
+                    }
+                }
+
+                val finalText = if (context.isNotBlank()) {
+                    "$context\n\n---\n\n$initialText"
+                } else initialText
+
+                // 5. 切回 EDT，开始回答
+                ApplicationManager.getApplication().invokeLater {
+                    messagesPanel.remove(analysisLabel)
+
+                    // 更新 messageHistory 中的用户消息为富化版
+                    if (messageHistory.isNotEmpty() && messageHistory.last().role == "user") {
+                        messageHistory[messageHistory.lastIndex] = ChatMessage("user", finalText)
+                    }
+
+                    // 复用 respondDirectly（已渲染 + 已保存，传 userAlreadyRendered = true 跳过重复）
+                    respondDirectly(finalText, userAlreadyRendered = true)
+                }
+
+            } catch (e: Exception) {
+                ApplicationManager.getApplication().invokeLater {
+                    messagesPanel.remove(analysisLabel)
+                    addMessageLabel("⚠️ 上下文分析失败，直接回答: ${e.message}")
+                    respondDirectly(userText, userAlreadyRendered = true)
+                }
+            }
+        }
     }
 
     // ==================================================================
@@ -1078,7 +1243,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     // ==================================================================
 
     /** Maximum file content length sent as context to the AI. */
-    private fun buildProjectStructure(maxFiles: Int = 30): String {
+    internal fun buildProjectStructure(maxFiles: Int = 30): String {
         val sb = StringBuilder()
         sb.appendLine("当前项目文件结构及内容如下：\n")
         try {
@@ -1146,108 +1311,21 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     }
 
     /**
-     * Q&A 意图分类：先调用 Phase 0 Provider 判断用户输入类型，
-     * 然后决定是直接回答（无需上下文）还是读取源文件 + 扫描目录后回答。
-     */
-    private fun classifyAndRespond(text: String) {
-        val settings = DeepSeekSettings.instance
-        val p0Provider = LlmProviderRegistry.get(settings.agentPhase0Provider)
-        val p0ApiKey = p0Provider.apiKey(settings)
-
-        if (p0ApiKey.isBlank()) {
-            respondWithContext(text)
-            return
-        }
-
-        val p0BaseUrl = p0Provider.baseUrl(settings)
-        val p0Model = settings.agentPhase0Model
-
-        // ═══ FIX: 立即渲染用户消息气泡，消除黑屏 ═══
-        renderUserMessage(text)
-        messageHistory.add(ChatMessage("user", text))
-        currentSession().lastActiveTime = System.currentTimeMillis()
-        saveSessions()
-        removeMessagesFiller()
-
-        // ═══ FIX: 动画加载指示器（旋转字符）替代静态标签 ═══
-        val animChars = "◐◓◑◒"
-        val analysisLabel = JBTextArea("🤔 " + p0Provider.displayName +  I18n.tr("chat.agent.analyzing") + " ◐").apply {
-            isEditable = false
-            lineWrap = true
-            wrapStyleWord = true
-            font = JBUI.Fonts.create("Monospaced", 12)
-            foreground = JBColor(0x666666, 0x999999)
-            background = messagesPanel.background
-            margin = JBUI.insets(4, 8, 4, 8)
-            border = JBUI.Borders.empty()
-            alignmentX = Component.LEFT_ALIGNMENT
-        }
-        messagesPanel.add(analysisLabel, fillWidthConstraints)
-        messagesPanel.add(Box.createVerticalStrut(2), fillWidthConstraints)
-        revalidateAndScroll()
-
-        val animTimer = Timer(300) {
-            val idx = (System.currentTimeMillis() / 300).toInt() % 4
-            analysisLabel.text = "🤔 " + p0Provider.displayName +  I18n.tr("chat.agent.analyzing") + " ${animChars[idx]}"
-        }
-        animTimer.start()
-
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val classificationPrompt = buildString {
-                appendLine(DOMAIN_RESTRICTION_PROMPT)
-                appendLine()
-                appendLine("你是一个输入分类器。判断用户的输入属于哪一类，只输出一个词：")
-                appendLine("- general: 普通编程问题、技术问答、概念解释、代码示例请求（不需要读取项目文件）")
-                appendLine("- context_needed: 控制台报错、异常堆栈、用户选中的代码片段、需要参考项目中的具体文件")
-                appendLine()
-                appendLine("用户输入：")
-                appendLine(text)
-                appendLine()
-                appendLine("分类：")
-            }
-
-            val result = client.chatSyncWithExplicitConfig(
-                baseUrl = p0BaseUrl,
-                apiKey = p0ApiKey,
-                model = p0Model,
-                temperature = 0.1,
-                maxTokens = 20,
-                messages = listOf(ChatMessage("user", classificationPrompt))
-            )
-
-            ApplicationManager.getApplication().invokeLater {
-                animTimer.stop()
-                messagesPanel.remove(analysisLabel)
-                revalidateAndScroll()
-
-                result.onSuccess { response ->
-                    val intent = response.trim().lowercase().takeWhile { it.isLetter() }
-                    if (intent == "general") {
-                        addMessageLabel(I18n.tr("chat.info.general.question"))
-                        respondDirectly(text, userAlreadyRendered = true)
-                    } else {
-                        addMessageLabel(I18n.tr("chat.info.context.needed"))
-                        respondWithContext(text, userAlreadyRendered = true)
-                    }
-                }.onFailure {
-                    addMessageLabel(I18n.tr("chat.info.classification.failed"))
-                    respondDirectly(text, userAlreadyRendered = true)
-                }
-            }
-        }
-    }
-
-    /**
      * 直接回答模式：不读取源文件、不扫描目录，仅将用户问题发给 AI。
      */
     private fun respondDirectly(text: String, userAlreadyRendered: Boolean = false) {
         val settings = DeepSeekSettings.instance
 
         if (!userAlreadyRendered) {
-            renderUserMessage(text)
             messageHistory.add(ChatMessage("user", text))
+            renderUserMessage(text)
             currentSession().lastActiveTime = System.currentTimeMillis()
             saveSessions()
+        }
+
+        if (!settings.streamingEnabled) {
+            respondDirectlySync(text, userAlreadyRendered)
+            return
         }
 
         removeMessagesFiller()
@@ -1256,14 +1334,36 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         sendStopButton.text = I18n.tr("chat.stop.enter")
         sendStopButton.toolTipText = I18n.tr("chat.tooltip.stop")
 
+        // ── 平滑输出：令牌缓冲队列 + 定时冲刷 ──
+        val tokenBuffer = StringBuilder()
+        val flushTimer = Timer(40) {
+            if (tokenBuffer.isNotEmpty()) {
+                val chunk = tokenBuffer.toString()
+                tokenBuffer.clear()
+                streamTextArea.append(chunk)
+                streamTextArea.revalidate()
+                messagesPanel.revalidate()
+                scrollToBottom()
+            }
+        }.apply { isRepeats = true }
+
         val onTokenBlock: (String) -> Unit = { token ->
             ApplicationManager.getApplication().invokeLater {
                 if (thinkingTimer?.isRunning == true) { thinkingTimer?.stop(); thinkingTimer = null; streamTextArea.text = "" }
-                streamTextArea.append(token); streamTextArea.revalidate(); messagesPanel.revalidate(); scrollToBottom()
+                tokenBuffer.append(token)
+                if (!flushTimer.isRunning) flushTimer.start()
             }
         }
         val onCompleteBlock: (String, Usage?) -> Unit = { fullResponse, usage ->
             ApplicationManager.getApplication().invokeLater {
+                flushTimer.stop()
+                // 冲刷剩余缓冲
+                if (tokenBuffer.isNotEmpty()) {
+                    streamTextArea.append(tokenBuffer.toString())
+                    tokenBuffer.clear()
+                    streamTextArea.revalidate()
+                    messagesPanel.revalidate()
+                }
                 stopThinkingAnimation()
                 val oldState = chatState.getAndSet(ChatState.Idle)
                 if (oldState is ChatState.Streaming) { oldState.eventSource.cancel(); removeStreamingArea(oldState) }
@@ -1274,6 +1374,12 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         }
         val onErrorBlock: (Throwable) -> Unit = { error ->
             ApplicationManager.getApplication().invokeLater {
+                flushTimer.stop()
+                // 冲刷剩余缓冲
+                if (tokenBuffer.isNotEmpty()) {
+                    streamTextArea.append(tokenBuffer.toString())
+                    tokenBuffer.clear()
+                }
                 stopThinkingAnimation()
                 val oldState = chatState.getAndSet(ChatState.Idle)
                 if (oldState is ChatState.Streaming) { oldState.eventSource.cancel(); removeStreamingArea(oldState) }
@@ -1297,134 +1403,45 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     }
 
     /**
-     * 全量模式：读取附件的文件上下文、@引用文件、选中代码、
-     * 以及 Agentic Search / RAG 检索，然后发给 AI 回答。
+     * 同步回答模式（流式关闭时使用）：一次性调用 API，渲染完整结果。
      */
-    private fun respondWithContext(text: String, userAlreadyRendered: Boolean = false) {
+    private fun respondDirectlySync(text: String, userAlreadyRendered: Boolean = false) {
         val settings = DeepSeekSettings.instance
-        val projectDir = project.basePath?.let { java.io.File(it) }
-        val refPattern = Regex("@([\\w.\\-/]+)")
-
-        val fileContext = buildTextFileContext()
-        val refContext = buildRefContext(projectDir, text)
-
-        val finalText = buildString {
-            if (fileContext.isNotEmpty()) { append(fileContext) }
-            val ctx = selectedContext
-            if (ctx != null) {
-                appendLine("[${ctx.fileName}:${ctx.startLine}-${ctx.endLine}]"); appendLine("```"); appendLine(ctx.snippet); appendLine("```"); appendLine()
-            }
-            if (refContext.isNotEmpty()) { appendLine(refContext.joinToString("\n\n")); appendLine() }
-            append(text.replace(refPattern) { it.groupValues[1] })
-        }
-        setSelectedContext(null)
-
-        if (!userAlreadyRendered) {
-            renderUserMessage(finalText)
+        val qaSystemPrompt = buildString {
+            appendLine(DOMAIN_RESTRICTION_PROMPT); appendLine()
+            appendLine("你是一个 AI 代码助手，帮助用户解答技术问题。")
+            appendLine(if (settings.language == "en") "Please reply in English." else "请用中文回复。")
+            val skillsContent = unifiedSettingsPanel.getEnabledSkillsContent()
+            if (skillsContent.isNotBlank()) append(skillsContent)
         }
 
-        // Agentic Search / RAG
-        // ═══ 多轮 Agentic Search 必须在后台线程执行，避免阻塞 EDT ═══
-        if (settings.agenticSearchEnabled && isCodeQuery(text) && settings.agenticSearchMaxRounds > 1) {
-            addMessageLabel(I18n.tr("chat.agent.searching"))
-            ApplicationManager.getApplication().executeOnPooledThread {
-                val engine = ToolUseEngine(project, settings.agenticSearchMaxRounds)
-                val result = engine.execute(text, singleRound = false)
-                ApplicationManager.getApplication().invokeLater {
-                    if (result.toolCalls.isNotEmpty()) {
-                        addMessageLabel(I18n.tr("chat.agent.search.complete") + " " + result.toolCalls.size + I18n.tr("chat.agent.search.tool.calls"))
-                    }
-
-                    if (!userAlreadyRendered) {
-                        messageHistory.add(ChatMessage("user", finalText))
-                    } else {
-                        val lastIdx = messageHistory.size - 1
-                        if (lastIdx >= 0 && messageHistory[lastIdx].role == "user") {
-                            messageHistory[lastIdx] = ChatMessage("user", finalText)
-                        } else {
-                            messageHistory.add(ChatMessage("user", finalText))
-                        }
-                    }
-                    messageHistory.add(ChatMessage("assistant", result.answer))
-                    renderAssistantMessage(result.answer)
+        addMessageLabel(I18n.tr("chat.info.syncing"))
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val result = client.chatSync(listOf(ChatMessage("system", qaSystemPrompt)) + messageHistory.toList())
+            ApplicationManager.getApplication().invokeLater {
+                result.onSuccess { fullResponse ->
+                    messageHistory.add(ChatMessage("assistant", fullResponse))
+                    renderAssistantMessage(fullResponse)
                     currentSession().lastActiveTime = System.currentTimeMillis()
                     saveSessions()
                     ensureMessagesFiller()
                     scrollToBottom()
                     sendStopButton.text = I18n.tr("chat.send.enter")
                     sendStopButton.toolTipText = I18n.tr("chat.tooltip.send")
+                }.onFailure { error ->
+                    addMessageLabel(I18n.tr("chat.error.prefix") + " " + error.message)
+                    sendStopButton.text = I18n.tr("chat.send.enter")
+                    sendStopButton.toolTipText = I18n.tr("chat.tooltip.send")
+                    ensureMessagesFiller()
+                    scrollToBottom()
                 }
             }
-            return
         }
-
-        val enrichedText = if (settings.agenticSearchEnabled && isCodeQuery(text)) {
-            val searchContext = buildCodeSearchContext(text)
-            if (searchContext.isNotEmpty()) "以下是通过代码搜索找到的上下文：\n$searchContext\n\n根据以上项目代码上下文，回答以下问题：\n" + finalText else finalText
-        } else {
-            val projectContext = ragRetriever.retrieve(text, topN = 8)
-            if (projectContext.isNotEmpty()) projectContext + "\n根据以上项目文档上下文，回答以下问题：\n" + finalText else finalText
-        }
-
-        if (!userAlreadyRendered) {
-            messageHistory.add(ChatMessage("user", enrichedText))
-        } else {
-            val lastIdx = messageHistory.size - 1
-            if (lastIdx >= 0 && messageHistory[lastIdx].role == "user") {
-                messageHistory[lastIdx] = ChatMessage("user", enrichedText)
-            } else {
-                messageHistory.add(ChatMessage("user", enrichedText))
-            }
-        }
-        currentSession().lastActiveTime = System.currentTimeMillis()
-        saveSessions()
-
-        removeMessagesFiller()
-        val streamBubble = MessageBubble(project, MessageBubble.Role.STREAMING)
-        val streamTextArea = createStreamingArea(streamBubble)
-        sendStopButton.text = I18n.tr("chat.stop.enter"); sendStopButton.toolTipText = I18n.tr("chat.tooltip.stop")
-
-        val onTokenBlock: (String) -> Unit = { token ->
-            ApplicationManager.getApplication().invokeLater {
-                if (thinkingTimer?.isRunning == true) { thinkingTimer?.stop(); thinkingTimer = null; streamTextArea.text = "" }
-                streamTextArea.append(token); streamTextArea.revalidate(); messagesPanel.revalidate(); scrollToBottom()
-            }
-        }
-        val onCompleteBlock: (String, Usage?) -> Unit = { fullResponse, usage ->
-            ApplicationManager.getApplication().invokeLater {
-                stopThinkingAnimation()
-                val oldState = chatState.getAndSet(ChatState.Idle)
-                if (oldState is ChatState.Streaming) { oldState.eventSource.cancel(); removeStreamingArea(oldState) }
-                messageHistory.add(ChatMessage("assistant", fullResponse)); renderAssistantMessage(fullResponse)
-                usage?.let { currentSession().totalTokens += it.totalTokens; addMessageLabel("── Token: ${it.totalTokens} (P:${it.promptTokens} C:${it.completionTokens})") }
-                saveSessions(); sendStopButton.text = I18n.tr("chat.send.enter"); sendStopButton.toolTipText = I18n.tr("chat.tooltip.send"); ensureMessagesFiller(); scrollToBottom()
-            }
-        }
-        val onErrorBlock: (Throwable) -> Unit = { error ->
-            ApplicationManager.getApplication().invokeLater {
-                stopThinkingAnimation()
-                val oldState = chatState.getAndSet(ChatState.Idle)
-                if (oldState is ChatState.Streaming) { oldState.eventSource.cancel(); removeStreamingArea(oldState) }
-                addMessageLabel(I18n.tr("chat.error.prefix") + " " + error.message); sendStopButton.text = I18n.tr("chat.send.enter"); sendStopButton.toolTipText = I18n.tr("chat.tooltip.send"); ensureMessagesFiller(); scrollToBottom()
-            }
-        }
-
-        val qaSystemPrompt = buildString {
-            appendLine(DOMAIN_RESTRICTION_PROMPT); appendLine()
-            appendLine("你是一个 AI 代码助手，帮助用户解答技术问题。")
-            appendLine(if (DeepSeekSettings.instance.language == "en") "Please reply in English." else "请用中文回复。")
-            val skillsContent = unifiedSettingsPanel.getEnabledSkillsContent()
-            if (skillsContent.isNotBlank()) append(skillsContent)
-        }
-
-        val eventSource = client.chatStream(
-            messages = listOf(ChatMessage("system", qaSystemPrompt)) + messageHistory.toList(),
-            onToken = onTokenBlock, onComplete = onCompleteBlock, onError = onErrorBlock
-        )
-        chatState.set(ChatState.Streaming(eventSource = eventSource, bubble = streamBubble))
     }
 
     private fun sendAgentMessage(userText: String) {
+        pipelineTotalTokens = 0
+        phase0RetryCount = 0
         val settings = DeepSeekSettings.instance
 
         inputArea.text = ""
@@ -1447,9 +1464,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         }
         setSelectedContext(null)
 
-        // Render user message and save to history
-        renderUserMessage(finalText)
+        // 先将消息加入 session，再渲染气泡（确保删除按钮能正确找到消息索引）
         messageHistory.add(ChatMessage("user", finalText))
+        renderUserMessage(finalText)
         currentSession().lastActiveTime = System.currentTimeMillis()
         saveSessions()
 
@@ -1475,56 +1492,23 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         val p0Provider = LlmProviderRegistry.get(settings.agentPhase0Provider)
         val p0ApiKey = p0Provider.apiKey(settings)
 
-        val planSystemPrompt = buildString {
-            appendLine(DOMAIN_RESTRICTION_PROMPT)
-            appendLine()
-            appendLine("你是代码助手的规划 Agent（Planner）。你的任务是分析用户的需求，结合项目结构和相关源文件，制定详细的代码修改计划。")
-            appendLine()
-            appendLine("## 项目结构")
-            appendLine(projectStructure)
-            appendLine()
-            if (hasRelatedContext) {
-                appendLine("## 相关源文件内容")
-                appendLine(relatedContext)
-                appendLine()
-            }
-            if (sourceRootsHint.isNotEmpty()) {
-                appendLine("## 项目源码根目录")
-                appendLine(sourceRootsHint)
-                appendLine()
-            }
-            appendLine("## 输出格式")
-            appendLine("请输出一个结构化的计划，包含：")
-            appendLine("1. 需要创建/修改/删除的文件列表，每个文件写明路径和操作类型")
-            appendLine("2. 每个文件的详细修改要点或新增内容说明")
-            appendLine("3. 依赖关系或注意事项（如需要先创建接口再实现等）")
-            appendLine()
-            appendLine("以清晰的 Markdown 格式输出。")
-            if (skillsContent.isNotBlank()) {
-                append(skillsContent)
-            }
-        }
-
         val p1Provider = LlmProviderRegistry.get(settings.agentPhase1Provider)
-        val p1Config = Pair(p1Provider.baseUrl(settings), p1Provider.apiKey(settings))
         val p1Model = settings.agentPhase1Model
 
-        if (p0ApiKey.isNotBlank()) {
+        if (settings.agentPhase0Enabled && p0ApiKey.isNotBlank()) {
             // Phase 0 Provider 已配置 → 先进行意图确认
             startIntentConfirmation(
                 userText = userText,
                 projectStructure = projectStructure,
                 relatedContext = relatedContext,
-                planSystemPrompt = planSystemPrompt,
                 finalText = finalText,
                 sourceRootsHint = sourceRootsHint,
                 skillsContent = skillsContent
             )
         } else {
             // Phase 0 未配置 → 直接进入规划阶段
-            addMessageLabel(I18n.tr("chat.agent.planning.prefix") + p1Model + I18n.tr("chat.agent.planning.suffix"))
+            addMessageLabel(phaseTransitionLabel(p1Model, "planning"))
             startPlanPhase(
-                planSystemPrompt = planSystemPrompt,
                 finalText = finalText,
                 projectStructure = projectStructure,
                 relatedContext = relatedContext,
@@ -1549,7 +1533,6 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         userText: String,
         projectStructure: String,
         relatedContext: String,
-        planSystemPrompt: String,
         finalText: String,
         sourceRootsHint: String,
         skillsContent: String,
@@ -1562,28 +1545,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         addMessageLabel("🤔 " + p0Provider.displayName +  I18n.tr("chat.agent.understanding") + "...")
 
-        val animChars = "◐◓◑◒"
-        val analysisLabel = JBTextArea("🤔 " + p0Provider.displayName +  I18n.tr("chat.agent.understanding") + " ◐").apply {
-            isEditable = false
-            lineWrap = true
-            wrapStyleWord = true
-            font = JBUI.Fonts.create("Monospaced", 12)
-            foreground = JBColor(0x666666, 0x999999)
-            background = messagesPanel.background
-            margin = JBUI.insets(4, 8, 4, 8)
-            border = JBUI.Borders.empty()
-            alignmentX = Component.LEFT_ALIGNMENT
-        }
-        val analysisLabelAdded = messagesPanel.componentCount
-        messagesPanel.add(analysisLabel, fillWidthConstraints)
-        messagesPanel.add(Box.createVerticalStrut(2), fillWidthConstraints)
-        revalidateAndScroll()
-
-        val animTimer = Timer(300) {
-            val idx = (System.currentTimeMillis() / 300).toInt() % 4
-            analysisLabel.text = "🤔 " + p0Provider.displayName +  I18n.tr("chat.agent.understanding") + " ${animChars[idx]}"
-        }
-        animTimer.start()
+        // ═══ 动画加载指示器（旋转字符）替代静态标签 ═══
+        val (analysisLabel, animTimer) = createAnalysisAnimation(p0Provider.displayName, "chat.agent.understanding")
+        val analysisLabelAdded = messagesPanel.componentCount - 2
 
         val analysisPrompt = buildString {
             appendLine(DOMAIN_RESTRICTION_PROMPT)
@@ -1642,9 +1606,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                             messagesPanel.remove(buttonPanel)
                             revalidateAndScroll()
                             // 进入规划阶段
-                            addMessageLabel(I18n.tr("chat.agent.planning.prefix") + p1ModelLocal + I18n.tr("chat.agent.planning.suffix"))
+                            addMessageLabel(phaseTransitionLabel(p1ModelLocal, "planning"))
                             startPlanPhase(
-                                planSystemPrompt = planSystemPrompt,
                                 finalText = finalText,
                                 projectStructure = projectStructure,
                                 relatedContext = relatedContext,
@@ -1666,7 +1629,6 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                                     userText = clarification,
                                     projectStructure = projectStructure,
                                     relatedContext = relatedContext,
-                                    planSystemPrompt = planSystemPrompt,
                                     finalText = finalText,
                                     sourceRootsHint = sourceRootsHint,
                                     skillsContent = skillsContent,
@@ -1683,12 +1645,24 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                     revalidateAndScroll()
 
                 }.onFailure { error ->
+                    if (phase0RetryCount < MAX_PHASE0_RETRIES) {
+                        phase0RetryCount++
+                        addMessageLabel("--- " + p0Provider.displayName + " retry ${phase0RetryCount}/${MAX_PHASE0_RETRIES} ---")
+                        startIntentConfirmation(
+                            userText = userText,
+                            projectStructure = projectStructure,
+                            relatedContext = relatedContext,
+                            finalText = finalText,
+                            sourceRootsHint = sourceRootsHint,
+                            skillsContent = skillsContent
+                        )
+                        return@invokeLater
+                    }
                     addMessageLabel(I18n.tr("chat.phase0.failed") + " " + error.message + I18n.tr("chat.phase0.failed.suffix"))
                     val p1ProviderErr = LlmProviderRegistry.get(s.agentPhase1Provider)
                     val p1ModelErr = s.agentPhase1Model
-                    addMessageLabel(I18n.tr("chat.agent.planning.prefix") + p1ModelErr + I18n.tr("chat.agent.planning.suffix"))
+                    addMessageLabel(phaseTransitionLabel(p1ModelErr, "planning"))
                     startPlanPhase(
-                        planSystemPrompt = planSystemPrompt,
                         finalText = finalText,
                         projectStructure = projectStructure,
                         relatedContext = relatedContext,
@@ -1705,7 +1679,6 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     // ════════════════════════════════════════════════════════════════
 
     private fun startPlanPhase(
-        planSystemPrompt: String,
         finalText: String,
         projectStructure: String,
         relatedContext: String,
@@ -1717,45 +1690,56 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         val p1Config = Pair(p1Provider.baseUrl(s), p1Provider.apiKey(s))
         val p1Model = s.agentPhase1Model
 
+        // 构建规划阶段的系统提示（在 startPlanPhase 内部构建，避免与 sendAgentMessage 重复）
+        val planSystemPrompt = buildString {
+            appendLine(DOMAIN_RESTRICTION_PROMPT)
+            appendLine()
+            appendLine("你是代码助手的规划 Agent（Planner）。你的任务是分析用户的需求，结合项目结构和相关源文件，制定详细的代码修改计划。")
+            appendLine()
+            appendLine("## 项目结构")
+            appendLine(projectStructure)
+            appendLine()
+            if (relatedContext.isNotEmpty()) {
+                appendLine("## 相关源文件内容")
+                appendLine(relatedContext)
+                appendLine()
+            }
+            if (sourceRootsHint.isNotEmpty()) {
+                appendLine("## 项目源码根目录")
+                appendLine(sourceRootsHint)
+                appendLine()
+            }
+            appendLine("## 输出格式")
+            appendLine("请输出一个结构化的计划，包含：")
+            appendLine("1. 需要创建/修改/删除的文件列表，每个文件写明路径和操作类型")
+            appendLine("2. 每个文件的详细修改要点或新增内容说明")
+            appendLine("3. 依赖关系或注意事项（如需要先创建接口再实现等）")
+            appendLine()
+            appendLine("以清晰的 Markdown 格式输出。")
+            if (skillsContent.isNotBlank()) {
+                append(skillsContent)
+            }
+        }
+
         removeMessagesFiller()
         val planBubble = MessageBubble(project, MessageBubble.Role.STREAMING)
         val planTextArea = createStreamingArea(planBubble)
         sendStopButton.text = I18n.tr("chat.stop.enter")
         sendStopButton.toolTipText = I18n.tr("chat.tooltip.stop")
 
-        val onToken: (String) -> Unit = { token ->
-            ApplicationManager.getApplication().invokeLater {
-                planTextArea.append(token)
-                messagesPanel.validate()
-                scrollToBottom()
-            }
-        }
-        val onComplete: (String, Usage?) -> Unit = { fullResponse, usage ->
-            ApplicationManager.getApplication().invokeLater {
-                if (chatState.get() is ChatState.Streaming)
-                    cleanupStreamingAndResetButton()
-                // 保存规划结果
-                messageHistory.add(ChatMessage("assistant", fullResponse))
-                renderAssistantMessage(fullResponse)
-                usage?.let { currentSession().totalTokens += it.totalTokens }
-
+        val (onToken, onComplete, onError) = createPhaseCallbacks(
+            textArea = planTextArea,
+            errorLabelKey = I18n.tr("chat.planning.agent.error"),
+            onPhaseComplete = { fullResponse, _ ->
                 // ── 过渡到 Phase 2 ──
                 val p2Provider = LlmProviderRegistry.get(s.agentPhase2Provider)
                 val p2Config = Pair(p2Provider.baseUrl(s), p2Provider.apiKey(s))
                 val p2Model = s.agentPhase2Model
-                addMessageLabel(I18n.tr("chat.agent.coding.prefix") + p2Model + I18n.tr("chat.agent.coding.suffix"))
+                addMessageLabel(phaseTransitionLabel(p2Model, "coding"))
                 startCodePhase(p2Config, p2Model, fullResponse, projectStructure,
                     relatedContext, sourceRootsHint, skillsContent, finalText)
             }
-        }
-        val onError: (Throwable) -> Unit = { error ->
-            ApplicationManager.getApplication().invokeLater {
-                if (chatState.get() is ChatState.Streaming)
-                    cleanupStreamingAndResetButton()
-                addMessageLabel(I18n.tr("chat.planning.agent.error") + " " + error.message)
-                ensureMessagesFiller(); scrollToBottom()
-            }
-        }
+        )
 
         val eventSource = client.chatStreamWithExplicitConfig(
             baseUrl = p1Config.first, apiKey = p1Config.second,
@@ -1831,25 +1815,14 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             if (skillsContent.isNotBlank()) append(skillsContent)
         }
 
-        val onToken: (String) -> Unit = { token ->
-            ApplicationManager.getApplication().invokeLater {
-                codeTextArea.append(token)
-                messagesPanel.validate()
-                scrollToBottom()
-            }
-        }
-        val onComplete: (String, Usage?) -> Unit = { fullResponse, usage ->
-            ApplicationManager.getApplication().invokeLater {
-                if (chatState.get() is ChatState.Streaming)
-                    cleanupStreamingAndResetButton()
-                messageHistory.add(ChatMessage("assistant", fullResponse))
-                renderAssistantMessage(fullResponse)
-                usage?.let { currentSession().totalTokens += it.totalTokens }
-
+        val (onToken, onComplete, onError) = createPhaseCallbacks(
+            textArea = codeTextArea,
+            errorLabelKey = I18n.tr("chat.coding.agent.error"),
+            onPhaseComplete = { fullResponse, _ ->
                 // 解析并执行文件操作
-                val operations = parseFileOperations(fullResponse)
+                val operations = fileOperationExecutor.parseFileOperations(fullResponse)
                 if (operations.isNotEmpty()) {
-                    applyFileOperations(operations, planResponse)
+                    fileOperationExecutor.applyFileOperations(operations, planResponse)
                 }
 
                 // ── 过渡到 Phase 3 ──
@@ -1859,22 +1832,14 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 if (p3ApiKey.isNotBlank()) {
                     val p3Config = Pair(p3Provider.baseUrl(s), p3ApiKey)
                     val p3Model = s.agentPhase3Model
-                    addMessageLabel(I18n.tr("chat.agent.reviewing.prefix") + p3Model + I18n.tr("chat.agent.reviewing.suffix"))
+                    addMessageLabel(phaseTransitionLabel(p3Model, "reviewing"))
                     startReviewPhase(p3Config, p3Model, planResponse, fullResponse)
                 } else {
                     addMessageLabel(I18n.tr("chat.info.skip.review"))
                     finalizeAgentSession()
                 }
             }
-        }
-        val onError: (Throwable) -> Unit = { error ->
-            ApplicationManager.getApplication().invokeLater {
-                if (chatState.get() is ChatState.Streaming)
-                    cleanupStreamingAndResetButton()
-                addMessageLabel(I18n.tr("chat.coding.agent.error") + " " + error.message)
-                ensureMessagesFiller(); scrollToBottom()
-            }
-        }
+        )
 
         val eventSource = client.chatStreamWithExplicitConfig(
             baseUrl = p2Config.first, apiKey = p2Config.second,
@@ -1923,34 +1888,16 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             appendLine("如果发现问题，指出问题位置和修改建议。如果没有问题，给出总体评价。")
         }
 
-        val onToken: (String) -> Unit = { token ->
-            ApplicationManager.getApplication().invokeLater {
-                reviewTextArea.append(token)
-                messagesPanel.validate()
-                scrollToBottom()
-            }
-        }
-        val onComplete: (String, Usage?) -> Unit = { fullResponse, usage ->
-            ApplicationManager.getApplication().invokeLater {
-                if (chatState.get() is ChatState.Streaming)
-                    cleanupStreamingAndResetButton()
-                messageHistory.add(ChatMessage("assistant", fullResponse))
-                renderAssistantMessage(fullResponse)
+        val (onToken, onComplete, onError) = createPhaseCallbacks(
+            textArea = reviewTextArea,
+            errorLabelKey = I18n.tr("chat.review.agent.error"),
+            onPhaseComplete = { _, usage ->
                 usage?.let {
-                    currentSession().totalTokens += it.totalTokens
                     addMessageLabel("── Token: ${it.totalTokens} (P:${it.promptTokens} C:${it.completionTokens})")
                 }
                 finalizeAgentSession()
             }
-        }
-        val onError: (Throwable) -> Unit = { error ->
-            ApplicationManager.getApplication().invokeLater {
-                if (chatState.get() is ChatState.Streaming)
-                    cleanupStreamingAndResetButton()
-                addMessageLabel(I18n.tr("chat.review.agent.error") + " " + error.message)
-                finalizeAgentSession()
-            }
-        }
+        )
 
         val eventSource = client.chatStreamWithExplicitConfig(
             baseUrl = reviewConfig.first, apiKey = reviewConfig.second,
@@ -1962,7 +1909,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     }
 
     /** 清理当前流式状态并重置发送按钮。 */
-    private fun cleanupStreamingAndResetButton() {
+    internal fun cleanupStreamingAndResetButton() {
         val oldState = chatState.getAndSet(ChatState.Idle)
         if (oldState is ChatState.Streaming) {
             oldState.eventSource.cancel()
@@ -1973,396 +1920,18 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     }
 
     /** 完成 Agent 会话的收尾工作（保存、填充）。 */
-    private fun finalizeAgentSession() {
+    internal fun finalizeAgentSession() {
         saveSessions()
+        if (pipelineTotalTokens > 0) {
+            addMessageLabel("--- Pipeline Total: ${pipelineTotalTokens} tokens ---")
+        }
         sendStopButton.text = I18n.tr("chat.send.enter")
         sendStopButton.toolTipText = I18n.tr("chat.tooltip.send")
         ensureMessagesFiller()
         scrollToBottom()
     }
 
-    private data class FileOperation(
-        val path: String,
-        val content: String,
-        val action: String // "write" or "delete"
-    )
-
-    /**
-     * Parse the AI response to extract file operations.
-     * Format: <file path="..."> ...content... </file>
-     */
-    private fun parseFileOperations(response: String): List<FileOperation> {
-        val operations = mutableListOf<FileOperation>()
-
-        // 正则1：带 ```代码围栏``` 的标准格式（兼容 CRLF、多余空白）
-        //   <file path="...">
-        //   ```lang
-        //   内容
-        //   ```
-        //   </file>
-        val fileRegex = Regex(
-            """<file\s+path="([^"]+)"(?:\s+action="([^"]*)")?\s*>(?:\r?\n)?\s*```(\w+)?\s*(?:\r?\n)?\s*([\s\S]*?)\s*```\s*(?:\r?\n)?\s*</file>""",
-            RegexOption.MULTILINE
-        )
-        for (match in fileRegex.findAll(response)) {
-            val path = match.groupValues[1].trim()
-            val action = match.groupValues[2].ifBlank { "write" }
-            val content = match.groupValues[4].trim()
-            operations.add(FileOperation(path, content, action))
-        }
-
-        // 正则2：不带 ```围栏``` 的简洁格式（纯文本/配置文件）
-        //   <file path="...">内容</file>
-        val simpleFileRegex = Regex(
-            """<file\s+path="([^"]+)"(?:\s+action="([^"]*)")?\s*>([\s\S]*?)</file>""",
-            RegexOption.MULTILINE
-        )
-        for (match in simpleFileRegex.findAll(response)) {
-            val path = match.groupValues[1].trim()
-            val action = match.groupValues[2].ifBlank { "write" }
-            val content = match.groupValues[3].trim()
-            if (operations.none { it.path == path }) {
-                operations.add(FileOperation(path, content, action))
-            }
-        }
-
-        // 调试日志：如果响应中有 <file> 但没匹配上，输出片段辅助排查
-        if (operations.isEmpty() && response.contains("<file")) {
-            System.err.println("[Agent] parseFileOperations: found <file> tags but no regex matched. Response snippet: ${response.take(500)}")
-        } else if (operations.isNotEmpty()) {
-            System.err.println("[Agent] parseFileOperations: ${operations.size} operations parsed")
-        }
-
-        return operations
-    }
-
-    /**
-     * Apply file operations to the project using IntelliJ's virtual file system.
-     * Performs path traversal validation and user confirmation.
-     */
-    private fun applyFileOperations(operations: List<FileOperation>, planResponse: String? = null) {
-        // Reset cached paths for fresh scan
-        cachedSourceRoots = null
-
-        val projectBasePath = project.basePath ?: return
-        val projectDir = java.io.File(projectBasePath).canonicalPath
-
-        // Filter out paths that escape the project directory
-        val safeOps = operations.filter { op ->
-            val targetFile = java.io.File(projectBasePath, op.path)
-            val canonicalPath = try {
-                targetFile.canonicalPath
-            } catch (_: Exception) {
-                null
-            }
-            if (canonicalPath == null || !canonicalPath.startsWith(projectDir)) {
-                addMessageLabel(I18n.tr("chat.skip.unsafe.path") + " " + op.path)
-                false
-            } else {
-                true
-            }
-        }
-
-        if (safeOps.isEmpty()) {
-            addMessageLabel(I18n.tr("chat.no.safe.operations"))
-            return
-        }
-
-        // Build confirmation message
-        val summaryLines = mutableListOf<String>()
-        var writeCount = 0
-        var deleteCount = 0
-        for (op in safeOps) {
-            when (op.action) {
-                "delete" -> {
-                    val f = java.io.File(projectBasePath, op.path)
-                    if (f.exists()) {
-                        summaryLines.add(I18n.tr("chat.delete.prefix") + " " + op.path)
-                        deleteCount++
-                    }
-                }
-                else -> {
-                    val f = java.io.File(projectBasePath, op.path)
-                    if (f.exists()) {
-                        summaryLines.add(I18n.tr("chat.modify.prefix") + " " + op.path)
-                    } else {
-                        summaryLines.add(I18n.tr("chat.create.prefix") + " " + op.path)
-                    }
-                    writeCount++
-                }
-            }
-        }
-        val confirmMsg = I18n.tr("chat.confirm.file.operations.header") + "\n\n" + summaryLines.joinToString("\n") +
-                "\n\n" + I18n.tr("chat.confirm.execute.question")
-
-        val confirmed = com.intellij.openapi.ui.Messages.showYesNoDialog(
-            project,
-            confirmMsg,
-            I18n.tr("chat.confirm.agent.action"),
-            I18n.tr("chat.confirm.execute"),
-            I18n.tr("chat.cancel"),
-            com.intellij.openapi.ui.Messages.getQuestionIcon()
-        )
-        if (confirmed != com.intellij.openapi.ui.Messages.YES) {
-            addMessageLabel(I18n.tr("chat.agent.cancelled"))
-            return
-        }
-
-        // 收集结果和文件变更，在 WriteCommandAction 外部渲染 UI
-        var resultMsg = ""
-        var hasModifiedFiles = false
-
-        WriteCommandAction.runWriteCommandAction(project) {
-            var created = 0
-            var modified = 0
-            var deleted = 0
-            val fileChanges = mutableListOf<FileChangeInfo>()
-
-            for (op in safeOps) {
-                val targetFile = java.io.File(projectBasePath, op.path)
-
-                when (op.action) {
-                    "delete" -> {
-                        val vf = LocalFileSystem.getInstance().findFileByIoFile(targetFile)
-                        if (vf != null && vf.exists()) {
-                            try {
-                                vf.delete(this)
-                                deleted++
-                            } catch (e: Exception) {
-                                System.err.println("[Agent] delete failed: ${op.path} - ${e.message}")
-                            }
-                        }
-                    }
-                    else -> {
-                        val resolvedFile = resolveToExistingSourceRoot(targetFile)
-                        val effectiveFile = resolvedFile ?: targetFile
-                        val effectiveParent = effectiveFile.parentFile
-
-                        if (resolvedFile == null && effectiveParent != null) {
-                            val existingAncestor = findExistingAncestor(effectiveParent)
-                            if (existingAncestor == null) {
-                                System.err.println("[Agent] path ${op.path} does not match any existing source root")
-                            }
-                        }
-
-                        try {
-                            effectiveParent?.mkdirs()
-                        } catch (e: Exception) {
-                            System.err.println("[Agent] mkdirs failed for ${effectiveParent}: ${e.message}")
-                        }
-
-                        val contentBytes = op.content.toByteArray(Charsets.UTF_8)
-                        val isNew = !effectiveFile.exists()
-
-                        if (isNew) {
-                            // Create new file
-                            val parentVFile = LocalFileSystem.getInstance()
-                                .findFileByIoFile(effectiveFile.parentFile)
-                            if (parentVFile != null && parentVFile.exists()) {
-                                try {
-                                    val vf = parentVFile.createChildData(this, effectiveFile.name)
-                                    vf.setBinaryContent(contentBytes)
-                                    created++
-                                    fileChanges.add(FileChangeInfo(effectiveFile.absolutePath, ByteArray(0), isNew = true))
-                                } catch (e: Exception) {
-                                    System.err.println("[Agent] VFS create failed for ${op.path}: ${e.message}")
-                                    // fallback to java.io.File
-                                    effectiveFile.writeBytes(contentBytes)
-                                    LocalFileSystem.getInstance().refreshIoFiles(listOf(effectiveFile))
-                                    created++
-                                    fileChanges.add(FileChangeInfo(effectiveFile.absolutePath, ByteArray(0), isNew = true))
-                                }
-                            } else {
-                                effectiveFile.writeBytes(contentBytes)
-                                LocalFileSystem.getInstance().refreshIoFiles(listOf(effectiveFile))
-                                created++
-                                fileChanges.add(FileChangeInfo(effectiveFile.absolutePath, ByteArray(0), isNew = true))
-                            }
-                        } else {
-                            // Update existing file — 先将原始内容读入内存备份，再覆盖写入
-                            try {
-                                val originalBytes = effectiveFile.readBytes()
-                                fileChanges.add(FileChangeInfo(effectiveFile.absolutePath, originalBytes))
-                            } catch (e: Exception) {
-                                System.err.println("[Agent] backup (in-memory) failed for ${op.path}: ${e.message}")
-                                // 备份失败不影响继续写入
-                            }
-
-                            try {
-                                val vf = LocalFileSystem.getInstance().findFileByIoFile(effectiveFile)
-                                if (vf != null && vf.exists()) {
-                                    vf.setBinaryContent(contentBytes)
-                                    modified++
-                                } else {
-                                    effectiveFile.writeBytes(contentBytes)
-                                    LocalFileSystem.getInstance().refreshIoFiles(listOf(effectiveFile))
-                                    modified++
-                                }
-                            } catch (e: Exception) {
-                                System.err.println("[Agent] write failed for ${op.path}: ${e.message}")
-                                // 尝试 fallback
-                                try {
-                                    effectiveFile.writeBytes(contentBytes)
-                                    LocalFileSystem.getInstance().refreshIoFiles(listOf(effectiveFile))
-                                    modified++
-                                } catch (e2: Exception) {
-                                    System.err.println("[Agent] fallback write also failed for ${op.path}: ${e2.message}")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Refresh project view
-            val projectVDir = LocalFileSystem.getInstance().findFileByIoFile(java.io.File(projectBasePath))
-            if (projectVDir != null) {
-                projectVDir.refresh(false, true)
-            }
-
-            // 在 WriteCommandAction 内构建结果消息字符串（UI操作移到外面）
-            resultMsg = buildString {
-                appendLine(I18n.tr("chat.agent.complete"))
-                if (created > 0) appendLine(I18n.tr("chat.created.files") + " " + created + I18n.tr("chat.count.suffix"))
-                if (modified > 0) appendLine(I18n.tr("chat.modified.files") + " " + modified + I18n.tr("chat.count.suffix"))
-                if (deleted > 0) appendLine(I18n.tr("chat.deleted.files") + " " + deleted + I18n.tr("chat.count.suffix"))
-                if (created == 0 && modified == 0 && deleted == 0) {
-                    appendLine("- (没有文件操作被应用)")
-                }
-            }
-            if (fileChanges.isNotEmpty()) {
-                // 从规划 Agent 的计划文本中提取语义化标题，概括本次变更内容
-                val semanticTitle = planResponse?.let { plan ->
-                    val skipPatterns = listOf(
-                        "输出格式", "项目结构", "相关源文件", "源码根目录",
-                        "分析", "计划", "注意事项", "依赖关系", "规则"
-                    )
-                    plan.lines().firstOrNull { line ->
-                        val trimmed = line.trim()
-                        val heading = trimmed.replace(Regex("^#+\\s*"), "").trim()
-                        trimmed.startsWith("#") && heading.isNotBlank() &&
-                                skipPatterns.none { heading.contains(it) }
-                    }?.replace(Regex("^#+\\s*"), "")?.trim()
-                }
-                val summary = if (!semanticTitle.isNullOrBlank()) {
-                    semanticTitle
-                } else {
-                    // 回退：从实际文件操作生成摘要
-                    val allPaths = safeOps.map { it.path.substringAfterLast("/").substringAfterLast("\\") }
-                    val totalChanged = created + modified + deleted
-                    if (totalChanged <= 2) {
-                        allPaths.joinToString("、")
-                    } else {
-                        buildString {
-                            if (created > 0) append("新建 ${created} 个文件")
-                            if (modified > 0) { if (isNotEmpty()) append("，"); append("修改 ${modified} 个文件") }
-                            if (deleted > 0) { if (isNotEmpty()) append("，"); append("删除 ${deleted} 个文件") }
-                        }
-                    }
-                }
-                val record = ChangeRecord(
-                    title = I18n.tr("chat.change.title.prefix") + " ${summary.ifEmpty { I18n.tr("chat.unknown") }}",
-                    changes = fileChanges
-                )
-                project.getService(ChangeManagementStore::class.java).addRecord(record)
-                hasModifiedFiles = true
-            }
-        }
-
-        // 在 WriteCommandAction 外部渲染 UI 结果
-        addMessageLabel(resultMsg)
-        if (hasModifiedFiles) {
-            addMessageLabel(I18n.tr("chat.change.recorded"))
-        }
-    }
-
-    // ===== Smart path resolution helpers =====
-
-    /** Cache of project source root paths, computed once per operation */
-    private var cachedSourceRoots: List<java.io.File>? = null
-
-    /**
-     * Try to resolve a target file path to an existing source root.
-     * If the AI says "src/main/java/com/example/X.java" but the project uses
-     * "src/main/kotlin/com/example/", this remaps to the existing kotlin dir.
-     *
-     * Returns null if no remapping is needed (path already valid).
-     */
-    private fun resolveToExistingSourceRoot(targetFile: java.io.File): java.io.File? {
-        val basePath = project.basePath ?: return null
-        val baseDir = java.io.File(basePath)
-
-        // If the file already exists, use it as-is
-        if (targetFile.exists()) return null
-
-        // Get the package path (everything after the source root segment)
-        val relativePath = try {
-            targetFile.canonicalPath.removePrefix(baseDir.canonicalPath).trimStart('/').replace('\\', '/')
-        } catch (_: Exception) { return null }
-
-        if (relativePath.isEmpty()) return null
-
-        val sourceRoots = getSourceRootPaths()
-
-        // Check if the path already starts with an existing source root
-        for (root in sourceRoots) {
-            if (relativePath.startsWith(root.trimStart('/'))) {
-                return null // Already matches an existing root — use as-is
-            }
-        }
-
-        // Extract the package+filename part (e.g., "com/example/X.java" from
-        // "src/main/java/com/example/X.java" or "kotlin/com/example/X.java")
-        val sourceRootPatterns = listOf(
-            "src/main/java/", "src/main/kotlin/", "src/main/resources/",
-            "src/test/java/", "src/test/kotlin/", "src/test/resources/",
-            "java/", "kotlin/", "resources/"
-        )
-        val packagePart = sourceRootPatterns
-            .firstOrNull { relativePath.contains(it) }
-            ?.let { relativePath.substringAfter(it) }
-            ?: relativePath
-
-        // Find the best matching source root by checking if a directory at
-        // that root + packagePart already exists
-        for (root in sourceRoots) {
-            val candidate = java.io.File(root, packagePart)
-            if (candidate.parentFile?.exists() == true) {
-                return candidate
-            }
-            // Also try finding any file with the same name in the package tree
-            val existingFile = findFileByNameInProject(candidate.name)
-            if (existingFile != null && existingFile.parentFile?.exists() == true) {
-                // Same filename exists — use that directory for the new file
-                return java.io.File(existingFile.parentFile, candidate.name)
-            }
-        }
-
-        return null
-    }
-
-    /**
-     * Walk up the parent chain to find the deepest ancestor that already exists.
-     * Returns the lowest existing dir (the one closest to the leaf).
-     */
-    private fun findExistingAncestor(file: java.io.File): java.io.File? {
-        var current = file
-        while (current != null) {
-            if (current.exists()) return current
-            current = current.parentFile
-        }
-        return null
-    }
-
-    /**
-     * Collect all source root and content root paths from the project.
-     * This tells us where the project actually puts its source files.
-     */
-    private fun getSourceRootPaths(): List<String> {
-        if (cachedSourceRoots != null) {
-            return cachedSourceRoots!!.map { it.canonicalPath.replace('\\', '/') }
-        }
-
+    internal fun getSourceRootPaths(): List<String> {
         val roots = mutableListOf<String>()
         try {
             // Source roots (src/main/java, src/main/kotlin, etc.)
@@ -2393,27 +1962,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             }
         }
 
-        cachedSourceRoots = roots.map { java.io.File(it) }
         return roots
-    }
-
-    /**
-     * Search the entire project for a file with the given name.
-     * Used to find existing locations for files the AI wants to create.
-     */
-    private fun findFileByNameInProject(fileName: String): java.io.File? {
-        val basePath = project.basePath ?: return null
-        val baseDir = java.io.File(basePath)
-        val results = mutableListOf<java.io.File>()
-
-        try {
-            baseDir.walkTopDown()
-                .maxDepth(20)
-                .filter { it.isFile && it.name == fileName }
-                .forEach { results.add(it) }
-        } catch (_: Exception) { }
-
-        return results.firstOrNull()
     }
 
     private fun stopThinkingAnimation() {
@@ -2432,7 +1981,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         ensureMessagesFiller()
     }
 
-    private fun saveSessions() {
+    internal fun saveSessions() {
         // 防抖：500ms 内多次调用合并为一次磁盘写入
         saveTimer.restart()
     }
@@ -2534,7 +2083,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         val sb = StringBuilder()
         val seen = mutableSetOf<String>()
 
-        for (kw in keywords.take(5)) {
+        for (kw in keywords.take(MAX_SEARCH_KEYWORDS)) {
             if (kw in seen) continue
             seen.add(kw)
 
@@ -2596,7 +2145,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
      * 根据用户请求文本，静默搜索相关源文件并读取完整内容。
      * 返回格式化后的字符串，供 Agent 系统 prompt 使用。
      */
-    private fun buildRelatedFileContext(userText: String): String {
+    internal fun buildRelatedFileContext(userText: String): String {
         val keywords = extractSearchKeywords(userText)
         if (keywords.isEmpty()) return ""
 
@@ -2604,7 +2153,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         val sb = StringBuilder()
         val projectBase = project.basePath ?: return ""
 
-        for (kw in keywords.take(5)) {
+        for (kw in keywords.take(MAX_SEARCH_KEYWORDS)) {
             if (kw in seen) continue
             seen.add(kw)
 
@@ -2612,14 +2161,14 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             if (result.matches.isEmpty()) continue
 
             val byFile = result.matches.groupBy { it.filePath }
-            for ((filePath, matches) in byFile.entries.take(3)) {
-                if (sb.count { it == '\n' } > 300) return sb.toString()
+            for ((filePath, matches) in byFile.entries.take(MAX_FILES_PER_KEYWORD)) {
+                if (sb.count { it == '\n' } > MAX_CONTEXT_LINES) return sb.toString()
                 val file = java.io.File(filePath)
                 if (!file.exists() || !file.isFile) continue
                 val content = try {
                     file.readText(Charsets.UTF_8)
                 } catch (_: Exception) { continue }
-                if (content.length > 15000) continue
+                if (content.length > MAX_FILE_SIZE) continue
                 val relativePath = file.toRelativeString(java.io.File(projectBase))
                 sb.appendLine("--- $relativePath ---")
                 sb.appendLine(content.trim())
@@ -2665,7 +2214,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     // Component builders — modular code block cards
     // ==================================================================
 
-    private fun scrollToBottom() {
+    internal fun scrollToBottom() {
         SwingUtilities.invokeLater {
             // 优先让最后一条可见的消息呈现到视野中——比直接设 maximum 更可靠
             for (i in messagesPanel.componentCount - 1 downTo 0) {
@@ -2685,7 +2234,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     /**
      * Add a simple text label (system messages, tokens, errors).
      */
-    private fun addMessageLabel(text: String) {
+    internal fun addMessageLabel(text: String) {
         showMessages()
         val label = JBTextArea(text).apply {
             isEditable = false
@@ -2708,7 +2257,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
      * Render a user message as a modern right-aligned chat bubble,
      * with an ✕ delete button in the top-right corner.
      */
-    private fun renderUserMessage(content: String) {
+    internal fun renderUserMessage(content: String) {
         showMessages()
 
         // 计算这条用户消息在 session.messages 中的索引
@@ -2777,7 +2326,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     /**
      * Render an assistant message — card style with accent bar + avatar.
      */
-    private fun renderAssistantMessage(content: String) {
+    internal fun renderAssistantMessage(content: String) {
         showMessages()
         val bubble = MessageBubble(project, MessageBubble.Role.ASSISTANT, content)
         // 气泡直接加入 messagesPanel
@@ -2795,7 +2344,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
      * Create a temporary streaming message bubble.
      * Shows "思考中... ◐" spinning animation until the first token arrives.
      */
-    private fun createStreamingArea(bubble: MessageBubble): JBTextArea {
+    internal fun createStreamingArea(bubble: MessageBubble): JBTextArea {
         // 气泡直接加入 messagesPanel
         messagesPanel.add(bubble, fillWidthConstraints)
         messagesPanel.add(Box.createVerticalStrut(12), fillWidthConstraints)
@@ -2830,7 +2379,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     }
 
     /** Remove the streaming bubble and stop the thinking animation. */
-    private fun removeStreamingArea(state: ChatState.Streaming) {
+    internal fun removeStreamingArea(state: ChatState.Streaming) {
         val bubble = state.bubble
         // 气泡目前已直接位于 messagesPanel 中（无 padded 包装层）
         messagesPanel.remove(bubble)
@@ -2874,7 +2423,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         scrollToBottom()
     }
 
-    private fun revalidateAndScroll() {
+    internal fun revalidateAndScroll() {
         messagesPanel.revalidate()
         messagesPanel.repaint()
         scrollToBottom()
@@ -2885,7 +2434,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
      * natural height and the scroll pane viewport expands gradually as content
      * streams in (little-by-little expansion).
      */
-    private fun removeMessagesFiller() {
+    internal fun removeMessagesFiller() {
         messagesPanel.remove(verticalFiller)
     }
 
@@ -2894,7 +2443,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
      * The filler has weighty=1.0 so it expands to take any extra vertical space,
      * pushing messages to the top and eliminating blank space below.
      */
-    private fun ensureMessagesFiller() {
+    internal fun ensureMessagesFiller() {
         for (c in messagesPanel.components) {
             if (c === verticalFiller) return
         }
@@ -2905,4 +2454,91 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             gridwidth = GridBagConstraints.REMAINDER
         })
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Shared animation helper — extracted to eliminate duplication
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Creates a spinning-character animation label and appends it to [messagesPanel].
+     * The label shows "🤔 {displayName} {statusText} ◐" with a rotating spinner.
+     *
+     * @param providerDisplayName Provider display name shown in the label
+     * @param statusKey           i18n key for the status text (e.g. "chat.agent.analyzing")
+     * @return Pair of (label, timer) — caller must stop the timer and remove the label when done
+     */
+    internal fun createAnalysisAnimation(providerDisplayName: String, statusKey: String): Pair<JBTextArea, Timer> {
+        val animChars = "◐◓◑◒"
+        val label = JBTextArea("🤔 $providerDisplayName ${I18n.tr(statusKey)} ◐").apply {
+            isEditable = false
+            lineWrap = true
+            wrapStyleWord = true
+            font = JBUI.Fonts.create("Monospaced", 12)
+            foreground = JBColor(0x666666, 0x999999)
+            background = messagesPanel.background
+            margin = JBUI.insets(4, 8, 4, 8)
+            border = JBUI.Borders.empty()
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
+        messagesPanel.add(label, fillWidthConstraints)
+        messagesPanel.add(Box.createVerticalStrut(2), fillWidthConstraints)
+        revalidateAndScroll()
+
+        val timer = Timer(300) {
+            val idx = (System.currentTimeMillis() / 300).toInt() % 4
+            label.text = "🤔 $providerDisplayName ${I18n.tr(statusKey)} ${animChars[idx]}"
+        }
+        timer.start()
+        return Pair(label, timer)
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Shared streaming callback factory — extracted to eliminate duplication
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Creates standard streaming callbacks (onToken, onComplete, onError) for pipeline phases.
+     * Handles EDT scheduling, streaming cleanup, message persistence, and token tracking.
+     *
+     * @param textArea       The text area to append tokens to
+     * @param errorLabelKey  i18n key for the error message label
+     * @param onPhaseComplete Phase-specific logic to run after the common onComplete handling
+     * @return Triple of (onToken, onComplete, onError)
+     */
+    internal fun createPhaseCallbacks(
+        textArea: JBTextArea,
+        errorLabelKey: String,
+        onPhaseComplete: (fullResponse: String, usage: Usage?) -> Unit
+    ): Triple<(String) -> Unit, (String, Usage?) -> Unit, (Throwable) -> Unit> {
+        val onToken: (String) -> Unit = { token ->
+            ApplicationManager.getApplication().invokeLater {
+                textArea.append(token)
+                messagesPanel.validate()
+                scrollToBottom()
+            }
+        }
+        val onComplete: (String, Usage?) -> Unit = { fullResponse, usage ->
+            ApplicationManager.getApplication().invokeLater {
+                if (chatState.get() is ChatState.Streaming)
+                    cleanupStreamingAndResetButton()
+                messageHistory.add(ChatMessage("assistant", fullResponse))
+                renderAssistantMessage(fullResponse)
+                usage?.let { currentSession().totalTokens += it.totalTokens }
+                onPhaseComplete(fullResponse, usage)
+            }
+        }
+        val onError: (Throwable) -> Unit = { error ->
+            ApplicationManager.getApplication().invokeLater {
+                if (chatState.get() is ChatState.Streaming)
+                    cleanupStreamingAndResetButton()
+                addMessageLabel("$errorLabelKey ${error.message}")
+                ensureMessagesFiller(); scrollToBottom()
+            }
+        }
+        return Triple(onToken, onComplete, onError)
+    }
+
+    /** Format a phase transition label: "{prefix}{model}{suffix}" using i18n keys. */
+    private fun phaseTransitionLabel(model: String, phaseKey: String): String =
+        I18n.tr("chat.agent.${phaseKey}.prefix") + model + I18n.tr("chat.agent.${phaseKey}.suffix")
 }

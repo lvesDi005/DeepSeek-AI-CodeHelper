@@ -23,9 +23,9 @@ import javax.swing.text.html.StyleSheet
 object MarkdownRenderer {
 
     /**
-     * Regex 匹配中文文本中混排的英文/代码术语。
+     * Regex 匹配候选的英文/代码术语。
      * 规则：由 [a-zA-Z_] 开头，包含字母/数字/点/下划线/尖括号/方括号/# 的 2-60 字符序列，
-     * 前后必须是中文、空白或标点（确保不破坏已有 backtick 包裹）。
+     * 之后由 [isTechnicalTerm] 过滤，只保留真正的代码术语格式。
      */
     private val REGEX_INLINE_CODE = Regex(
         "(?<=[\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef\\s，。、；：！？）()" +
@@ -51,7 +51,7 @@ object MarkdownRenderer {
         bgColor: java.awt.Color? = null,
         linkCallback: ((String) -> Unit)? = null
     ): JEditorPane {
-        // 预处理：将英文/代码术语自动包裹 backtick，使其在中文正文中更突出
+        // 预处理：将代码术语自动包裹 backtick，使其在正文中更突出
         val highlighted = highlightInlineCode(markdownText)
         val html = toHtml(highlighted)
         val pane = JEditorPane("text/html", html).apply {
@@ -89,10 +89,16 @@ object MarkdownRenderer {
     }
 
     /**
-     * 将中文文本中混排的英文/代码术语用 backtick 包裹，
+     * 将文本中的代码术语用 backtick 包裹，
      * 使它们在 Markdown 渲染时获得内联代码样式（等宽字体 + 底色），从而突出显示。
      *
-     * 例如：「使用 MessageBubble 显示」→「使用 `MessageBubble` 显示」
+     * 通过 [isTechnicalTerm] 按词形判断，只识别真正的代码术语（如 camelCase、
+     * PascalCase、ALL_CAPS、含特殊字符的标识符），不处理普通英文单词。
+     *
+     * 例如：
+     *  - 「使用 MessageBubble 显示」→「使用 `MessageBubble` 显示」
+     *  - 「call getUser() to fetch」→「call `getUser()` to fetch」
+     *  - 「the API returns JSON」→「the `API` returns `JSON`」
      *
      * 不会重复包裹已被 `` ` `` 包裹的内容。
      */
@@ -102,6 +108,9 @@ object MarkdownRenderer {
 
         for (match in REGEX_INLINE_CODE.findAll(text)) {
             val start = match.range.first
+
+            // 按词形过滤：只保留真正的代码术语（非普通英文单词）
+            if (!isTechnicalTerm(match.value)) continue
 
             // 跳过已被 backtick 包裹的（前面有 ` 且后面有对应的 `）
             val alreadyWrapped = start > 0 && text[start - 1] == '`'
@@ -120,6 +129,32 @@ object MarkdownRenderer {
     }
 
     // ── Private helpers ──
+
+    /**
+     * 判断一个词是否为代码术语（而非普通英文单词）。
+     *
+     * 代码术语通常具有以下特征之一：
+     *  - 包含非字母字符（点、下划线、尖括号、括号、数字等）：`List<String>`、`user_name`、`@Override`
+     *  - 全大写且长度 ≥ 2：`API`、`JSON`、`MAX`（常量/缩写）
+     *  - 非首字母有大写字母（camelCase / PascalCase）：`getUser`、`MessageBubble`、`JavaScript`
+     */
+    private fun isTechnicalTerm(word: String): Boolean {
+        if (word.length < 2) return false
+
+        // 包含非字母字符 → 代码标识符（下划线、点、括号、数字等）
+        if (word.any { !it.isLetter() }) return true
+
+        val hasLower = word.any { it.isLowerCase() }
+        val hasUpper = word.any { it.isUpperCase() }
+
+        // 全大写 → 常量/缩写（API, JSON, MAX）
+        if (hasUpper && !hasLower) return true
+
+        // 非首字母位置出现大写 → camelCase / PascalCase（getUser, MessageBubble, JavaScript）
+        if (hasLower && word.substring(1).any { it.isUpperCase() }) return true
+
+        return false
+    }
 
     private fun createStyleSheet(fontSize: Int, fgColor: java.awt.Color): StyleSheet {
         val ss = StyleSheet()

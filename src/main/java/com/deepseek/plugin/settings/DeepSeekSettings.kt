@@ -15,7 +15,7 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
     var maxTokens: Int = 4096
     var temperature: Double = 0.7
     var completionEnabled: Boolean = true
-    var completionModel: String = ""           // 空=使用主模型, 可单独指定如 "deepseek-v4-flash"
+    var completionModel: String = "deepseek-v4-flash"  // 空=使用主模型, 可单独指定
     var completionMaxTokens: Int = 256
     var completionDelayMs: Long = 500
     var completionMinPrefix: Int = 2           // 最少输入字符数才触发补全
@@ -65,12 +65,20 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
     // Agent Pipeline 各 Phase 独立配置
     var agentPhase0Provider: String = "agnes"          // 意图确认 Provider
     var agentPhase0Model: String = "agnes-2.0-flash"  // 意图确认 Model
+
+    // Phase 0 意图确认开关 — 关闭时跳过意图确认直接进入规划阶段
+    var agentPhase0Enabled: Boolean = true
+
+    // 流式输出开关 — 关闭时使用同步调用，一次性返回完整结果
+    var streamingEnabled: Boolean = true
     var agentPhase1Provider: String = "deepseek"       // 规划 Provider
     var agentPhase1Model: String = "deepseek-v4-pro"   // 规划 Model
     var agentPhase2Provider: String = "deepseek"       // 编码 Provider
     var agentPhase2Model: String = "deepseek-v4-flash" // 编码 Model
     var agentPhase3Provider: String = "agnes"          // 审查 Provider
     var agentPhase3Model: String = "agnes-2.0-flash"   // 审查 Model
+
+    // Q&A 分类器复用主 API Configuration 的 Provider/Model，无需单独存储字段
 
     override fun getState(): DeepSeekSettings = this
     override fun loadState(state: DeepSeekSettings) {

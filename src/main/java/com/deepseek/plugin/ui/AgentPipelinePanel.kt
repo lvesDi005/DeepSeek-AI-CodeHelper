@@ -1,5 +1,6 @@
 package com.deepseek.plugin.ui
 
+import com.deepseek.plugin.api.LlmProviderRegistry
 import com.deepseek.plugin.i18n.I18n
 import com.deepseek.plugin.settings.DeepSeekSettings
 import com.intellij.openapi.ui.ComboBox
@@ -14,101 +15,105 @@ import javax.swing.JPanel
 /**
  * Agent Pipeline configuration panel — each phase can use a different Provider+Model.
  *
+ * The Q&A Classifier reuses the main API Configuration, so it does not appear here.
  * Changes are auto-saved to [DeepSeekSettings] on combo selection change or field focus loss.
  */
 class AgentPipelinePanel : JPanel(BorderLayout()) {
 
     private val settings = DeepSeekSettings.instance
-    private var agentPhase0ProviderComboBox: ComboBox<String>? = null
-    private var agentPhase0ModelField: JBTextField? = null
-    private var agentPhase1ProviderComboBox: ComboBox<String>? = null
-    private var agentPhase1ModelField: JBTextField? = null
-    private var agentPhase2ProviderComboBox: ComboBox<String>? = null
-    private var agentPhase2ModelField: JBTextField? = null
-    private var agentPhase3ProviderComboBox: ComboBox<String>? = null
-    private var agentPhase3ModelField: JBTextField? = null
+    private val providerIds = LlmProviderRegistry.allProviders().map { it.id }.toList()
+
+    // ── Agent Pipeline 4 阶段绑定 ──
+    private data class PhaseBinding(
+        val providerLabelKey: String,
+        val modelLabelKey: String,
+        val modelCommentKey: String,
+        val providerCombo: ComboBox<String>,
+        val modelField: JBTextField,
+        val providerGet: () -> String,
+        val providerSet: (String) -> Unit,
+        val modelGet: () -> String,
+        val modelSet: (String) -> Unit
+    )
+
+    private val phaseBindings = mutableListOf<PhaseBinding>()
 
     init {
         isOpaque = false
 
+        // 4 阶段的配置元数据（label key + settings 读写）
+        data class PhaseMeta(
+            val labelPrefix: String,
+            val providerGet: () -> String,
+            val providerSet: (String) -> Unit,
+            val modelGet: () -> String,
+            val modelSet: (String) -> Unit
+        )
+
+        val phaseMetas = listOf(
+            PhaseMeta("pipeline.phase0",
+                { settings.agentPhase0Provider }, { settings.agentPhase0Provider = it },
+                { settings.agentPhase0Model }, { settings.agentPhase0Model = it }),
+            PhaseMeta("pipeline.phase1",
+                { settings.agentPhase1Provider }, { settings.agentPhase1Provider = it },
+                { settings.agentPhase1Model }, { settings.agentPhase1Model = it }),
+            PhaseMeta("pipeline.phase2",
+                { settings.agentPhase2Provider }, { settings.agentPhase2Provider = it },
+                { settings.agentPhase2Model }, { settings.agentPhase2Model = it }),
+            PhaseMeta("pipeline.phase3",
+                { settings.agentPhase3Provider }, { settings.agentPhase3Provider = it },
+                { settings.agentPhase3Model }, { settings.agentPhase3Model = it })
+        )
+
         val form = panel {
+            // ════════════════════════════════════════════════════════════
+            //  Agent Pipeline 4 阶段 — 通过循环动态生成
+            // ════════════════════════════════════════════════════════════
             group(I18n.tr("pipeline.group.title")) {
-                row(I18n.tr("pipeline.phase0.provider")) {
-                    agentPhase0ProviderComboBox = comboBox<String>(listOf("deepseek", "agnes", "nvidia", "openrouter"))
-                        .apply {
-                            component.selectedItem = settings.agentPhase0Provider
-                            component.addActionListener { saveSettings() }
-                        }
-                        .component
+                for (meta in phaseMetas) {
+                    val providerLabelKey = "${meta.labelPrefix}.provider"
+                    val modelLabelKey = "${meta.labelPrefix}.model"
+                    val modelCommentKey = "${meta.labelPrefix}.model.comment"
+
+                    // Provider 下拉框
+                    lateinit var providerCombo: ComboBox<String>
+                    row(I18n.tr(providerLabelKey)) {
+                        providerCombo = comboBox<String>(providerIds)
+                            .apply {
+                                component.selectedItem = meta.providerGet()
+                                component.addActionListener { saveSettings() }
+                            }
+                            .component
+                    }
+
+                    // Model 文本输入框
+                    lateinit var modelField: JBTextField
+                    row(I18n.tr(modelLabelKey)) {
+                        modelField = cell(JBTextField().apply {
+                            columns = 30
+                            text = meta.modelGet()
+                            font = JBUI.Fonts.label()
+                            addFocusListener(object : FocusAdapter() {
+                                override fun focusLost(e: FocusEvent) { saveSettings() }
+                            })
+                        }).component as JBTextField
+                        comment(I18n.tr(modelCommentKey))
+                    }
+
+                    phaseBindings.add(PhaseBinding(
+                        providerLabelKey = providerLabelKey,
+                        modelLabelKey = modelLabelKey,
+                        modelCommentKey = modelCommentKey,
+                        providerCombo = providerCombo,
+                        modelField = modelField,
+                        providerGet = meta.providerGet,
+                        providerSet = meta.providerSet,
+                        modelGet = meta.modelGet,
+                        modelSet = meta.modelSet
+                    ))
                 }
-                row(I18n.tr("pipeline.phase0.model")) {
-                    agentPhase0ModelField = cell(JBTextField().apply {
-                        columns = 30
-                        text = settings.agentPhase0Model
-                        font = JBUI.Fonts.label()
-                        addFocusListener(object : FocusAdapter() {
-                            override fun focusLost(e: FocusEvent) { saveSettings() }
-                        })
-                    }).component as JBTextField
-                    comment(I18n.tr("pipeline.phase0.model.comment"))
-                }
-                row(I18n.tr("pipeline.phase1.provider")) {
-                    agentPhase1ProviderComboBox = comboBox<String>(listOf("deepseek", "agnes", "nvidia", "openrouter"))
-                        .apply {
-                            component.selectedItem = settings.agentPhase1Provider
-                            component.addActionListener { saveSettings() }
-                        }
-                        .component
-                }
-                row(I18n.tr("pipeline.phase1.model")) {
-                    agentPhase1ModelField = cell(JBTextField().apply {
-                        columns = 30
-                        text = settings.agentPhase1Model
-                        font = JBUI.Fonts.label()
-                        addFocusListener(object : FocusAdapter() {
-                            override fun focusLost(e: FocusEvent) { saveSettings() }
-                        })
-                    }).component as JBTextField
-                    comment(I18n.tr("pipeline.phase1.model.comment"))
-                }
-                row(I18n.tr("pipeline.phase2.provider")) {
-                    agentPhase2ProviderComboBox = comboBox<String>(listOf("deepseek", "agnes", "nvidia", "openrouter"))
-                        .apply {
-                            component.selectedItem = settings.agentPhase2Provider
-                            component.addActionListener { saveSettings() }
-                        }
-                        .component
-                }
-                row(I18n.tr("pipeline.phase2.model")) {
-                    agentPhase2ModelField = cell(JBTextField().apply {
-                        columns = 30
-                        text = settings.agentPhase2Model
-                        font = JBUI.Fonts.label()
-                        addFocusListener(object : FocusAdapter() {
-                            override fun focusLost(e: FocusEvent) { saveSettings() }
-                        })
-                    }).component as JBTextField
-                    comment(I18n.tr("pipeline.phase2.model.comment"))
-                }
-                row(I18n.tr("pipeline.phase3.provider")) {
-                    agentPhase3ProviderComboBox = comboBox<String>(listOf("deepseek", "agnes", "nvidia", "openrouter"))
-                        .apply {
-                            component.selectedItem = settings.agentPhase3Provider
-                            component.addActionListener { saveSettings() }
-                        }
-                        .component
-                }
-                row(I18n.tr("pipeline.phase3.model")) {
-                    agentPhase3ModelField = cell(JBTextField().apply {
-                        columns = 30
-                        text = settings.agentPhase3Model
-                        font = JBUI.Fonts.label()
-                        addFocusListener(object : FocusAdapter() {
-                            override fun focusLost(e: FocusEvent) { saveSettings() }
-                        })
-                    }).component as JBTextField
-                    comment(I18n.tr("pipeline.phase3.model.comment"))
-                }
+
+                // 底部说明 + 查看模型按钮
                 row {
                     comment(I18n.tr("pipeline.comment"))
                 }
@@ -126,13 +131,10 @@ class AgentPipelinePanel : JPanel(BorderLayout()) {
     }
 
     private fun saveSettings() {
-        settings.agentPhase0Provider = agentPhase0ProviderComboBox?.selectedItem as? String ?: "agnes"
-        settings.agentPhase0Model = agentPhase0ModelField?.text ?: "agnes-2.0-flash"
-        settings.agentPhase1Provider = agentPhase1ProviderComboBox?.selectedItem as? String ?: "deepseek"
-        settings.agentPhase1Model = agentPhase1ModelField?.text ?: "deepseek-v4-pro"
-        settings.agentPhase2Provider = agentPhase2ProviderComboBox?.selectedItem as? String ?: "deepseek"
-        settings.agentPhase2Model = agentPhase2ModelField?.text ?: "deepseek-v4-flash"
-        settings.agentPhase3Provider = agentPhase3ProviderComboBox?.selectedItem as? String ?: "agnes"
-        settings.agentPhase3Model = agentPhase3ModelField?.text ?: "agnes-2.0-flash"
+        for (binding in phaseBindings) {
+            binding.providerSet(binding.providerCombo.selectedItem as? String ?: binding.providerGet())
+            binding.modelSet(binding.modelField.text ?: binding.modelGet())
+        }
     }
+
 }

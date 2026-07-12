@@ -23,15 +23,15 @@ object HttpClientProvider {
 
     /** 基础连接池配置——所有变体共享 */
     private val connectionPool = okhttp3.ConnectionPool(
-        maxIdleConnections = 8,
-        keepAliveDuration = 5,
+        maxIdleConnections = 16,
+        keepAliveDuration = 10,
         timeUnit = TimeUnit.MINUTES
     )
 
     /** 默认 Dispatcher——最大并发请求数 */
     private val dispatcher = okhttp3.Dispatcher().apply {
-        maxRequests = 32
-        maxRequestsPerHost = 8
+        maxRequests = 64
+        maxRequestsPerHost = 12
     }
 
     init {
@@ -146,8 +146,8 @@ object HttpClientProvider {
         }
     }
 
-    /** 通用 Chat API 限流器：每分钟 30 次 */
-    val chatRateLimiter = RateLimiter(windowMs = 60_000L, maxRequests = 30)
+    /** 通用 Chat API 限流器：每分钟 60 次（流水线模式 4 阶段 x 15 轮） */
+    val chatRateLimiter = RateLimiter(windowMs = 60_000L, maxRequests = 60)
 
     /** FIM 补全限流器：每分钟 60 次 */
     val completionRateLimiter = RateLimiter(windowMs = 60_000L, maxRequests = 60)

@@ -57,7 +57,7 @@ Right-click code to quickly execute:
 ### Prerequisites
 - IntelliJ IDEA 2025.1 or later
 - DeepSeek API Key (from https://platform.deepseek.com)
-- Java 21
+- Java 17
 
 ### Installation Steps
 

@@ -18,9 +18,9 @@ class DeepSeekApiClient {
         private val gson = Gson()
 
         /** 最大重试次数 */
-        private const val MAX_RETRIES = 3
+        private const val MAX_RETRIES = 2
         /** 初始退避延迟 (ms) */
-        private const val BASE_DELAY_MS = 1000L
+        private const val BASE_DELAY_MS = 500L
 
         /**
          * 判断错误是否可重试：

@@ -4,13 +4,13 @@ import com.deepseek.plugin.ui.CodeBlockCard.Companion.parseResponse
 import com.deepseek.plugin.i18n.I18n
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.util.IconLoader
+import com.intellij.ui.InplaceButton
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
-import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
@@ -20,8 +20,7 @@ import java.awt.GridBagLayout
 import java.awt.GridBagConstraints
 import java.awt.Insets
 import java.awt.RenderingHints
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
+import java.awt.event.ActionListener
 import kotlin.math.ceil
 import java.awt.FontMetrics
 import javax.swing.BorderFactory
@@ -206,17 +205,14 @@ class MessageBubble(
             foreground = JBColor(0x666666, 0x888888)
         }
 
-        // ── 删除按钮 ──
-        val deleteBtn = JLabel(AllIcons.Actions.Close).apply {
-            toolTipText = I18n.tr("bubble.delete")
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            addMouseListener(object : MouseAdapter() {
-                override fun mouseClicked(e: MouseEvent) {
-                    onDelete?.invoke()
-                }
-            })
+        // ── 删除按钮（InplaceButton：原生 hover 高亮 + 点击反馈）
+        val deleteBtn = InplaceButton(
+            I18n.tr("bubble.delete"),
+            AllIcons.Actions.Close,
+            ActionListener { onDelete?.invoke() }
+        ).apply {
+            isVisible = onDelete != null
         }
-        if (onDelete == null) deleteBtn.isVisible = false
 
         // ── 头部行 ──
         val headerLeft = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {

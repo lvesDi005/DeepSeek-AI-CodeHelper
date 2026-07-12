@@ -42,6 +42,7 @@ class ChatInputBar(
     private val inputScrollPane: JBScrollPane,
     selectedCodePanel: JPanel?,
     fileAttachmentPanel: JPanel?,
+    modeSelector: JComponent?,
     uploadButton: JComponent,
     translateButton: JComponent,
     settingsButton: JComponent,
@@ -131,7 +132,7 @@ class ChatInputBar(
         body.add(createInputArea(inputScrollPane, selectedCodePanel, fileAttachmentPanel))
 
         // ── Status bar ──
-        body.add(createStatusBar(settingsButton, uploadButton, translateButton, sendStopButton))
+        body.add(createStatusBar(settingsButton, uploadButton, translateButton, modeSelector, sendStopButton))
 
         add(body, BorderLayout.CENTER)
     }
@@ -286,6 +287,7 @@ class ChatInputBar(
         settingsButton: JComponent,
         uploadButton: JComponent,
         translateButton: JComponent,
+        modeSelector: JComponent?,
         sendStopButton: JComponent
     ): JPanel {
         val bar = JPanel(BorderLayout()).apply {
@@ -306,14 +308,18 @@ class ChatInputBar(
         }
         bar.add(leftGroup, BorderLayout.WEST)
 
-        // ── 右侧：发送/停止按钮（纯 LaF 原生 — 圆角、主题自适应、悬停/按下状态均由 LaF 处理）──
+        // ── 中间：模式选择（居中容器，不拉伸填满）──
+        if (modeSelector != null) {
+            val centerWrapper = JPanel(FlowLayout(FlowLayout.CENTER, 0, 0)).apply {
+                isOpaque = false
+                add(modeSelector)
+            }
+            bar.add(centerWrapper, BorderLayout.CENTER)
+        }
+
+        // ── 右侧：发送/停止按钮 ──
         sendStopButton.apply {
             font = font.deriveFont(Font.BOLD, 12f)
-            // 不覆盖 foreground / background / border / isOpaque，
-            // 完全依赖 LaF 默认值，实现：
-            // • 圆角矩形（各 LaF 内置）
-            // • 背景/前景/边框随浅色/深色主题自动适配
-            // • 正确的悬停、按下、聚焦、禁用视觉状态
         }
         bar.add(sendStopButton, BorderLayout.EAST)
 

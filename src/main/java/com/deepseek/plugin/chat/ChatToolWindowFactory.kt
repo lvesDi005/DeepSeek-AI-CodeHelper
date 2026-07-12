@@ -68,6 +68,11 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * HTML changelog content displayed in the update dialog.
          */
         private val CHANGELOG_HTML = """
+            <h3>v2.5.5</h3>
+            <ul>
+              <li>agent模式流水线优化</li>
+              <li>新增agent模式Token 统计</li>
+            </ul>
             <h3>v2.5.4</h3>
             <ul>
               <li>NVIDIA NIM 模型支持+OpenRouter 模型支持— 新增 NVIDIA API Provider（z-ai/glm-5.2、minimaxai/minimax-m3、stepfun-ai/step-3.7-flash）+OpenRouter API Provider，支持下拉框选择模型</li>
@@ -271,6 +276,11 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * English version of the changelog HTML.
          */
         private val CHANGELOG_HTML_EN = """
+            <h3>v2.5.5</h3>
+            <ul>
+            <li>Optimized agent mode pipeline</li>
+            <li>Added agent mode Token statistics</li>
+            </ul>
             <h3>v2.5.4</h3>
             <ul>
               <li>NVIDIA NIM Support+OpenRouter Support — New NVIDIA API Provider with model selection dropdown: z-ai/glm-5.2, minimaxai/minimax-m3, stepfun-ai/step-3.7-flash</li>
