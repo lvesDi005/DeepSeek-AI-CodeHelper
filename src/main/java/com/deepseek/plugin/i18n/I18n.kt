@@ -49,14 +49,20 @@ object I18n {
         "chat.clear.all.sessions" to "清除所有会话",
         "chat.placeholder" to "输入消息...  ·  Enter发送  ·  Shift+Enter换行",
         "chat.planning" to "🤖 规划Agent(📋) 正在分析需求...",
+        "chat.parsing" to "解析中...",
         "chat.understanding" to "\uD83E\uDD14 ...正在理解您的需求...",
         "chat.searching" to "\uD83D\uDD0D Agent 正在搜索代码库...",
         "chat.supplement" to "\uD83D\uDCDD 请补充说明您的需求",
         "chat.api.error" to "\u26A0\uFE0F API 错误",
         "chat.api.key.required" to "[ERROR] 请在 Settings...配置 API Key.",
+        "chat.api.key.missing.prefix" to "请先在设置中配置 ",
+        "chat.api.key.missing.suffix" to " 的 API Key",
+        "chat.warning.prefix" to "⚠️ ",
         "chat.agent.complete" to "\u2705 Agent 执行完成！",
         "chat.change.recorded" to "\uD83D\uDCCB 已记录到「变更管理」面板",
         "chat.session.default" to "会话",
+        "chat.session" to "会话",
+        "chat.session.default.name" to "会话",
         "chat.file.context" to "以下为文件...的内容",
         "chat.image.context" to "以下为图片...的解析结果",
         "chat.agent.error" to "\u274C Agent 执行失败",
@@ -72,6 +78,9 @@ object I18n {
         "chat.error.save.failed" to "聊天记录保存失败，请检查磁盘空间",
         "chat.error.operation.failed" to "Agent 文件操作执行失败",
         "chat.error.operation.title" to "操作失败",
+
+        // ── ChatPanel ──
+        "chat.no.messages" to "暂无消息",
 
         // ── ChatToolbar ──
         "toolbar.history" to "会话历史",
@@ -102,6 +111,7 @@ object I18n {
         "history.open" to "进入会话",
         "history.clear" to "clear",
         "history.message.count" to "条消息",
+        "history.messages" to "条消息",
         "history.tokens" to "tokens",
 
         // ── MessageBubble ──
@@ -143,12 +153,11 @@ object I18n {
         "api.nvidia.group" to "NVIDIA Model",
         "api.nvidia.key" to "API Key:",
         "api.nvidia.model" to "Model:",
-        "api.nvidia.model.comment" to "z-ai/glm-5.2 or minimaxai/minimax-m3 or stepfun-ai/step-3.7-flash",
         "api.nvidia.base.url" to "Base URL:",
         "api.openrouter.group" to "OpenRouter",
         "api.openrouter.key" to "API Key:",
         "api.openrouter.model" to "Model:",
-        "api.openrouter.model.comment" to "e.g. poolside/laguna-xs-2.1:free",
+        "api.openrouter.model.comment" to "<a href='https://openrouter.ai/models'>openrouter.ai/models</a>",
         "api.openrouter.base.url" to "Base URL:",
 
         // ── AgentPipelinePanel ──
@@ -184,6 +193,12 @@ object I18n {
         "completion.annotation.comment" to "Automatically suggests synthetic methods (Lombok), code patterns (Spring/JPA), and annotation names",
         "completion.comment" to "Comment-aware completion (analyze // getter, // singleton, // TODO, etc.)",
         "completion.comment.comment" to "Generates code based on natural language comments: // getter for name, // save, // singleton pattern, etc.",
+        "completion.cache" to "Enable result cache (LRU)",
+        "completion.cache.comment" to "Cache AI completion results to avoid redundant API calls (default: enabled, 20 entries)",
+        "completion.statusbar" to "Show status bar indicator",
+        "completion.statusbar.comment" to "Display completion status (IDLE/GENERATING/ERROR) in the status bar",
+        "completion.ghost" to "Ghost Text rendering mode (experimental)",
+        "completion.ghost.comment" to "Render completions as ghost text inline instead of Lookup list. Requires Tab handler to accept.",
 
         // ── CodeSearchPanel ──
         "search.group.title" to "Agentic Search (代码搜索)",
@@ -224,6 +239,12 @@ object I18n {
         "skill.read.error.title" to "读取失败",
         "skill.empty.file" to "文件内容为空。",
         "skill.empty.file.title" to "空文件",
+        "skill.tag.editor.message" to "请为技能「%s」添加标签（逗号分隔），\n标签用于在对话中自动匹配相关技能。\n例如：java, spring, mybatis, config",
+        "skill.tag.editor.title" to "编辑标签 — %s",
+        "skill.file.unsupported" to "文件「%s」類型不支援，僅允許 %s",
+        "skill.file.unsupported.title" to "不支援的文件類型",
+        "skill.file.too.large" to "文件「%s」大小為 %dKB，超過 50KB 限制",
+        "skill.file.too.large.title" to "文件過大",
 
         // ── ChangeManagement ──
         "change.title" to "\uD83D\uDCCB 变更管理",
@@ -269,11 +290,15 @@ object I18n {
         "agent.select.code.generate" to "Select code or describe what to generate.",
         "agent.select.code.review" to "Select code to review.",
         "agent.select.code.optimize" to "Select code to optimize.",
-        "agent.calling" to "Calling DeepSeek...",
-        "agent.config.required" to "Please configure your DeepSeek API Key in Settings...",
-        "agent.config.title" to "API Key Required",
-        "agent.api.error" to "API Error",
-        "agent.title" to "DeepSeek AI",
+        "agent.calling" to "正在分析代码...",
+        "agent.config.required" to "请在设置中配置您的 API Key...",
+        "agent.config.title" to "需要 API Key",
+        "agent.api.error" to "API 错误",
+        "agent.title" to "AI Agent",
+        "agent.menu.setlang" to "设置语言",
+        "agent.menu.explain" to "解释代码",
+        "agent.menu.review" to "审查代码",
+        "agent.menu.upload" to "上传到聊天",
 
         // ── TranslateDialog ──
         "translate.title" to "翻译",
@@ -308,11 +333,16 @@ object I18n {
         "changelog.ok.en" to "Got it",
 
         // ── Misc ──
-        "lang.label" to "语言 / Language",
+        "lang.label" to "界面语言 / UI Language",
+        "lang.agent.label" to "AI 输出语言 / AI Output Language",
         "selected.code.remove" to "移除选中代码引用",
         "file.remove" to "移除",
         "code.copy" to "复制代码",
         "code.insert" to "插入到光标位置",
+        // ── 公告横幅 ──
+        "announcement.content" to "欢迎使用 DeepSeek AI CodeHelper！如有问题或建议，请在 GitHub 提交 Issue。寻找小伙伴共创，一起为爱发电！",
+        "announcement.content.link" to "https://github.com/lvesDi005/DeepSeek-AI-CodeHelper",
+        "announcement.dismiss" to "关闭",
     )
 
     // ════════════════════════════════════════════════════════════
@@ -342,14 +372,20 @@ object I18n {
         "chat.clear.all.sessions" to "Clear All Sessions",
         "chat.placeholder" to "Type a message...  ·  Enter to send  ·  Shift+Enter for newline",
         "chat.planning" to "\uD83E\uDD16 Planner Agent analyzing requirements...",
+        "chat.parsing" to "Parsing...",
         "chat.understanding" to "\uD83E\uDD14 Understanding your request...",
         "chat.searching" to "\uD83D\uDD0D Agent searching codebase...",
         "chat.supplement" to "\uD83D\uDCDD Please supplement your request",
         "chat.api.error" to "\u26A0\uFE0F API Error",
         "chat.api.key.required" to "[ERROR] Please configure your API Key in Settings...",
+        "chat.api.key.missing.prefix" to "Please configure ",
+        "chat.api.key.missing.suffix" to " API Key in Settings",
+        "chat.warning.prefix" to "⚠️ ",
         "chat.agent.complete" to "\u2705 Agent execution completed!",
         "chat.change.recorded" to "\uD83D\uDCCB Recorded in Change Management panel",
         "chat.session.default" to "Session",
+        "chat.session" to "Session",
+        "chat.session.default.name" to "Session",
         "chat.file.context" to "Below is the content of file...",
         "chat.image.context" to "Below is the parsed result of image...",
         "chat.agent.error" to "\u274C Agent execution failed",
@@ -365,6 +401,9 @@ object I18n {
         "chat.error.save.failed" to "Failed to save chat history. Please check disk space.",
         "chat.error.operation.failed" to "Agent file operation failed.",
         "chat.error.operation.title" to "Operation Failed",
+
+        // ── ChatPanel ──
+        "chat.no.messages" to "No messages",
 
         "toolbar.history" to "History",
         "toolbar.change.management" to "Change Management",
@@ -390,6 +429,7 @@ object I18n {
         "history.open" to "Open Session",
         "history.clear" to "clear",
         "history.message.count" to "messages",
+        "history.messages" to "messages",
         "history.tokens" to "tokens",
 
         "bubble.me" to "me",
@@ -428,12 +468,11 @@ object I18n {
         "api.nvidia.group" to "NVIDIA Model",
         "api.nvidia.key" to "API Key:",
         "api.nvidia.model" to "Model:",
-        "api.nvidia.model.comment" to "z-ai/glm-5.2 or minimaxai/minimax-m3 or stepfun-ai/step-3.7-flash",
         "api.nvidia.base.url" to "Base URL:",
         "api.openrouter.group" to "OpenRouter",
         "api.openrouter.key" to "API Key:",
         "api.openrouter.model" to "Model:",
-        "api.openrouter.model.comment" to "e.g. poolside/laguna-xs-2.1:free",
+        "api.openrouter.model.comment" to "<a href='https://openrouter.ai/models'>openrouter.ai/models</a> — e.g. poolside/laguna-xs-2.1:free",
         "api.openrouter.base.url" to "Base URL:",
 
         "pipeline.group.title" to "Agent Pipeline Configuration",
@@ -467,6 +506,12 @@ object I18n {
         "completion.annotation.comment" to "Automatically suggests synthetic methods (Lombok), code patterns (Spring/JPA), and annotation names",
         "completion.comment" to "Comment-aware completion (analyze // getter, // singleton, // TODO, etc.)",
         "completion.comment.comment" to "Generates code based on natural language comments: // getter for name, // save, // singleton pattern, etc.",
+        "completion.cache" to "Enable result cache (LRU)",
+        "completion.cache.comment" to "Cache AI completion results to avoid redundant API calls (default: enabled, 20 entries)",
+        "completion.statusbar" to "Show status bar indicator",
+        "completion.statusbar.comment" to "Display completion status (IDLE/GENERATING/ERROR) in the status bar",
+        "completion.ghost" to "Ghost Text rendering mode (experimental)",
+        "completion.ghost.comment" to "Render completions as ghost text inline instead of Lookup list. Requires Tab handler to accept.",
 
         "search.group.title" to "Agentic Search",
         "search.enable" to "Enable Agentic Search (as an alternative to RAG for code retrieval)",
@@ -504,6 +549,12 @@ object I18n {
         "skill.read.error.title" to "Read Failed",
         "skill.empty.file" to "File is empty.",
         "skill.empty.file.title" to "Empty File",
+        "skill.tag.editor.message" to "Add tags for skill«%s»(comma separated),\ntags help match relevant skills in conversation.\ne.g.: java, spring, mybatis, config",
+        "skill.tag.editor.title" to "Edit Tags — %s",
+        "skill.file.unsupported" to "File«%s»is not supported. Only %s are allowed.",
+        "skill.file.unsupported.title" to "Unsupported File Type",
+        "skill.file.too.large" to "File«%s»is %dKB, exceeds 50KB limit",
+        "skill.file.too.large.title" to "File Too Large",
 
         "change.title" to "\uD83D\uDCCB Change Management",
         "change.back" to "Back to Chat",
@@ -546,11 +597,15 @@ object I18n {
         "agent.select.code.generate" to "Select code or describe what to generate.",
         "agent.select.code.review" to "Select code to review.",
         "agent.select.code.optimize" to "Select code to optimize.",
-        "agent.calling" to "Calling DeepSeek...",
-        "agent.config.required" to "Please configure your DeepSeek API Key in Settings...",
+        "agent.calling" to "Analyzing code...",
+        "agent.config.required" to "Please configure your API Key in Settings...",
         "agent.config.title" to "API Key Required",
         "agent.api.error" to "API Error",
-        "agent.title" to "DeepSeek AI",
+        "agent.title" to "AI Agent",
+        "agent.menu.setlang" to "Set Language",
+        "agent.menu.explain" to "Explain Code",
+        "agent.menu.review" to "Review Code",
+        "agent.menu.upload" to "Upload to Chat",
 
         "translate.title" to "Translate",
         "translate.button" to "Translate",
@@ -582,10 +637,15 @@ object I18n {
         "changelog.ok.zh" to "Got it",
         "changelog.ok.en" to "Got it",
 
-        "lang.label" to "Language",
+        "lang.label" to "UI Language",
+        "lang.agent.label" to "AI Output Language",
         "selected.code.remove" to "Remove selected code reference",
         "file.remove" to "Remove",
         "code.copy" to "Copy Code",
         "code.insert" to "Insert at Cursor",
+        // ── Announcement banner ──
+        "announcement.content" to "Welcome to DeepSeek AI CodeHelper! For issues or suggestions, please submit on GitHub.Seeking collaborators to co-build this project with passion—we contribute purely out of love for the cause.",
+        "announcement.content.link" to "https://github.com/lvesDi005/DeepSeek-AI-CodeHelper",
+        "announcement.dismiss" to "Dismiss",
     )
 }

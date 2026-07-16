@@ -90,6 +90,27 @@ class ThemeSettingsPanel : JPanel(BorderLayout()) {
             add(combo)
         }
 
+        // ── Agent 输出语言选择器（与 UI 语言隔离）──
+        val agentLangRow = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+            val langs = listOf("zh" to "中文", "en" to "English")
+            val combo = JComboBox(langs.map { it.second }.toTypedArray()).apply {
+                selectedIndex = langs.indexOfFirst { it.first == settings.aiLanguage }.coerceAtLeast(0)
+                addActionListener {
+                    val idx = selectedIndex
+                    if (idx in langs.indices) {
+                        settings.aiLanguage = langs[idx].first
+                    }
+                }
+            }
+            add(JLabel("  ${I18n.tr("lang.agent.label")}").apply {
+                font = JBUI.Fonts.label()
+                foreground = JBColor(Color(0x555555), Color(0xAAAAAA))
+            })
+            add(combo)
+        }
+
         // ── Stack vertically, left-aligned ──
         val body = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -100,6 +121,8 @@ class ThemeSettingsPanel : JPanel(BorderLayout()) {
             add(btnRow)
             add(Box.createVerticalStrut(20))
             add(langRow)
+            add(Box.createVerticalStrut(8))
+            add(agentLangRow)
         }
         add(body, BorderLayout.NORTH)
     }

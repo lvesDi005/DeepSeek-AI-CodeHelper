@@ -11,6 +11,7 @@ import com.deepseek.plugin.chat.ChatState
 import com.deepseek.plugin.i18n.I18n
 import com.deepseek.plugin.context.ProjectContextProvider
 import com.deepseek.plugin.context.RagRetriever
+import com.deepseek.plugin.context.SearchCoordinator
 import com.deepseek.plugin.search.AgenticSearch
 import com.deepseek.plugin.search.ToolUseEngine
 import com.deepseek.plugin.store.SessionStore
@@ -26,10 +27,12 @@ import com.deepseek.plugin.ui.MessageBubble
 import com.deepseek.plugin.ui.ResponseSegment
 import com.deepseek.plugin.ui.SelectedCodePreview
 import com.deepseek.plugin.ui.SessionBar
+import com.deepseek.plugin.ui.MarqueeLabel
 import com.deepseek.plugin.ui.UnifiedSettingsPanel
 import com.deepseek.plugin.ui.TranslateDialog
 import com.deepseek.plugin.ui.WelcomePanel
 import com.intellij.icons.AllIcons
+import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.ui.MessageType
 import com.intellij.openapi.wm.ToolWindowManager
@@ -64,6 +67,8 @@ import java.awt.Graphics2D
 import java.awt.RenderingHints
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 import java.util.concurrent.atomic.AtomicReference
 import javax.swing.*
 import javax.swing.text.DefaultCaret
@@ -101,6 +106,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     private val stepFunClient = StepFunApiClient()
     private val contextProvider = ProjectContextProvider(project)
     private val ragRetriever = RagRetriever(project)
+    private val searchCoordinator = SearchCoordinator(project)
     private val agenticSearch = AgenticSearch(project)
     private val sessionStore = SessionStore(project.basePath)
     private val sessions = mutableListOf<ChatSession>()
@@ -108,7 +114,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     /** 线程安全的聊天状态机 — 替代 isStreaming + currentEventSource + streamBuffer + streamingBubble + … */
     internal val chatState = AtomicReference<ChatState>(ChatState.Idle)
     private var sessionCounter = 1
-    private var currentMode = ChatMode.Q_A
+    private var currentMode = ChatMode.Q_A_SCAN
 
     /** 意图确认阶段的回调 — 非 null 时正在等待用户补充说明 */
     internal var pendingConfirmation: ((clarification: String) -> Unit)? = null
@@ -344,10 +350,54 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             this@ChatPanel.revalidate()
         }
 
+        // ── Announcement banner (shown every time toolwindow opens) ──
+        val announcementBanner = JPanel(BorderLayout()).also { banner ->
+            banner.apply {
+                isOpaque = true
+                background = JBColor(0xE3F2FD, 0x1A3A5C) // light blue (light) / dark blue (dark)
+                border = JBUI.Borders.empty(6, 12, 6, 4)
+                val iconLabel = JLabel("\uD83D\uDCE2").apply {
+                    font = font.deriveFont(14f)
+                }
+                val contentLabel = MarqueeLabel(I18n.tr("announcement.content")).apply {
+                    font = font.deriveFont(Font.PLAIN, 12f)
+                    foreground = JBColor(0x1565C0, 0x90CAF9)
+                    addMouseListener(object : MouseAdapter() {
+                        override fun mouseClicked(e: MouseEvent) {
+                            BrowserUtil.browse(I18n.tr("announcement.content.link"))
+                        }
+                    })
+                }
+                val closeButton = JButton("\u2716").apply {
+                    font = font.deriveFont(12f)
+                    foreground = JBColor(0x888888, 0xAAAAAA)
+                    isOpaque = false
+                    isContentAreaFilled = false
+                    isBorderPainted = false
+                    cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                    addActionListener {
+                        banner.isVisible = false
+                    }
+                }
+                add(iconLabel, BorderLayout.WEST)
+                add(contentLabel, BorderLayout.CENTER)
+                add(closeButton, BorderLayout.EAST)
+
+                // Add tooltip with dismiss hint
+                closeButton.toolTipText = I18n.tr("announcement.dismiss")
+            }
+        }
+
         // ── Wrap the entire chat view into one panel for CardLayout ──
         val chatView = JPanel(BorderLayout()).apply {
             isOpaque = true
-            add(topBar, BorderLayout.NORTH)
+            val northWrapper = JPanel().apply {
+                layout = BoxLayout(this, BoxLayout.Y_AXIS)
+                isOpaque = false
+                add(topBar)
+                add(announcementBanner)
+            }
+            add(northWrapper, BorderLayout.NORTH)
             add(messagesWithNav, BorderLayout.CENTER)
             add(inputAreaPanel, BorderLayout.SOUTH)
         }
@@ -744,18 +794,19 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         var isCancelled = false
 
         ApplicationManager.getApplication().executeOnPooledThread {
-            val imageResults = mutableListOf<Pair<String, String>>()
-            for (path in imagePaths) {
-                // Check for cancellation
-                if (isCancelled) break
-                val fileName = java.nio.file.Paths.get(path).fileName.toString()
-                val result = stepFunClient.parseImage(path)
-                val description = result.getOrElse { e -> "[图片解析失败: ${e.message}]" }
-                imageResults.add(fileName to description)
-            }
+            try {
+                val imageResults = mutableListOf<Pair<String, String>>()
+                for (path in imagePaths) {
+                    // Check for cancellation
+                    if (isCancelled) break
+                    val fileName = java.nio.file.Paths.get(path).fileName.toString()
+                    val result = stepFunClient.parseImage(path)
+                    val description = result.getOrElse { e -> "[图片解析失败: ${e.message}]" }
+                    imageResults.add(fileName to description)
+                }
 
-            // Switch back to EDT to start AI streaming
-            ApplicationManager.getApplication().invokeLater {
+                // Switch back to EDT to start AI streaming
+                ApplicationManager.getApplication().invokeLater {
                 if (isCancelled) {
                     stopThinkingAnimation()
                     chatState.set(ChatState.Idle)
@@ -851,10 +902,16 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                     appendLine(DOMAIN_RESTRICTION_PROMPT)
                     appendLine()
                     appendLine("你是一个 AI 代码助手，帮助用户解答技术问题。")
-                    appendLine(if (DeepSeekSettings.instance.language == "en") "Please reply in English." else "请用中文回复。")
-                    val skillsContent = unifiedSettingsPanel.getEnabledSkillsContent()
+                    appendLine(if (DeepSeekSettings.instance.aiLanguage == "en") "Please reply in English." else "请用中文回复。")
+                    val skillsContent = unifiedSettingsPanel.getEnabledSkillsContent(text)
                     if (skillsContent.isNotBlank()) {
                         append(skillsContent)
+                    }
+                    val searchResult = searchCoordinator.search(text)
+                    if (searchResult.contextText.isNotBlank()) {
+                        appendLine()
+                        appendLine("## 项目上下文（搜索自当前项目）")
+                        appendLine(searchResult.contextText)
                     }
                 }
 
@@ -871,6 +928,20 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                     bubble = streamBubble
                 ))
             }
+        } catch (e: Exception) {
+            System.err.println("[ChatPanel] Image parsing failed unexpectedly: ${e.message}")
+            ApplicationManager.getApplication().invokeLater {
+                stopThinkingAnimation()
+                chatState.set(ChatState.Idle)
+                messagesPanel.remove(streamBubble)
+                messagesPanel.revalidate()
+                sendStopButton.text = I18n.tr("chat.send.enter")
+                sendStopButton.toolTipText = I18n.tr("chat.tooltip.send")
+                addMessageLabel(I18n.tr("chat.error.prefix") + " 图片解析异常: " + (e.message ?: "未知错误"))
+                ensureMessagesFiller()
+                scrollToBottom()
+            }
+        }
         }
     }
 
@@ -1202,10 +1273,10 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                             appendLine("【项目结构参考】")
                             append(buildProjectStructure())
                             appendLine().appendLine()
-                            val related = buildRelatedFileContext(userText)
-                            if (related.isNotBlank()) {
+                            val searchResult = searchCoordinator.search(userText)
+                            if (searchResult.contextText.isNotBlank()) {
                                 appendLine("【相关源文件内容】")
-                                append(related)
+                                append(searchResult.contextText)
                             }
                         }
                     }
@@ -1390,9 +1461,16 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         val qaSystemPrompt = buildString {
             appendLine(DOMAIN_RESTRICTION_PROMPT); appendLine()
             appendLine("你是一个 AI 代码助手，帮助用户解答技术问题。")
-            appendLine(if (DeepSeekSettings.instance.language == "en") "Please reply in English." else "请用中文回复。")
-            val skillsContent = unifiedSettingsPanel.getEnabledSkillsContent()
+            appendLine(if (DeepSeekSettings.instance.aiLanguage == "en") "Please reply in English." else "请用中文回复。")
+            val skillsContent = unifiedSettingsPanel.getEnabledSkillsContent(text)
             if (skillsContent.isNotBlank()) append(skillsContent)
+            // 注入项目搜索上下文
+            val searchResult = searchCoordinator.search(text)
+            if (searchResult.contextText.isNotBlank()) {
+                appendLine()
+                appendLine("## 项目上下文（搜索自当前项目）")
+                append(searchResult.contextText)
+            }
         }
 
         val eventSource = client.chatStream(
@@ -1410,9 +1488,16 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         val qaSystemPrompt = buildString {
             appendLine(DOMAIN_RESTRICTION_PROMPT); appendLine()
             appendLine("你是一个 AI 代码助手，帮助用户解答技术问题。")
-            appendLine(if (settings.language == "en") "Please reply in English." else "请用中文回复。")
-            val skillsContent = unifiedSettingsPanel.getEnabledSkillsContent()
+            appendLine(if (settings.aiLanguage == "en") "Please reply in English." else "请用中文回复。")
+            val skillsContent = unifiedSettingsPanel.getEnabledSkillsContent(text)
             if (skillsContent.isNotBlank()) append(skillsContent)
+            // 注入项目搜索上下文
+            val searchResult = searchCoordinator.search(text)
+            if (searchResult.contextText.isNotBlank()) {
+                appendLine()
+                appendLine("## 项目上下文（搜索自当前项目）")
+                append(searchResult.contextText)
+            }
         }
 
         addMessageLabel(I18n.tr("chat.info.syncing"))
@@ -1426,7 +1511,6 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                     saveSessions()
                     ensureMessagesFiller()
                     scrollToBottom()
-                    sendStopButton.text = I18n.tr("chat.send.enter")
                     sendStopButton.toolTipText = I18n.tr("chat.tooltip.send")
                 }.onFailure { error ->
                     addMessageLabel(I18n.tr("chat.error.prefix") + " " + error.message)
@@ -1473,8 +1557,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         // Build project structure context
         val projectStructure = buildProjectStructure()
 
-        // ── 静默搜索相关源文件，将其完整内容作为上下文 ──
-        val relatedContext = buildRelatedFileContext(finalText)
+        // ── 通过 SearchCoordinator 搜索相关上下文 ──
+        val searchResult = searchCoordinator.search(finalText)
+        val relatedContext = searchResult.contextText
         val hasRelatedContext = relatedContext.isNotEmpty()
 
         // Source roots hint
@@ -1484,7 +1569,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         } else ""
 
         // 获取技能内容（所有阶段共享）
-        val skillsContent = unifiedSettingsPanel.getEnabledSkillsContent()
+        val skillsContent = unifiedSettingsPanel.getEnabledSkillsContent(userText)
 
         // ════════════════════════════════════════════════════════════
         //  意图确认 Phase — 由 Agent Pipeline 配置决定

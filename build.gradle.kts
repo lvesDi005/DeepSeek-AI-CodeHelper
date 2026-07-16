@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.deepseek.plugin"
-version = "2.5.5"
+version = "2.5.8"
 
 repositories {
     mavenCentral()
@@ -47,6 +47,21 @@ intellijPlatform {
         }
         changeNotes = """
             <h1>中文/Chinese</h1>
+            <h3>v2.5.8</h3>
+            <ul>
+              <li>UI优化</li>
+            </ul>
+            <h3>v2.5.7</h3>
+            <ul>
+              <li>【新增】右键菜单「Set Language / 设置语言」— 一键跳转主题设置，独立控制右键输出语言（与聊天面板隔离）</li>
+              <li>【新增】右键输出语言独立设置 — 主题设置中新增「右键输出语言」下拉框，支持中文/English 切换</li>
+              <li>【优化】右键菜单文本动态中英文 — Set Language / Explain Code / Review Code / Upload to Chat 随语言设置实时变化</li>
+              <li>【优化】Explain/Review 流式输出 — 改为流式 SSE 逐 token 显示，去掉领域限制提示（DOMAIN_RESTRICTION_PROMPT），首 token 即展示，响应速度提升 30-50%</li>
+            </ul>
+            <h3>v2.5.6</h3>
+            <ul>
+              <li>优化图像处理</li>
+            </ul>
             <h3>v2.5.5</h3>
             <ul>
               <li>agent模式流水线优化</li>
@@ -246,6 +261,21 @@ intellijPlatform {
               <li>API Key 配置页面</li>
             </ul>
             <h1>English</h1>
+            <h3>v2.5.8</h3>
+            <ul>
+            <li>UI optimization</li>
+            </ul>
+            <h3>v2.5.7</h3>
+            <ul>
+              <li>[New] Right-click "Set Language" — One-click jump to theme settings, independently control agent output language (isolated from chat panel)</li>
+              <li>[New] Independent Agent Language Setting — New "Agent Output Language" dropdown in theme settings, supports 中文/English toggle</li>
+              <li>[Improved] Dynamic menu text — Set Language / Explain Code / Review Code / Upload to Chat update in real-time as language changes</li>
+              <li>[Improved] Explain/Review streaming output — Switched to SSE streaming (token-by-token), removed domain restriction prompt, first token appears immediately — 30-50% faster response</li>
+            </ul>
+            <h3>v2.5.6</h3>
+            <ul>
+              <li>Optimize image processing</li>
+            </ul>
             <h3>v2.5.5</h3>
             <ul>
             <li>Optimized agent mode pipeline</li>

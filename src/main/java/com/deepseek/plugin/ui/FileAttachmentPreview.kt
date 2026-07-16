@@ -54,7 +54,7 @@ class FileAttachmentPreview(
 
     private fun isImageFile(name: String): Boolean {
         val ext = name.substringAfterLast('.', "").lowercase()
-        return ext in setOf("png", "jpg", "jpeg", "gif", "bmp")
+        return ext in setOf("png", "jpg", "jpeg", "gif", "bmp", "webp")
     }
 
     private fun createFileCard(file: AttachedFile, index: Int): JPanel {

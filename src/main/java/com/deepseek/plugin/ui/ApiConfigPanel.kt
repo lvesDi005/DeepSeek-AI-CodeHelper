@@ -145,10 +145,11 @@ class ApiConfigPanel : JPanel(BorderLayout()) {
                         nvidiaModelComboBox = comboBox<String>(
                             listOf("z-ai/glm-5.2", "minimaxai/minimax-m3", "stepfun-ai/step-3.7-flash")
                         ).apply {
+                            component.isEditable = true
                             component.selectedItem = settings.nvidiaModel
                             component.addActionListener { saveSettings() }
                         }.component
-                        comment(I18n.tr("api.nvidia.model.comment"))
+                        comment("<a href='https://build.nvidia.com/models'>build.nvidia.com/models</a>")
                     }
                     row(I18n.tr("api.nvidia.base.url")) {
                         nvidiaBaseUrlField = cell(JBTextField().apply {

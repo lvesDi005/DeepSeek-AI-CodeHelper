@@ -52,8 +52,10 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
         context: ProcessingContext,
         result: CompletionResultSet
     ) {
+        // --- 0. PreChecker 预检查链 ---
+        if (!CompletionPreChecker.canProceed(parameters)) return
+
         val settings = DeepSeekSettings.instance
-        if (!settings.completionEnabled || settings.apiKey.isBlank()) return
         if (parameters.isExtendedCompletion) return
 
         // 收集前缀文本 (光标前)
@@ -79,14 +81,67 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
 
         LOG.info("AI Completion triggered | lang=$language | prefixLen=${prefix.length} | suffixLen=${suffix.length}")
 
-        // --- 5. 异步调用 FIM API (非阻塞!) ---
-        client.completionFim(prefix, suffix, language, fileContext) { suggestionRaw ->
-            if (suggestionRaw.isNullOrBlank()) return@completionFim
+        val statusService = CompletionStatusService.instance
+        val filePath = parameters.originalFile.virtualFile?.path ?: ""
+        val editor = parameters.editor
+        val caretOffset = parameters.offset
+        val cursorLine = editor.document.getLineNumber(caretOffset)
+        val cursorColumn = caretOffset - editor.document.getLineStartOffset(cursorLine)
 
-            // 清理补全结果
-            val suggestion = cleanSuggestion(suggestionRaw, lastLine)
+        // --- 5. 缓存查询 (跳过重复 API 调用) ---
+        if (settings.completionCacheEnabled) {
+            val cached = CompletionCache.getInstance().get(filePath, cursorLine, cursorColumn, lastLine)
+            if (cached != null) {
+                LOG.debug("Cache HIT: returning cached suggestion")
+                statusService.onReady()
+                ApplicationManager.getApplication().invokeLater {
+                    try {
+                        result.addElement(
+                            PrioritizedLookupElement.withPriority(
+                                LookupElementBuilder.create(cached)
+                                    .withTypeText("DeepSeek AI", true)
+                                    .withIcon(com.intellij.icons.AllIcons.Actions.Find),
+                                Double.MAX_VALUE
+                            )
+                        )
 
-            if (suggestion.isBlank()) return@completionFim
+                        // Ghost Text 模式
+                        if (settings.completionGhostTextEnabled && !editor.isDisposed) {
+                            GhostTextManager.showGhostText(editor, cached, caretOffset)
+                        }
+                    } catch (e: Exception) {
+                        LOG.warn("Failed to add cached completion element", e)
+                    }
+                }
+                return
+            }
+            LOG.debug("Cache MISS: will call API")
+        }
+
+        // --- 6. 异步调用 FIM API (非阻塞!, AUTO 模式) ---
+        statusService.onGenerating()
+        client.completionFim(
+            prefix = prefix,
+            suffix = suffix,
+            language = language,
+            fileContext = fileContext,
+            mode = TriggerMode.AUTO
+        ) { suggestionRaw ->
+            if (suggestionRaw.isNullOrBlank()) {
+                statusService.onIdle()
+                return@completionFim
+            }
+
+            val suggestion = CompletionPostProcessor.process(suggestionRaw, lastLine, suffix)
+            if (suggestion.isBlank()) {
+                statusService.onIdle()
+                return@completionFim
+            }
+
+            // 存入缓存
+            if (settings.completionCacheEnabled) {
+                CompletionCache.getInstance().put(filePath, cursorLine, cursorColumn, lastLine, suggestion)
+            }
 
             // 回到 EDT 写入补全结果
             ApplicationManager.getApplication().invokeLater {
@@ -99,9 +154,17 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
                             Double.MAX_VALUE
                         )
                     )
+
+                    // Ghost Text 渲染模式
+                    if (settings.completionGhostTextEnabled && !editor.isDisposed) {
+                        GhostTextManager.showGhostText(editor, suggestion, caretOffset)
+                    }
+
                     LOG.info("AI Completion added | length=${suggestion.length} | preview=${suggestion.take(40).replace("\n","\\n")}")
+                    statusService.onReady()
                 } catch (e: Exception) {
                     LOG.warn("Failed to add AI completion element", e)
+                    statusService.onError(e.message ?: "Failed to add completion")
                 }
             }
         }
@@ -206,33 +269,5 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
         }
 
         return sb.toString()
-    }
-
-    // ===================== 结果清理 =====================
-
-    /**
-     * 清理模型输出: 去 markdown, 去重复前缀, 去多余空白.
-     */
-    private fun cleanSuggestion(raw: String, prefixLastLine: String): String {
-        var cleaned = raw
-
-        // 去掉 markdown 代码块
-        cleaned = cleaned.replace(Regex("```[\\s\\S]*?```"), "").trim()
-        cleaned = cleaned.replace(Regex("^```\\w*\\s*", RegexOption.MULTILINE), "")
-        cleaned = cleaned.replace(Regex("```\\s*$", RegexOption.MULTILINE), "")
-
-        // 去掉 "Completion:" "Here is the completion:" 等前缀
-        cleaned = cleaned.replace(Regex("^(?i)\\s*(completion|here\\s+is|suggestion)\\s*[:：]\\s*"), "")
-
-        // 如果模型重复了光标前的最后一个单词,去掉
-        val lastWord = prefixLastLine.split(Regex("[\\s(){}\\[\\]=;,.]+")).lastOrNull()?.trim() ?: ""
-        if (lastWord.isNotBlank() && cleaned.startsWith(lastWord)) {
-            cleaned = cleaned.removePrefix(lastWord)
-        }
-
-        // 去掉前置空行
-        cleaned = cleaned.trimStart()
-
-        return cleaned
     }
 }

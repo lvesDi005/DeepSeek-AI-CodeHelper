@@ -4,6 +4,7 @@ import com.deepseek.plugin.i18n.I18n
 import com.intellij.icons.AllIcons
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
+import java.awt.Dimension
 import java.awt.FlowLayout
 import javax.swing.Box
 import javax.swing.JComboBox
@@ -27,9 +28,38 @@ class SessionBar(
     onClearCurrent: () -> Unit
 ) : JPanel(BorderLayout()) {
 
+    companion object {
+        private const val BAR_HEIGHT = 24  // match toolbar button size
+
+        /** Compute the combo box width based on the longest item text. */
+        private fun computePreferredComboWidth(combo: JComboBox<String>): Int {
+            val font = combo.font.deriveFont(11f)
+            val metrics = combo.getFontMetrics(font)
+            var maxWidth = 0
+            for (i in 0 until combo.itemCount) {
+                val w = metrics.stringWidth(combo.getItemAt(i) ?: "")
+                if (w > maxWidth) maxWidth = w
+            }
+            // fallback for empty combo
+            if (maxWidth == 0) maxWidth = metrics.stringWidth("会话 99")
+            // add padding for arrow button + insets + rendering margin (56px unscaled)
+            return JBUI.scale(maxWidth + 56)
+        }
+    }
+
     init {
         isOpaque = false
-        border = JBUI.Borders.empty(3, 6, 3, 6)
+        border = JBUI.Borders.empty(1, 4, 1, 4)  // match ChatToolbar border
+
+        // Shrink combo box to match button height; width auto-fits text
+        val comboWidth = computePreferredComboWidth(sessionComboBox)
+        val comboDim = Dimension(comboWidth, JBUI.scale(BAR_HEIGHT))
+        sessionComboBox.apply {
+            font = font.deriveFont(11f)     // smaller font to fit height
+            preferredSize = comboDim
+            minimumSize = Dimension(JBUI.scale(80), JBUI.scale(BAR_HEIGHT))
+            maximumSize = Dimension(JBUI.scale(Short.MAX_VALUE.toInt()), JBUI.scale(BAR_HEIGHT))
+        }
 
         // Left: session combo + new session + clear current
         val leftPanel = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {

@@ -290,12 +290,20 @@ class DeepSeekApiClient {
     /**
      * FIM (Fill-in-the-Middle) 代码补全 —— 使用 DeepSeek /v1/completions FIM 端点.
      * 异步回调模式,供 CompletionContributor 使用.
+     *
+     * @param prefix 光标前文本
+     * @param suffix 光标后文本
+     * @param language 编程语言名
+     * @param fileContext 文件级上下文（包声明、imports）
+     * @param mode 触发模式 — AUTO 走低 temperature+短输出, MANUAL 走高 temperature+长输出
+     * @param onResult 回调函数（EDT 外调用, 返回补全文本或 null）
      */
     fun completionFim(
         prefix: String,
         suffix: String,
         language: String,
         fileContext: String,
+        mode: com.deepseek.plugin.completion.TriggerMode = com.deepseek.plugin.completion.TriggerMode.AUTO,
         onResult: (String?) -> Unit
     ) {
         // H3: FIM 请求限流检查（每分钟最多 60 次）
@@ -306,14 +314,31 @@ class DeepSeekApiClient {
         val settings = DeepSeekSettings.instance
         val prompt = buildFimPrompt(prefix, suffix, language, fileContext)
 
+        // 根据触发模式选择不同的 temperature/maxTokens/stop
+        val temperature = if (mode == com.deepseek.plugin.completion.TriggerMode.MANUAL)
+            settings.completionManualTemperature
+        else
+            0.0
+
+        val maxTokens = if (mode == com.deepseek.plugin.completion.TriggerMode.MANUAL)
+            settings.completionManualMaxTokens
+        else
+            settings.completionMaxTokens
+
+        // MANUAL 模式允许更长输出，不设早停
+        val stop = if (mode == com.deepseek.plugin.completion.TriggerMode.MANUAL)
+            null
+        else
+            listOf("\n\n", "\r\n\r\n")
+
         val request = FimRequest(
             model = settings.completionModel.ifBlank { provider(settings).model(settings) },
             prompt = prompt,
             suffix = suffix,
-            maxTokens = settings.completionMaxTokens,
-            temperature = 0.0,
+            maxTokens = maxTokens,
+            temperature = temperature,
             topP = 0.95,
-            stop = listOf("\n\n", "\r\n\r\n")
+            stop = stop
         )
 
         val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
@@ -391,7 +416,7 @@ class DeepSeekApiClient {
                 if (!response.isSuccessful) {
                     val errMsg = tryParseError(responseBody, response.code)
                     val ex = if (response.code == 429) RateLimitException()
-                        else ApiException("API error ${response.code}: $errMsg", httpCode = response.code)
+                    else ApiException("API error ${response.code}: $errMsg", httpCode = response.code)
                     Result.failure(ex)
                 } else {
                     val completionsResponse = gson.fromJson(responseBody, FimResponse::class.java)

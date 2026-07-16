@@ -27,6 +27,9 @@ class CodeCompletionPanel : JPanel(BorderLayout()) {
     private var completionEnabledCheckbox: JCheckBox? = null
     private var annotationAwareCheckbox: JCheckBox? = null
     private var commentAwareCheckbox: JCheckBox? = null
+    private var cacheEnabledCheckbox: JCheckBox? = null
+    private var statusBarCheckbox: JCheckBox? = null
+    private var ghostTextCheckbox: JCheckBox? = null
 
     init {
         isOpaque = false
@@ -113,6 +116,33 @@ class CodeCompletionPanel : JPanel(BorderLayout()) {
                         .component
                     comment(I18n.tr("completion.comment.comment"))
                 }
+                row {
+                    cacheEnabledCheckbox = checkBox(I18n.tr("completion.cache"))
+                        .apply {
+                            component.isSelected = settings.completionCacheEnabled
+                            component.addActionListener { saveSettings() }
+                        }
+                        .component
+                    comment(I18n.tr("completion.cache.comment"))
+                }
+                row {
+                    statusBarCheckbox = checkBox(I18n.tr("completion.statusbar"))
+                        .apply {
+                            component.isSelected = settings.completionStatusBarEnabled
+                            component.addActionListener { saveSettings() }
+                        }
+                        .component
+                    comment(I18n.tr("completion.statusbar.comment"))
+                }
+                row {
+                    ghostTextCheckbox = checkBox(I18n.tr("completion.ghost"))
+                        .apply {
+                            component.isSelected = settings.completionGhostTextEnabled
+                            component.addActionListener { saveSettings() }
+                        }
+                        .component
+                    comment(I18n.tr("completion.ghost.comment"))
+                }
             }
         }
 
@@ -128,5 +158,8 @@ class CodeCompletionPanel : JPanel(BorderLayout()) {
         settings.completionDelayMs = completionDelayField?.text?.toLongOrNull() ?: 500
         settings.annotationAwareEnabled = annotationAwareCheckbox?.isSelected ?: true
         settings.commentAwareEnabled = commentAwareCheckbox?.isSelected ?: true
+        settings.completionCacheEnabled = cacheEnabledCheckbox?.isSelected ?: true
+        settings.completionStatusBarEnabled = statusBarCheckbox?.isSelected ?: true
+        settings.completionGhostTextEnabled = ghostTextCheckbox?.isSelected ?: false
     }
 }

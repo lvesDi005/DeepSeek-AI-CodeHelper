@@ -198,8 +198,10 @@ class UnifiedSettingsPanel(
     /**
      * Get all currently enabled skills' content as a combined string.
      * Delegates to the embedded [SkillSettingsPanel].
+     *
+     * @param userMessage 用戶當前問題，用於按需過濾相關技能。空字符串時全量注入。
      */
-    fun getEnabledSkillsContent(): String {
-        return skillSettingsPanel.getEnabledSkillsContent()
+    fun getEnabledSkillsContent(userMessage: String = ""): String {
+        return skillSettingsPanel.getEnabledSkillsContent(userMessage)
     }
 }

@@ -27,6 +27,20 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
     // 注释感知补全
     var commentAwareEnabled: Boolean = true    // 是否启用注释分析驱动的代码补全
 
+    // 补全结果缓存
+    var completionCacheEnabled: Boolean = true // 是否启用 LRU 补全缓存
+    var completionCacheSize: Int = 20          // LRU 缓存容量（条）
+
+    // 手动触发补全（Alt+P）配置
+    var completionManualTemperature: Double = 0.2  // 手动触发生成温度（AUTO 为 0.0）
+    var completionManualMaxTokens: Int = 512        // 手动触发生成最大 token 数（AUTO 为 256）
+
+    // 状态栏指示器
+    var completionStatusBarEnabled: Boolean = true // 是否在状态栏显示补全状态
+
+    // Ghost Text 渲染模式（替代 Lookup 列表）
+    var completionGhostTextEnabled: Boolean = false // 是否启用 Ghost Text 渲染（默认关闭）
+
     // API Provider 选择: "deepseek" | "agnes" | "nvidia"
     var provider: String = "deepseek"
 
@@ -57,6 +71,9 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
 
     // UI 界面语言: "zh" | "en"
     var language: String = "zh"
+
+    // AI 输出语言（Chat + 右键 Explain/Review）: "zh" | "en"，与 UI 语言独立
+    var aiLanguage: String = "zh"
 
     // Agentic Search 配置
     var agenticSearchEnabled: Boolean = true   // 是否启用 Agentic Search（替代 RAG 的代码搜索）

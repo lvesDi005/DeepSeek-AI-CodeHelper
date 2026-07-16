@@ -7,7 +7,7 @@
         <ul>
           <li><b>Code Completion</b> — AI-powered inline suggestions as you type</li>
           <li><b>Chat Panel</b> — Ask anything in a side-panel chat window</li>
-          <li><b>Agent Actions</b> — Right-click to Ask / Explain / Generate / Review / Optimize</li>
+          <li><b>Agent Actions</b> — Right-click to Explain / Review</li>
         </ul>
         <br>
         <p>Configure your API Key in the ⚙Settings</p>
@@ -21,6 +21,15 @@
         <!-- Application Service -->
         <applicationService
             serviceImplementation="com.deepseek.plugin.settings.DeepSeekSettings"/>
+
+        <!-- Completion Status Service -->
+        <applicationService
+            serviceImplementation="com.deepseek.plugin.completion.CompletionStatusService"/>
+
+        <!-- Completion Status Bar Widget -->
+        <statusBarWidgetFactory
+            id="DeepSeekCompletionStatus"
+            implementation="com.deepseek.plugin.completion.CompletionStatusBarWidgetFactory"/>
 
         <!-- Chat Tool Window -->
         <toolWindow
@@ -48,30 +57,39 @@
 
     </extensions>
 
-    <!-- Right-click context menu actions -->
+    <!-- Editor Action Handlers -->
     <actions>
+        <!-- Tab Key Handler for Ghost Text Accept -->
+        <action id="DeepSeekAI.AcceptGhostText"
+                class="com.deepseek.plugin.completion.AcceptGhostTextAction"
+                text="Accept DeepSeek Completion"
+                description="Accept the Ghost Text completion suggestion"
+                use-shortcut-of="EditorTab"/>
+
+        <!-- Manual Trigger: AI Completion (Alt+P) -->
+        <action id="DeepSeekAI.TriggerCompletion"
+                class="com.deepseek.plugin.completion.DeepSeekTriggerCompletionAction"
+                text="AI Completion (Manual)"
+                description="Trigger AI code completion manually with deeper context">
+            <keyboard-shortcut keymap="$default" first-keystroke="alt P"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
+
+        <!-- Right-click context menu actions -->
         <group id="DeepSeekAI.AgentGroup" text="DeepSeek AI" icon="com.deepseek.plugin.icons.PluginIcons.ACTION"
                popup="true" description="DeepSeek AI Agent actions">
-            <action id="DeepSeekAI.Ask"
-                    class="com.deepseek.plugin.agent.AskAction"
-                    text="Ask DeepSeek"
-                    description="Ask DeepSeek about the selected code"/>
+            <action id="DeepSeekAI.SetLanguage"
+                    class="com.deepseek.plugin.agent.SetLanguageAction"
+                    text="Set Language"
+                    description="Set the output language for agent actions"/>
             <action id="DeepSeekAI.Explain"
                     class="com.deepseek.plugin.agent.ExplainAction"
                     text="Explain Code"
                     description="Explain the selected code in detail"/>
-            <action id="DeepSeekAI.Generate"
-                    class="com.deepseek.plugin.agent.GenerateAction"
-                    text="Generate Code"
-                    description="Generate code based on the selection or description"/>
             <action id="DeepSeekAI.Review"
                     class="com.deepseek.plugin.agent.ReviewAction"
                     text="Review Code"
                     description="Code review with suggestions"/>
-            <action id="DeepSeekAI.Optimize"
-                    class="com.deepseek.plugin.agent.OptimizeAction"
-                    text="Optimize Code"
-                    description="Optimize the selected code for performance and readability"/>
             <action id="DeepSeekAI.UploadConsole"
                     class="com.deepseek.plugin.agent.UploadConsoleAction"
                     text="Upload to Chat"

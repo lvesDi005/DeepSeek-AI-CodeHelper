@@ -1,6 +1,7 @@
 package com.deepseek.plugin.agent
 
 import com.deepseek.plugin.chat.ChatPanel
+import com.deepseek.plugin.i18n.I18n
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -26,6 +27,7 @@ class UploadConsoleAction : AnAction() {
     override fun update(e: AnActionEvent) {
         val project = e.project
         e.presentation.isEnabledAndVisible = project != null
+        e.presentation.text = I18n.tr("agent.menu.upload")
     }
 
     override fun actionPerformed(e: AnActionEvent) {

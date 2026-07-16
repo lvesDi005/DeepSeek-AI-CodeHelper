@@ -41,11 +41,19 @@ class SkillSettingsPanel(
     private val showHeader: Boolean = true
 ) : JPanel(BorderLayout()) {
 
+    companion object {
+        /** 單個技能文件最大大小：50 KB */
+        private const val MAX_SKILL_FILE_SIZE = 50 * 1024L
+        /** 支援的技能文件擴展名 */
+        private val ALLOWED_EXTENSIONS = setOf("md", "txt", "yaml", "yml", "json")
+    }
+
     private val skillStore = SkillStore(project.basePath)
     private val skills = skillStore.load()
     private val skillListPanel = JPanel().apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
         isOpaque = false
+        alignmentX = Component.LEFT_ALIGNMENT
     }
 
     init {
@@ -88,7 +96,7 @@ class SkillSettingsPanel(
             // Hint row — clickable link to community skill library
             val hintRow = JPanel(FlowLayout(FlowLayout.LEFT, 0, 2)).apply {
                 isOpaque = false
-                maximumSize = Dimension(Short.MAX_VALUE.toInt(), 24)
+                maximumSize = Dimension(Short.MAX_VALUE.toInt(), 28)
             }
 
             val hintLabel = JLabel(
@@ -111,7 +119,13 @@ class SkillSettingsPanel(
         }
 
         // ── Center: skill list in a scroll pane ──
-        val scrollPane = JBScrollPane(skillListPanel).apply {
+        val viewWrapper = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+            add(skillListPanel)
+        }
+        val scrollPane = JBScrollPane(viewWrapper).apply {
             isOpaque = false
             viewport.isOpaque = false
             border = JBUI.Borders.empty()
@@ -175,6 +189,15 @@ class SkillSettingsPanel(
                     @Suppress("UNCHECKED_CAST")
                     val files = transferable.getTransferData(DataFlavor.javaFileListFlavor) as List<File>
                     for (file in files) {
+                        // 拖放路徑也檢查擴展名（與文件選擇器保持一致）
+                        val ext = file.extension?.lowercase()
+                        if (ext == null || ext !in ALLOWED_EXTENSIONS) {
+                            Messages.showWarningDialog(
+                I18n.tr("skill.file.unsupported", file.name, ALLOWED_EXTENSIONS.joinToString(", ") { ".$it" }),
+                I18n.tr("skill.file.unsupported.title")
+            )
+                            continue
+                        }
                         importSkillFromFile(file)
                     }
                 }
@@ -197,7 +220,7 @@ class SkillSettingsPanel(
             isMultiSelectionEnabled = true
             fileFilter = javax.swing.filechooser.FileNameExtensionFilter(
                 I18n.tr("skill.file.filter"),
-                "md", "txt", "yaml", "yml", "json"
+                *ALLOWED_EXTENSIONS.toTypedArray()
             )
         }
 
@@ -213,6 +236,15 @@ class SkillSettingsPanel(
      */
     private fun importSkillFromFile(file: File) {
         if (!file.exists() || !file.isFile) return
+
+        // 檢查文件大小
+        if (file.length() > MAX_SKILL_FILE_SIZE) {
+            Messages.showWarningDialog(
+                I18n.tr("skill.file.too.large", file.name, file.length() / 1024),
+                I18n.tr("skill.file.too.large.title")
+            )
+            return
+        }
 
         // Check for duplicate name
         val name = file.nameWithoutExtension
@@ -240,10 +272,39 @@ class SkillSettingsPanel(
             name = name,
             content = content,
             enabled = true,
-            filePath = file.absolutePath
+            filePath = file.absolutePath,
+            tags = emptyList()
         )
         skills.add(skill)
         saveAndRefresh()
+
+        // 上傳成功後提示輸入標籤
+        showTagEditor(skills.lastIndex)
+    }
+
+    /**
+     * 顯示標籤編輯對話框（上傳後自動彈出 / 點擊標籤手動編輯）。
+     */
+    private fun showTagEditor(skillIndex: Int) {
+        if (skillIndex < 0 || skillIndex >= skills.size) return
+        val skill = skills[skillIndex]
+        val currentTags = skill.tags?.joinToString(", ") ?: ""
+        val result = Messages.showInputDialog(
+            this,
+            I18n.tr("skill.tag.editor.message", skill.name),
+            I18n.tr("skill.tag.editor.title", skill.name),
+            Messages.getQuestionIcon(),
+            currentTags,
+            null
+        )
+        if (result != null) {
+            val newTags = result.split(",", "，")
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinct()
+            skills[skillIndex] = skill.copy(tags = newTags)
+            saveAndRefresh()
+        }
     }
 
     /**
@@ -282,8 +343,8 @@ class SkillSettingsPanel(
                 JBUI.Borders.customLine(JBColor(Color(0xD0D0D0), Color(0x555555)), 1),
                 JBUI.Borders.empty(8, 10)
             )
-            preferredSize = Dimension(Short.MAX_VALUE.toInt(), 48)
-            maximumSize = Dimension(Short.MAX_VALUE.toInt(), 48)
+            alignmentX = Component.LEFT_ALIGNMENT
+            maximumSize = Dimension(Short.MAX_VALUE.toInt(), 72)
         }
 
         // Enable/disable checkbox
@@ -308,6 +369,27 @@ class SkillSettingsPanel(
             foreground = JBColor(Color(0x888888), Color(0x777777))
         }
 
+        // Tags label (clickable) — 固定最大顯示寬度
+        val tagText = if (skill.tags?.isNotEmpty() == true) {
+            "🏷️ " + (skill.tags?.joinToString(", ") ?: "")
+        } else "🏷️ 點擊添加標籤"
+        val displayText = if (tagText.length > 50) tagText.take(47) + "..." else tagText
+        val tagsLabel = JLabel(displayText).apply {
+            font = JBUI.Fonts.smallFont()
+            foreground = JBColor(Color(0x6666AA), Color(0x9999CC))
+            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            addMouseListener(object : MouseAdapter() {
+                override fun mouseClicked(e: MouseEvent) {
+                    showTagEditor(index)
+                }
+            })
+        }
+        // 用 FlowLayout 包裹標籤行，使其不受 GridBagLayout weightx 拉伸影響
+        val tagsWrapper = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+            isOpaque = false
+            add(tagsLabel)
+        }
+
         val leftPanel = JPanel(GridBagLayout()).apply {
             isOpaque = false
             val gbc = GridBagConstraints()
@@ -329,6 +411,13 @@ class SkillSettingsPanel(
             gbc.gridy = 1
             gbc.insets = JBUI.insets(0, 4, 0, 0)
             add(previewLabel, gbc)
+
+            gbc.gridx = 1
+            gbc.gridy = 2
+            gbc.fill = GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            gbc.insets = JBUI.insets(0, 4, 0, 0)
+            add(tagsWrapper, gbc)
         }
 
         card.add(leftPanel, BorderLayout.CENTER)
@@ -415,20 +504,87 @@ class SkillSettingsPanel(
      * Get all currently enabled skills' content as a combined string,
      * formatted for injection into the system prompt.
      */
-    fun getEnabledSkillsContent(): String {
+    /**
+     * Get relevant enabled skills' content for injection into the system prompt.
+     *
+     * @param userMessage 用戶當前問題。根據標籤/關鍵詞過濾只注入相關技能；
+     *                    空字符串時不注入任何技能（不佔用 token）。
+     * @return 格式化後的技能 Markdown，無相關技能時返回空字符串。
+     */
+    fun getEnabledSkillsContent(userMessage: String = ""): String {
         val enabled = skills.filter { it.enabled }
         if (enabled.isEmpty()) return ""
+
+        // userMessage 為空時不注入任何技能
+        if (userMessage.isBlank()) return ""
+
+        // 按需過濾：只保留與用戶問題相關的技能
+        val relevant = filterRelevantSkills(enabled, userMessage)
+        if (relevant.isEmpty()) return ""
 
         return buildString {
             appendLine()
             appendLine("## 当前已加载的技能（Skill）")
             appendLine("以下是你当前已加载的技能列表。当用户询问你有什么技能时，请如实列出这些技能的名称和用途。")
             appendLine()
-            for (skill in enabled) {
-                appendLine("### 技能名称：${skill.name}")
+            for (skill in relevant) {
+                val tagInfo = if (skill.tags?.isNotEmpty() == true) " [${skill.tags?.joinToString(", ") ?: ""}]" else ""
+                appendLine("### 技能名称：${skill.name}$tagInfo")
                 appendLine(skill.content)
                 appendLine()
             }
         }
+    }
+
+    /**
+     * 根據用戶問題過濾相關技能。
+     * 策略：標籤優先匹配 → 無匹配時退回到名稱/內容關鍵詞匹配。
+     */
+    private fun filterRelevantSkills(skills: List<SkillData>, userMessage: String): List<SkillData> {
+        val queryLower = userMessage.lowercase()
+
+        // 策略 1：標籤匹配
+        val tagMatched = skills.filter { skill ->
+            val tags = skill.tags ?: return@filter false
+            tags.isNotEmpty() && tags.any { tag ->
+                queryLower.contains(tag.lowercase())
+            }
+        }
+        if (tagMatched.isNotEmpty()) return tagMatched
+
+        // 策略 2：回退到關鍵詞匹配（技能名 + 內容）
+        val keywords = extractKeywordsFromQuery(queryLower)
+        if (keywords.isEmpty()) return emptyList()  // 無關鍵詞時不注入
+
+        return skills.filter { skill ->
+            val searchSpace = skill.name.lowercase() + " " + skill.content.lowercase()
+            keywords.any { searchSpace.contains(it) }
+        }
+    }
+
+    /**
+     * 從用戶查詢中提取搜索關鍵詞。
+     */
+    private fun extractKeywordsFromQuery(queryLower: String): List<String> {
+        val keywords = mutableSetOf<String>()
+
+        // 提取 CamelCase 單詞（類名/函數名）
+        val camelPattern = Regex("""[a-z][a-zA-Z0-9]{2,}""")
+        keywords.addAll(camelPattern.findAll(queryLower).map { it.value.lowercase() })
+
+        // 提取常見技術關鍵詞
+        val techKeywords = listOf(
+            "java", "kotlin", "spring", "mybatis", "jpa", "hibernate",
+            "redis", "kafka", "rabbitmq", "docker", "kubernetes",
+            "sql", "nosql", "mongodb", "elasticsearch",
+            "rest", "api", "graphql", "grpc",
+            "config", "security", "auth", "cache", "logging",
+            "test", "unit", "integration", "deploy", "ci", "cd"
+        )
+        for (kw in techKeywords) {
+            if (queryLower.contains(kw)) keywords.add(kw)
+        }
+
+        return keywords.toList().filter { it.length >= 2 }
     }
 }

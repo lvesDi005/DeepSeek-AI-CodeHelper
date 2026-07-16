@@ -20,6 +20,23 @@ data class ChatMessage(
     val content: String
 )
 
+// ── 多模态消息（支持 text + image_url 混合 content）──
+
+data class MultimodalContent(
+    val type: String,  // "text" | "image_url"
+    val text: String? = null,
+    @SerializedName("image_url") val imageUrl: ImageUrlPart? = null
+)
+
+data class ImageUrlPart(
+    val url: String  // base64 data URI
+)
+
+data class MultimodalMessage(
+    val role: String,
+    val content: List<MultimodalContent>
+)
+
 // --- Response models ---
 
 data class ChatResponse(
