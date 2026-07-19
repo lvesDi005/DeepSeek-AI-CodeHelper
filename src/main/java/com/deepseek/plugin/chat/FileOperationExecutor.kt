@@ -4,6 +4,7 @@ import com.deepseek.plugin.i18n.I18n
 import com.deepseek.plugin.store.ChangeManagementStore
 import com.deepseek.plugin.store.ChangeRecord
 import com.deepseek.plugin.store.FileChangeInfo
+import com.deepseek.plugin.ui.CodeDiffUtil
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -143,6 +144,29 @@ class FileOperationExecutor(
             return
         }
 
+        // 收集所有文件变更，在一个汇总对话框中统一展示
+        val fileDiffs = safeOps.filter { it.action != "delete" }.mapNotNull { op ->
+            val targetFile = File(projectBasePath, op.path)
+            val resolvedFile = resolveToExistingSourceRoot(targetFile)
+            val effectiveFile = resolvedFile ?: targetFile
+            val originalContent = if (effectiveFile.exists()) {
+                String(effectiveFile.readBytes(), Charsets.UTF_8)
+            } else ""
+            CodeDiffUtil.FileDiffItem(op.path, op.action, originalContent, op.content)
+        }
+
+        val allConfirmed = if (fileDiffs.isNotEmpty()) {
+            CodeDiffUtil.showBatchDiffAndConfirm(project, fileDiffs)
+        } else {
+            true // 只有删除操作，无需展示 diff
+        }
+
+        if (!allConfirmed) {
+            addMessageLabel(I18n.tr("chat.agent.cancelled"))
+            return
+        }
+        val finalOps = safeOps // 用户确认后执行所有变更
+
         // 收集结果和文件变更
         var resultMsg = ""
         var hasModifiedFiles = false
@@ -153,7 +177,7 @@ class FileOperationExecutor(
             var deleted = 0
             val fileChanges = mutableListOf<FileChangeInfo>()
 
-            for (op in safeOps) {
+            for (op in finalOps) {
                 val targetFile = File(projectBasePath, op.path)
 
                 when (op.action) {
@@ -276,7 +300,7 @@ class FileOperationExecutor(
                 val summary = if (!semanticTitle.isNullOrBlank()) {
                     semanticTitle
                 } else {
-                    val allPaths = safeOps.map { it.path.substringAfterLast("/").substringAfterLast("\\") }
+                    val allPaths = finalOps.map { it.path.substringAfterLast("/").substringAfterLast("\\") }
                     val totalChanged = created + modified + deleted
                     if (totalChanged <= 2) {
                         allPaths.joinToString("、")

@@ -86,6 +86,12 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
     // Phase 0 意图确认开关 — 关闭时跳过意图确认直接进入规划阶段
     var agentPhase0Enabled: Boolean = true
 
+    // Phase 1 规划开关 — 关闭时跳过规划阶段直接进入编码
+    var agentPhase1Enabled: Boolean = true
+
+    // Phase 3 审查开关 — 关闭时跳过审查阶段
+    var agentPhase3Enabled: Boolean = true
+
     // 流式输出开关 — 关闭时使用同步调用，一次性返回完整结果
     var streamingEnabled: Boolean = true
     var agentPhase1Provider: String = "deepseek"       // 规划 Provider

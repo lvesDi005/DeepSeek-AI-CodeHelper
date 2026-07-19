@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.deepseek.plugin"
-version = "2.5.8"
+version = "2.5.9"
 
 repositories {
     mavenCentral()
@@ -47,6 +47,10 @@ intellijPlatform {
         }
         changeNotes = """
             <h1>中文/Chinese</h1>
+            <h3>v2.5.9</h3>
+            <ul>
+              <li>agent模式意图解析优化</li>
+            </ul>
             <h3>v2.5.8</h3>
             <ul>
               <li>UI优化</li>
@@ -261,6 +265,10 @@ intellijPlatform {
               <li>API Key 配置页面</li>
             </ul>
             <h1>English</h1>
+            <h3>v2.5.9</h3>
+            <ul>
+            <li>Optimized intent parsing in agent mode</li>
+            </ul>
             <h3>v2.5.8</h3>
             <ul>
             <li>UI optimization</li>

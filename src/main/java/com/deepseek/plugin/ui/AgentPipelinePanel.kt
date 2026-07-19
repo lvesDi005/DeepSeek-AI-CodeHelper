@@ -10,10 +10,12 @@ import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.event.FocusAdapter
 import java.awt.event.FocusEvent
+import javax.swing.JCheckBox
 import javax.swing.JPanel
 
 /**
- * Agent Pipeline configuration panel — each phase can use a different Provider+Model.
+ * Agent Pipeline configuration panel — each phase can use a different Provider+Model,
+ * and Phase 0/1/3 can be individually toggled on/off.
  *
  * The Q&A Classifier reuses the main API Configuration, so it does not appear here.
  * Changes are auto-saved to [DeepSeekSettings] on combo selection change or field focus loss.
@@ -41,28 +43,37 @@ class AgentPipelinePanel : JPanel(BorderLayout()) {
     init {
         isOpaque = false
 
-        // 4 阶段的配置元数据（label key + settings 读写）
+        // 4 阶段的配置元数据（label key + settings 读写 + 可选开关）
         data class PhaseMeta(
             val labelPrefix: String,
             val providerGet: () -> String,
             val providerSet: (String) -> Unit,
             val modelGet: () -> String,
-            val modelSet: (String) -> Unit
+            val modelSet: (String) -> Unit,
+            val hasToggle: Boolean = false,
+            val toggleGet: () -> Boolean = { true },
+            val toggleSet: (Boolean) -> Unit = {}
         )
 
         val phaseMetas = listOf(
             PhaseMeta("pipeline.phase0",
                 { settings.agentPhase0Provider }, { settings.agentPhase0Provider = it },
-                { settings.agentPhase0Model }, { settings.agentPhase0Model = it }),
+                { settings.agentPhase0Model }, { settings.agentPhase0Model = it },
+                hasToggle = true,
+                toggleGet = { settings.agentPhase0Enabled }, toggleSet = { settings.agentPhase0Enabled = it }),
             PhaseMeta("pipeline.phase1",
                 { settings.agentPhase1Provider }, { settings.agentPhase1Provider = it },
-                { settings.agentPhase1Model }, { settings.agentPhase1Model = it }),
+                { settings.agentPhase1Model }, { settings.agentPhase1Model = it },
+                hasToggle = true,
+                toggleGet = { settings.agentPhase1Enabled }, toggleSet = { settings.agentPhase1Enabled = it }),
             PhaseMeta("pipeline.phase2",
                 { settings.agentPhase2Provider }, { settings.agentPhase2Provider = it },
                 { settings.agentPhase2Model }, { settings.agentPhase2Model = it }),
             PhaseMeta("pipeline.phase3",
                 { settings.agentPhase3Provider }, { settings.agentPhase3Provider = it },
-                { settings.agentPhase3Model }, { settings.agentPhase3Model = it })
+                { settings.agentPhase3Model }, { settings.agentPhase3Model = it },
+                hasToggle = true,
+                toggleGet = { settings.agentPhase3Enabled }, toggleSet = { settings.agentPhase3Enabled = it })
         )
 
         val form = panel {
@@ -74,6 +85,16 @@ class AgentPipelinePanel : JPanel(BorderLayout()) {
                     val providerLabelKey = "${meta.labelPrefix}.provider"
                     val modelLabelKey = "${meta.labelPrefix}.model"
                     val modelCommentKey = "${meta.labelPrefix}.model.comment"
+
+                    // 启用开关（仅 Phase 0/1/3）
+                    if (meta.hasToggle) {
+                        val toggleKey = "${meta.labelPrefix}.enabled"
+                        row {
+                            cell(JCheckBox(I18n.tr(toggleKey), meta.toggleGet()).apply {
+                                addActionListener { meta.toggleSet(isSelected) }
+                            })
+                        }
+                    }
 
                     // Provider 下拉框
                     lateinit var providerCombo: ComboBox<String>

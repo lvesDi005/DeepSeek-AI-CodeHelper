@@ -554,11 +554,6 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 popupMenu.add(streamingItem)
                 popupMenu.addSeparator()
 
-                val phase0Item = JCheckBoxMenuItem(I18n.tr("chat.agent.phase0.toggle"), DeepSeekSettings.instance.agentPhase0Enabled).apply {
-                    addActionListener { DeepSeekSettings.instance.agentPhase0Enabled = isSelected }
-                }
-                popupMenu.add(phase0Item)
-
                 val phaseItem = JMenuItem(I18n.tr("chat.agent.pipeline.settings"))
                 phaseItem.addActionListener {
                     showSettingsPage("agentPipeline")
@@ -1581,7 +1576,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         val p1Model = settings.agentPhase1Model
 
         if (settings.agentPhase0Enabled && p0ApiKey.isNotBlank()) {
-            // Phase 0 Provider 已配置 → 先进行意图确认
+            // Phase 0 已配置 → 先进行意图确认
             startIntentConfirmation(
                 userText = userText,
                 projectStructure = projectStructure,
@@ -1590,8 +1585,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 sourceRootsHint = sourceRootsHint,
                 skillsContent = skillsContent
             )
-        } else {
-            // Phase 0 未配置 → 直接进入规划阶段
+        } else if (settings.agentPhase1Enabled) {
+            // Phase 0 未配置/关闭 → 进入规划阶段
             addMessageLabel(phaseTransitionLabel(p1Model, "planning"))
             startPlanPhase(
                 finalText = finalText,
@@ -1599,6 +1594,24 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 relatedContext = relatedContext,
                 sourceRootsHint = sourceRootsHint,
                 skillsContent = skillsContent
+            )
+        } else {
+            // Phase 0 和 Phase 1 均关闭 → 直接进入编码阶段
+            val p2Provider = LlmProviderRegistry.get(settings.agentPhase2Provider)
+            val p2Config = Pair(p2Provider.baseUrl(settings), p2Provider.apiKey(settings))
+            val p2Model = settings.agentPhase2Model
+            addMessageLabel(I18n.tr("chat.agent.single.file"))
+            addMessageLabel(phaseTransitionLabel(p2Model, "coding"))
+            startCodePhase(
+                p2Config = p2Config,
+                p2Model = p2Model,
+                planResponse = finalText,
+                projectStructure = projectStructure,
+                relatedContext = relatedContext,
+                sourceRootsHint = sourceRootsHint,
+                skillsContent = skillsContent,
+                finalText = finalText,
+                directFromPhase0 = true
             )
         }
     }
@@ -1637,7 +1650,16 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         val analysisPrompt = buildString {
             appendLine(DOMAIN_RESTRICTION_PROMPT)
             appendLine()
-            appendLine("你是一个需求分析助手。分析用户对代码库的需求，用中文一句话概括用户的核心意图（不超过50字）。")
+            appendLine("你是一个需求分析助手。分析用户对代码库的需求，只输出 JSON 对象（不要 markdown 代码块，不要其他文字）：")
+            appendLine()
+            appendLine("{")
+            appendLine("  \"intent\": \"一句话概括用户的核心意图\",")
+            appendLine("  \"isClear\": true,")
+            appendLine("  \"complexity\": \"simple\",    // simple=简单任务 / complex=复杂任务")
+            appendLine("  \"workload\": \"涉及的文件数量和改动范围\",")
+            appendLine("  \"dependency\": \"文件间的依赖关系和耦合情况\",")
+            appendLine("  \"reason\": \"综合工作量、关联性，说明为什么判定为简单或复杂\"")
+            appendLine("}")
             appendLine("## 项目结构")
             appendLine(projectStructure)
             if (relatedContext.isNotBlank()) {
@@ -1648,7 +1670,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             if (previousAnalysis != null) {
                 appendLine("你之前的分析：$previousAnalysis")
                 appendLine("用户补充说明：$userText")
-                appendLine("请结合补充信息重新分析，用中文一句话概括（不超过50字）。")
+                appendLine("请结合补充信息重新分析，按上述格式输出。")
             } else {
                 appendLine("用户需求：$userText")
             }
@@ -1661,7 +1683,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 apiKey = phase0Config.second,
                 model = phase0Model,
                 temperature = 0.3,
-                maxTokens = 256,
+                maxTokens = 512,
                 messages = listOf(ChatMessage("user", analysisPrompt))
             )
 
@@ -1673,8 +1695,51 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 }
                 revalidateAndScroll()
                 result.onSuccess { interpretation ->
-                    val cleanInterpretation = interpretation.trim().removePrefix("分析：").removePrefix("分析结果：").trim()
-                    addMessageLabel(I18n.tr("chat.agent.interprets") + " " + p0Provider.displayName + " " + cleanInterpretation)
+                    // 解析 AI 返回的 JSON
+                    val cleanInterpretation = interpretation.trim()
+                    System.err.println("[Phase0] raw response: $cleanInterpretation")
+                    var intent: String = ""
+                    var isClear: Boolean = true
+                    var complexity: String = "complex"
+                    var workload: String = ""
+                    var dependency: String = ""
+                    var reason: String = ""
+                    try {
+                        val jsonBody = cleanInterpretation
+                            .substringAfter("{")
+                            .let { it.substringBeforeLast("}") }
+                        val jsonText = "{$jsonBody}"
+                        fun extractStr(json: String, key: String): String? {
+                            val r = Regex("\"$key\"\\s*:\\s*\"([^\"]*)\"").find(json)
+                            return r?.groupValues?.get(1)?.trim()
+                        }
+                        fun extractBool(json: String, key: String): Boolean? {
+                            val r = Regex("\"$key\"\\s*:\\s*(true|false)").find(json)
+                            return r?.groupValues?.get(1)?.toBoolean()
+                        }
+                        val rawComplexity = (extractStr(jsonText, "complexity") ?: "").lowercase()
+                        intent = extractStr(jsonText, "intent")
+                            ?: cleanInterpretation.removePrefix("分析：").removePrefix("分析结果：").trim()
+                        isClear = extractBool(jsonText, "isClear") ?: true
+                        complexity = if (rawComplexity in listOf("simple", "complex")) rawComplexity else "complex"
+                        workload = extractStr(jsonText, "workload") ?: ""
+                        dependency = extractStr(jsonText, "dependency") ?: ""
+                        reason = extractStr(jsonText, "reason") ?: ""
+                    } catch (e: Exception) {
+                        System.err.println("[Phase0] JSON parse error: ${e.message}")
+                        intent = cleanInterpretation.removePrefix("分析：").removePrefix("分析结果：").trim()
+                    }
+
+                    // 构建详细展示信息
+                    val detailLines = buildString {
+                        appendLine(intent)
+                        if (workload.isNotEmpty()) appendLine("📊 工作量：$workload")
+                        if (dependency.isNotEmpty()) appendLine("🔗 关联性：$dependency")
+                        if (complexity == "simple") appendLine("📋 判定：简单任务 → 直接编码")
+                        else appendLine("📋 判定：复杂任务 → 全流程执行")
+                    }
+                    addMessageLabel(I18n.tr("chat.agent.interprets") + " " + p0Provider.displayName)
+                    addMessageLabel(detailLines)
 
                     // ── 确认按钮 ──
                     val buttonPanel = JPanel(FlowLayout(FlowLayout.LEFT, 8, 4)).apply {
@@ -1690,15 +1755,35 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                         addActionListener {
                             messagesPanel.remove(buttonPanel)
                             revalidateAndScroll()
-                            // 进入规划阶段
-                            addMessageLabel(phaseTransitionLabel(p1ModelLocal, "planning"))
-                            startPlanPhase(
-                                finalText = finalText,
-                                projectStructure = projectStructure,
-                                relatedContext = relatedContext,
-                                sourceRootsHint = sourceRootsHint,
-                                skillsContent = skillsContent
-                            )
+                            if (complexity == "simple" || !s.agentPhase1Enabled) {
+                                // 简单任务或 Phase 1 关闭 → 跳过规划与审查，直接进入编码阶段
+                                addMessageLabel(I18n.tr("chat.agent.single.file"))
+                                val p2Provider = LlmProviderRegistry.get(s.agentPhase2Provider)
+                                val p2Config = Pair(p2Provider.baseUrl(s), p2Provider.apiKey(s))
+                                val p2Model = s.agentPhase2Model
+                                addMessageLabel(phaseTransitionLabel(p2Model, "coding"))
+                                startCodePhase(
+                                    p2Config = p2Config,
+                                    p2Model = p2Model,
+                                    planResponse = finalText,
+                                    projectStructure = projectStructure,
+                                    relatedContext = relatedContext,
+                                    sourceRootsHint = sourceRootsHint,
+                                    skillsContent = skillsContent,
+                                    finalText = finalText,
+                                    directFromPhase0 = true
+                                )
+                            } else {
+                                // 复杂任务 → 全流程执行
+                                addMessageLabel(phaseTransitionLabel(p1ModelLocal, "planning"))
+                                startPlanPhase(
+                                    finalText = finalText,
+                                    projectStructure = projectStructure,
+                                    relatedContext = relatedContext,
+                                    sourceRootsHint = sourceRootsHint,
+                                    skillsContent = skillsContent
+                                )
+                            }
                         }
                     }
                     val noBtn = JButton(I18n.tr("chat.no.i.need.to.supplement")).apply {
@@ -1717,7 +1802,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                                     finalText = finalText,
                                     sourceRootsHint = sourceRootsHint,
                                     skillsContent = skillsContent,
-                                    previousAnalysis = cleanInterpretation
+                                    previousAnalysis = intent
                                 )
                             }
                         }
@@ -1744,16 +1829,35 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                         return@invokeLater
                     }
                     addMessageLabel(I18n.tr("chat.phase0.failed") + " " + error.message + I18n.tr("chat.phase0.failed.suffix"))
-                    val p1ProviderErr = LlmProviderRegistry.get(s.agentPhase1Provider)
-                    val p1ModelErr = s.agentPhase1Model
-                    addMessageLabel(phaseTransitionLabel(p1ModelErr, "planning"))
-                    startPlanPhase(
-                        finalText = finalText,
-                        projectStructure = projectStructure,
-                        relatedContext = relatedContext,
-                        sourceRootsHint = sourceRootsHint,
-                        skillsContent = skillsContent
-                    )
+                    if (s.agentPhase1Enabled) {
+                        val p1ProviderErr = LlmProviderRegistry.get(s.agentPhase1Provider)
+                        val p1ModelErr = s.agentPhase1Model
+                        addMessageLabel(phaseTransitionLabel(p1ModelErr, "planning"))
+                        startPlanPhase(
+                            finalText = finalText,
+                            projectStructure = projectStructure,
+                            relatedContext = relatedContext,
+                            sourceRootsHint = sourceRootsHint,
+                            skillsContent = skillsContent
+                        )
+                    } else {
+                        addMessageLabel(I18n.tr("chat.agent.single.file"))
+                        val p2ProviderErr = LlmProviderRegistry.get(s.agentPhase2Provider)
+                        val p2ConfigErr = Pair(p2ProviderErr.baseUrl(s), p2ProviderErr.apiKey(s))
+                        val p2ModelErr = s.agentPhase2Model
+                        addMessageLabel(phaseTransitionLabel(p2ModelErr, "coding"))
+                        startCodePhase(
+                            p2Config = p2ConfigErr,
+                            p2Model = p2ModelErr,
+                            planResponse = finalText,
+                            projectStructure = projectStructure,
+                            relatedContext = relatedContext,
+                            sourceRootsHint = sourceRootsHint,
+                            skillsContent = skillsContent,
+                            finalText = finalText,
+                            directFromPhase0 = true
+                        )
+                    }
                 }
             }
         }
@@ -1847,7 +1951,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         relatedContext: String,
         sourceRootsHint: String,
         skillsContent: String,
-        finalText: String
+        finalText: String,
+        directFromPhase0: Boolean = false
     ) {
         removeMessagesFiller()
         val codeBubble = MessageBubble(project, MessageBubble.Role.STREAMING)
@@ -1858,7 +1963,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         val systemPrompt = buildString {
             appendLine(DOMAIN_RESTRICTION_PROMPT)
             appendLine()
-            appendLine("你是代码助手的编码 Agent（Coder）。你的任务是根据规划 Agent 制定的计划，生成具体的代码修改。")
+            appendLine("你是代码助手的编码 Agent（Coder）。你的任务是根据${if (directFromPhase0) "用户的需求" else "规划 Agent 制定的计划"}，生成具体的代码修改。")
             appendLine()
             appendLine("## 项目结构")
             appendLine(projectStructure)
@@ -1875,7 +1980,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 appendLine("**重要：创建新文件时必须使用上述已存在的源码根目录之一，不要创建新的源码根目录。**")
                 appendLine()
             }
-            appendLine("## 规划 Agent 的计划")
+            appendLine(if (directFromPhase0) "## 用户需求" else "## 规划 Agent 的计划")
             appendLine(planResponse)
             appendLine()
             appendLine("## 输出格式")
@@ -1912,16 +2017,21 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 // ── 过渡到 Phase 3 ──
                 val s = DeepSeekSettings.instance
-                val p3Provider = LlmProviderRegistry.get(s.agentPhase3Provider)
-                val p3ApiKey = p3Provider.apiKey(s)
-                if (p3ApiKey.isNotBlank()) {
-                    val p3Config = Pair(p3Provider.baseUrl(s), p3ApiKey)
-                    val p3Model = s.agentPhase3Model
-                    addMessageLabel(phaseTransitionLabel(p3Model, "reviewing"))
-                    startReviewPhase(p3Config, p3Model, planResponse, fullResponse)
-                } else {
+                if (directFromPhase0 || !s.agentPhase3Enabled) {
                     addMessageLabel(I18n.tr("chat.info.skip.review"))
                     finalizeAgentSession()
+                } else {
+                    val p3Provider = LlmProviderRegistry.get(s.agentPhase3Provider)
+                    val p3ApiKey = p3Provider.apiKey(s)
+                    if (p3ApiKey.isNotBlank()) {
+                        val p3Config = Pair(p3Provider.baseUrl(s), p3ApiKey)
+                        val p3Model = s.agentPhase3Model
+                        addMessageLabel(phaseTransitionLabel(p3Model, "reviewing"))
+                        startReviewPhase(p3Config, p3Model, planResponse, fullResponse)
+                    } else {
+                        addMessageLabel(I18n.tr("chat.info.skip.review"))
+                        finalizeAgentSession()
+                    }
                 }
             }
         )
