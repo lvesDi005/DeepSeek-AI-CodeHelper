@@ -32,7 +32,7 @@ class ApiConfigPanel : JPanel(BorderLayout()) {
     private var nvidiaModelComboBox: com.intellij.openapi.ui.ComboBox<String>? = null
     private var nvidiaBaseUrlField: JBTextField? = null
     private var openrouterApiKeyField: JBPasswordField? = null
-    private var openrouterModelField: JBTextField? = null
+    private var openrouterModelComboBox: com.intellij.openapi.ui.ComboBox<String>? = null
     private var openrouterBaseUrlField: JBTextField? = null
 
     init {
@@ -176,14 +176,13 @@ class ApiConfigPanel : JPanel(BorderLayout()) {
                         comment("<a href='https://openrouter.ai/keys'>openrouter.ai/keys</a>")
                     }
                     row(I18n.tr("api.openrouter.model")) {
-                        openrouterModelField = cell(JBTextField().apply {
-                            columns = 30
-                            text = settings.openrouterModel
-                            font = JBUI.Fonts.label()
-                            addFocusListener(object : FocusAdapter() {
-                                override fun focusLost(e: FocusEvent) { saveSettings() }
-                            })
-                        }).component as JBTextField
+                        openrouterModelComboBox = comboBox<String>(
+                            listOf("inclusionai/ling-3.0-flash:free", "poolside/laguna-xs-2.1:free")
+                        ).apply {
+                            component.isEditable = true
+                            component.selectedItem = settings.openrouterModel
+                            component.addActionListener { saveSettings() }
+                        }.component
                         comment(I18n.tr("api.openrouter.model.comment"))
                     }
                     row(I18n.tr("api.openrouter.base.url")) {
@@ -217,7 +216,7 @@ class ApiConfigPanel : JPanel(BorderLayout()) {
         settings.nvidiaModel = nvidiaModelComboBox?.selectedItem as? String ?: "z-ai/glm-5.2"
         settings.nvidiaBaseUrl = nvidiaBaseUrlField?.text ?: "https://integrate.api.nvidia.com/v1"
         settings.openrouterApiKey = openrouterApiKeyField?.password?.let { String(it) } ?: ""
-        settings.openrouterModel = openrouterModelField?.text ?: "poolside/laguna-xs-2.1:free"
+        settings.openrouterModel = openrouterModelComboBox?.selectedItem as? String ?: "inclusionai/ling-3.0-flash:free"
         settings.openrouterBaseUrl = openrouterBaseUrlField?.text ?: "https://openrouter.ai/api/v1"
     }
 }

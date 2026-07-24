@@ -242,9 +242,38 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
     // ── Combined send/stop button ──
 
-    internal val sendStopButton = JButton(I18n.tr("chat.send.enter")).apply {
+    internal val sendStopButton = object : JButton(I18n.tr("chat.send.enter")) {
+        override fun paintComponent(g: Graphics) {
+            val g2 = g.create() as Graphics2D
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            val isStop = text?.contains(I18n.tr("chat.stop.enter").take(2), ignoreCase = true) == true
+            g2.color = if (model.isRollover) {
+                if (isStop) JBColor(0xE57373, 0xEF5350) else JBColor(0xE0E0E0, 0x4A4A4A)
+            } else {
+                if (isStop) JBColor(0xEF9A9A, 0xC62828) else Color(0, 0, 0, 0)
+            }
+            g2.fillRoundRect(0, 0, width, height, 8, 8)
+            // 圆角边框：发送态浅绿、停止态浅红
+            g2.color = if (isStop) JBColor(0xEF9A9A, 0xE57373) else JBColor(0xA5D6A7, 0x66BB6A)
+            g2.drawRoundRect(0, 0, width - 1, height - 1, 8, 8)
+            super.paintComponent(g)
+            g2.dispose()
+        }
+
+        override fun setText(text: String?) {
+            super.setText(text)
+            // 根据文本自动切换图标
+            val isStop = text?.contains(I18n.tr("chat.stop.enter").take(2), ignoreCase = true) == true
+            icon = if (isStop) AllIcons.Actions.Suspend else AllIcons.Actions.Execute
+        }
+    }.apply {
         toolTipText = I18n.tr("chat.tooltip.send")
         addActionListener { if (isStreaming) stopStreaming() else sendMessage() }
+        isOpaque = false
+        isContentAreaFilled = false
+        isBorderPainted = false
+        isFocusPainted = false
+        font = font.deriveFont(Font.BOLD, 12f)
     }
 
     internal val messageHistory: MutableList<ChatMessage>
@@ -830,6 +859,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 saveSessions()
 
                 // Set up streaming callbacks
+                val reasoningBuffer = StringBuilder()
                 val onTokenBlock: (String) -> Unit = { token ->
                     ApplicationManager.getApplication().invokeLater {
                         if (thinkingTimer?.isRunning == true) {
@@ -853,8 +883,11 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                             removeStreamingArea(oldState)
                         }
 
-                        messageHistory.add(ChatMessage("assistant", fullResponse))
-                        renderAssistantMessage(fullResponse)
+                        val parsed = parseThinkingResponse(fullResponse)
+                        val displayContent = parsed.second
+                        val reasoning = parsed.third ?: reasoningBuffer.toString().ifEmpty { null }
+                        messageHistory.add(ChatMessage("assistant", displayContent, reasoning = reasoning))
+                        renderAssistantMessage(displayContent, reasoning = reasoning)
 
                         usage?.let {
                             currentSession().totalTokens += it.totalTokens
@@ -897,7 +930,17 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                     appendLine(DOMAIN_RESTRICTION_PROMPT)
                     appendLine()
                     appendLine("你是一个 AI 代码助手，帮助用户解答技术问题。")
-                    appendLine(if (DeepSeekSettings.instance.aiLanguage == "en") "Please reply in English." else "请用中文回复。")
+                    appendLine()
+                    appendLine("## 输出格式规范（必须遵守）")
+                    appendLine("请按以下固定格式输出，不要修改标记：")
+                    appendLine()
+                    appendLine("<thinking>")
+                    appendLine("此处填充你的思考推演过程：分析需求、权衡方案、排查问题的全部推理步骤")
+                    appendLine("</thinking>")
+                    appendLine()
+                    appendLine("## 最终答案")
+                    appendLine("此处放置面向用户的正式回复、代码、解决方案")
+                    appendLine(if (DeepSeekSettings.instance.language == "en") "Please reply in English." else "请用中文回复。")
                     val skillsContent = unifiedSettingsPanel.getEnabledSkillsContent(text)
                     if (skillsContent.isNotBlank()) {
                         append(skillsContent)
@@ -915,7 +958,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                     messages = listOf(ChatMessage("system", qaSystemPrompt)) + messageHistory.toList(),
                     onToken = onTokenBlock,
                     onComplete = onCompleteBlock,
-                    onError = onErrorBlock
+                    onError = onErrorBlock,
+                    onReasoningToken = { token -> reasoningBuffer.append(token) }
                 )
 
                 chatState.set(ChatState.Streaming(
@@ -1053,7 +1097,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             val msg = messages[i]
             when (msg.role) {
                 "user" -> renderUserMessage(msg.content)
-                "assistant" -> renderAssistantMessage(msg.content)
+                "assistant" -> renderAssistantMessage(msg.content, reasoning = msg.reasoning)
             }
         }
     }
@@ -1212,68 +1256,54 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         currentSession().lastActiveTime = System.currentTimeMillis()
         saveSessions()
 
-        // 2. 显示分析状态
-        val analysisLabel = JLabel("🤔 AI 正在分析是否需要扫描项目上下文...").apply {
+        // 2. 显示分析状态（使用旋转动画替代静态标签）
+        val spinnerChars = listOf("◐", "◓", "◑", "◒")
+        var spinnerIdx = 0
+        val analysisLabel = JLabel().apply {
             font = font.deriveFont(Font.ITALIC, 11f)
             foreground = JBColor(0x888888, 0x999999)
             border = JBUI.Borders.empty(4, 16, 4, 16)
+            text = I18n.tr("chat.thinking") + " ◐"
         }
         messagesPanel.add(analysisLabel, fillWidthConstraints)
         revalidateAndScroll()
+        val analysisAnimTimer = Timer(300) {
+            spinnerIdx = (spinnerIdx + 1) % spinnerChars.size
+            analysisLabel.text = I18n.tr("chat.thinking") + " " + spinnerChars[spinnerIdx]
+        }.apply { start() }
 
-        // 3. 后台分析：让 AI 判断是否需要上下文 & 扫描范围
+        // 2. 后台扫描项目上下文（不经过 AI 判断，直接获取结构+搜索相关源码）
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                val provider = LlmProviderRegistry.get(settings.provider)
-                val analysisResult = client.chatSyncWithExplicitConfig(
-                    baseUrl = provider.baseUrl(settings),
-                    apiKey = provider.apiKey(settings),
-                    model = provider.model(settings),
-                    temperature = 0.3,
-                    maxTokens = 150,
-                    messages = listOf(
-                        ChatMessage("system", buildString {
-                            appendLine("你是一个智能分析器。请判断用户的问题是否需要项目的源码上下文来准确回答。")
-                            appendLine()
-                            appendLine("判断规则：")
-                            appendLine("- 如果问题是通用的编程知识（如「写一个 for 循环」「什么是多态」），不需要上下文 → none")
-                            appendLine("- 如果问题涉及用户项目中的具体代码（如「补全这个接口」「修复这个 bug」「这个类在哪里」），需要上下文")
-                            appendLine("  - 只需要知道文件结构和目录 → structure")
-                            appendLine("  - 需要读取相关源文件的完整内容才能准确回答 → full")
-                            appendLine()
-                            appendLine("请只输出以下 JSON 格式（不要加其他内容）：")
-                            appendLine("{\"needContext\": \"none\"|\"structure\"|\"full\"}")
-                            appendLine("注意：用户消息开头可能包含从编辑器中选中的代码片段（以文件名标注），这本身就已经是用户提供的上下文。")
-                            appendLine("如果仅靠选中的代码片段就能回答问题，则不需要额外扫描项目。")
-                        }),
-                        ChatMessage("user", initialText)
-                    )
-                )
+                val projectStructure = buildProjectStructure()
+                val searchResult = searchCoordinator.search(userText)
+                val relatedContext = searchResult.contextText
 
-                val decision = analysisResult.getOrNull()?.let { json ->
-                    try {
-                        val parsed = com.google.gson.JsonParser.parseString(json).asJsonObject
-                        parsed.get("needContext")?.asString ?: "none"
-                    } catch (_: Exception) { "none" }
-                } ?: "none"
+                val reasoningDetail = buildString {
+                    appendLine("### 项目上下文扫描结果")
+                    appendLine()
+                    appendLine("用户问题：$userText")
+                    appendLine()
+                    if (projectStructure.isNotBlank()) {
+                        appendLine("✅ 已扫描项目结构 (${projectStructure.lines().size} 行)")
+                    }
+                    if (relatedContext.isNotBlank()) {
+                        appendLine("✅ 已搜索相关源文件 (${relatedContext.lines().size} 行)")
+                    }
+                    if (projectStructure.isBlank() && relatedContext.isBlank()) {
+                        appendLine("⚠️ 未找到项目上下文")
+                    }
+                }
 
-                // 4. 根据 AI 决策构建上下文
                 val context = buildString {
-                    when (decision) {
-                        "structure" -> {
-                            appendLine("【项目结构参考】")
-                            append(buildProjectStructure())
-                        }
-                        "full" -> {
-                            appendLine("【项目结构参考】")
-                            append(buildProjectStructure())
-                            appendLine().appendLine()
-                            val searchResult = searchCoordinator.search(userText)
-                            if (searchResult.contextText.isNotBlank()) {
-                                appendLine("【相关源文件内容】")
-                                append(searchResult.contextText)
-                            }
-                        }
+                    if (projectStructure.isNotBlank()) {
+                        appendLine("【项目结构参考】")
+                        append(projectStructure)
+                        appendLine()
+                    }
+                    if (relatedContext.isNotBlank()) {
+                        appendLine("【相关源文件内容】")
+                        append(relatedContext)
                     }
                 }
 
@@ -1281,9 +1311,23 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                     "$context\n\n---\n\n$initialText"
                 } else initialText
 
-                // 5. 切回 EDT，开始回答
+                // 5. 切回 EDT，展示分析思考过程 + 开始回答
                 ApplicationManager.getApplication().invokeLater {
+                    analysisAnimTimer.stop()
                     messagesPanel.remove(analysisLabel)
+
+                    // 展示分析结果的折叠思考区域
+                    if (reasoningDetail.isNotBlank()) {
+                        val analysisBubble = MessageBubble(
+                            project = project,
+                            role = MessageBubble.Role.ASSISTANT,
+                            content = I18n.tr("chat.analysis.complete"),
+                            reasoning = reasoningDetail
+                        )
+                        messagesPanel.add(analysisBubble, fillWidthConstraints)
+                        messagesPanel.add(Box.createVerticalStrut(12), fillWidthConstraints)
+                        revalidateAndScroll()
+                    }
 
                     // 更新 messageHistory 中的用户消息为富化版
                     if (messageHistory.isNotEmpty() && messageHistory.last().role == "user") {
@@ -1296,8 +1340,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
             } catch (e: Exception) {
                 ApplicationManager.getApplication().invokeLater {
+                    analysisAnimTimer.stop()
                     messagesPanel.remove(analysisLabel)
-                    addMessageLabel("⚠️ 上下文分析失败，直接回答: ${e.message}")
+                    addMessageLabel("⚠️ " + I18n.tr("chat.analysis.failed") + " ${e.message}")
                     respondDirectly(userText, userAlreadyRendered = true)
                 }
             }
@@ -1402,6 +1447,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         // ── 平滑输出：令牌缓冲队列 + 定时冲刷 ──
         val tokenBuffer = StringBuilder()
+        val reasoningBuffer = StringBuilder()  // 累积 reasoning_content
         val flushTimer = Timer(40) {
             if (tokenBuffer.isNotEmpty()) {
                 val chunk = tokenBuffer.toString()
@@ -1433,7 +1479,12 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 stopThinkingAnimation()
                 val oldState = chatState.getAndSet(ChatState.Idle)
                 if (oldState is ChatState.Streaming) { oldState.eventSource.cancel(); removeStreamingArea(oldState) }
-                messageHistory.add(ChatMessage("assistant", fullResponse)); renderAssistantMessage(fullResponse)
+                // 解析响应中的思考推演过程与最终答案
+                val parsed = parseThinkingResponse(fullResponse)
+                val reasoning = parsed.third ?: reasoningBuffer.toString().ifEmpty { null }
+                val displayContent = parsed.second
+                messageHistory.add(ChatMessage("assistant", displayContent, reasoning = reasoning))
+                renderAssistantMessage(displayContent, reasoning = reasoning)
                 usage?.let { currentSession().totalTokens += it.totalTokens; addMessageLabel("── Token: ${it.totalTokens} (P:${it.promptTokens} C:${it.completionTokens})") }
                 saveSessions(); sendStopButton.text = I18n.tr("chat.send.enter"); sendStopButton.toolTipText = I18n.tr("chat.tooltip.send"); ensureMessagesFiller(); scrollToBottom()
             }
@@ -1456,7 +1507,17 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         val qaSystemPrompt = buildString {
             appendLine(DOMAIN_RESTRICTION_PROMPT); appendLine()
             appendLine("你是一个 AI 代码助手，帮助用户解答技术问题。")
-            appendLine(if (DeepSeekSettings.instance.aiLanguage == "en") "Please reply in English." else "请用中文回复。")
+            appendLine()
+            appendLine("## 输出格式规范（必须遵守）")
+            appendLine("请按以下固定格式输出，不要修改标记：")
+            appendLine()
+            appendLine("<thinking>")
+            appendLine("此处填充你的思考推演过程：分析需求、权衡方案、排查问题的全部推理步骤")
+            appendLine("</thinking>")
+            appendLine()
+            appendLine("## 最终答案")
+            appendLine("此处放置面向用户的正式回复、代码、解决方案")
+            appendLine(if (DeepSeekSettings.instance.language == "en") "Please reply in English." else "请用中文回复。")
             val skillsContent = unifiedSettingsPanel.getEnabledSkillsContent(text)
             if (skillsContent.isNotBlank()) append(skillsContent)
             // 注入项目搜索上下文
@@ -1470,7 +1531,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         val eventSource = client.chatStream(
             messages = listOf(ChatMessage("system", qaSystemPrompt)) + messageHistory.toList(),
-            onToken = onTokenBlock, onComplete = onCompleteBlock, onError = onErrorBlock
+            onToken = onTokenBlock, onComplete = onCompleteBlock, onError = onErrorBlock,
+            onReasoningToken = { token -> reasoningBuffer.append(token) }
         )
         chatState.set(ChatState.Streaming(eventSource = eventSource, bubble = streamBubble))
     }
@@ -1483,7 +1545,17 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         val qaSystemPrompt = buildString {
             appendLine(DOMAIN_RESTRICTION_PROMPT); appendLine()
             appendLine("你是一个 AI 代码助手，帮助用户解答技术问题。")
-            appendLine(if (settings.aiLanguage == "en") "Please reply in English." else "请用中文回复。")
+            appendLine()
+            appendLine("## 输出格式规范（必须遵守）")
+            appendLine("请按以下固定格式输出，不要修改标记：")
+            appendLine()
+            appendLine("<thinking>")
+            appendLine("此处填充你的思考推演过程：分析需求、权衡方案、排查问题的全部推理步骤")
+            appendLine("</thinking>")
+            appendLine()
+            appendLine("## 最终答案")
+            appendLine("此处放置面向用户的正式回复、代码、解决方案")
+            appendLine(if (settings.language == "en") "Please reply in English." else "请用中文回复。")
             val skillsContent = unifiedSettingsPanel.getEnabledSkillsContent(text)
             if (skillsContent.isNotBlank()) append(skillsContent)
             // 注入项目搜索上下文
@@ -1500,8 +1572,11 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             val result = client.chatSync(listOf(ChatMessage("system", qaSystemPrompt)) + messageHistory.toList())
             ApplicationManager.getApplication().invokeLater {
                 result.onSuccess { fullResponse ->
-                    messageHistory.add(ChatMessage("assistant", fullResponse))
-                    renderAssistantMessage(fullResponse)
+                    val parsed = parseThinkingResponse(fullResponse)
+                    val displayContent = parsed.second
+                    val reasoning = parsed.third
+                    messageHistory.add(ChatMessage("assistant", displayContent, reasoning = reasoning))
+                    renderAssistantMessage(displayContent, reasoning = reasoning)
                     currentSession().lastActiveTime = System.currentTimeMillis()
                     saveSessions()
                     ensureMessagesFiller()
@@ -1916,7 +1991,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         sendStopButton.text = I18n.tr("chat.stop.enter")
         sendStopButton.toolTipText = I18n.tr("chat.tooltip.stop")
 
-        val (onToken, onComplete, onError) = createPhaseCallbacks(
+        val (onToken, onComplete, onError, onReasoningToken) = createPhaseCallbacks(
             textArea = planTextArea,
             errorLabelKey = I18n.tr("chat.planning.agent.error"),
             onPhaseComplete = { fullResponse, _ ->
@@ -1934,7 +2009,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             baseUrl = p1Config.first, apiKey = p1Config.second,
             model = p1Model, temperature = 0.7, maxTokens = 4096,
             messages = listOf(ChatMessage("system", planSystemPrompt), ChatMessage("user", finalText)),
-            onToken = onToken, onComplete = onComplete, onError = onError
+            onToken = onToken, onComplete = onComplete, onError = onError,
+            onReasoningToken = onReasoningToken
         )
         chatState.set(ChatState.Streaming(eventSource = eventSource, bubble = planBubble))
     }
@@ -2005,7 +2081,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             if (skillsContent.isNotBlank()) append(skillsContent)
         }
 
-        val (onToken, onComplete, onError) = createPhaseCallbacks(
+        val (onToken, onComplete, onError, onReasoningToken) = createPhaseCallbacks(
             textArea = codeTextArea,
             errorLabelKey = I18n.tr("chat.coding.agent.error"),
             onPhaseComplete = { fullResponse, _ ->
@@ -2040,7 +2116,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             baseUrl = p2Config.first, apiKey = p2Config.second,
             model = p2Model, temperature = 0.7, maxTokens = 8192,
             messages = listOf(ChatMessage("system", systemPrompt), ChatMessage("user", "请根据上面的规划生成代码。")),
-            onToken = onToken, onComplete = onComplete, onError = onError
+            onToken = onToken, onComplete = onComplete, onError = onError,
+            onReasoningToken = onReasoningToken
         )
         chatState.set(ChatState.Streaming(eventSource = eventSource, bubble = codeBubble))
     }
@@ -2083,7 +2160,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             appendLine("如果发现问题，指出问题位置和修改建议。如果没有问题，给出总体评价。")
         }
 
-        val (onToken, onComplete, onError) = createPhaseCallbacks(
+        val (onToken, onComplete, onError, onReasoningToken) = createPhaseCallbacks(
             textArea = reviewTextArea,
             errorLabelKey = I18n.tr("chat.review.agent.error"),
             onPhaseComplete = { _, usage ->
@@ -2098,7 +2175,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             baseUrl = reviewConfig.first, apiKey = reviewConfig.second,
             model = reviewModel, temperature = 0.3, maxTokens = 2048,
             messages = listOf(ChatMessage("system", systemPrompt), ChatMessage("user", "请审查上述代码修改。")),
-            onToken = onToken, onComplete = onComplete, onError = onError
+            onToken = onToken, onComplete = onComplete, onError = onError,
+            onReasoningToken = onReasoningToken
         )
         chatState.set(ChatState.Streaming(eventSource = eventSource, bubble = reviewBubble))
     }
@@ -2521,9 +2599,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     /**
      * Render an assistant message — card style with accent bar + avatar.
      */
-    internal fun renderAssistantMessage(content: String) {
+    internal fun renderAssistantMessage(content: String, reasoning: String? = null) {
         showMessages()
-        val bubble = MessageBubble(project, MessageBubble.Role.ASSISTANT, content)
+        val bubble = MessageBubble(project, MessageBubble.Role.ASSISTANT, content, reasoning = reasoning)
         // 气泡直接加入 messagesPanel
         messagesPanel.add(bubble, fillWidthConstraints)
         messagesPanel.add(Box.createVerticalStrut(12), fillWidthConstraints)
@@ -2704,7 +2782,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         textArea: JBTextArea,
         errorLabelKey: String,
         onPhaseComplete: (fullResponse: String, usage: Usage?) -> Unit
-    ): Triple<(String) -> Unit, (String, Usage?) -> Unit, (Throwable) -> Unit> {
+    ): PhaseCallbacksWithReasoning {
+        val reasoningBuffer = StringBuilder()
         val onToken: (String) -> Unit = { token ->
             ApplicationManager.getApplication().invokeLater {
                 textArea.append(token)
@@ -2712,12 +2791,16 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 scrollToBottom()
             }
         }
+        val onReasoningToken: (String) -> Unit = { token ->
+            reasoningBuffer.append(token)
+        }
         val onComplete: (String, Usage?) -> Unit = { fullResponse, usage ->
             ApplicationManager.getApplication().invokeLater {
                 if (chatState.get() is ChatState.Streaming)
                     cleanupStreamingAndResetButton()
-                messageHistory.add(ChatMessage("assistant", fullResponse))
-                renderAssistantMessage(fullResponse)
+                val reasoning = reasoningBuffer.toString().ifEmpty { null }
+                messageHistory.add(ChatMessage("assistant", fullResponse, reasoning = reasoning))
+                renderAssistantMessage(fullResponse, reasoning = reasoning)
                 usage?.let { currentSession().totalTokens += it.totalTokens }
                 onPhaseComplete(fullResponse, usage)
             }
@@ -2730,10 +2813,47 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 ensureMessagesFiller(); scrollToBottom()
             }
         }
-        return Triple(onToken, onComplete, onError)
+        return PhaseCallbacksWithReasoning(onToken, onComplete, onError, onReasoningToken)
     }
+
+    /** Callback bundle returned by [createPhaseCallbacks], includes reasoning token handler. */
+    internal data class PhaseCallbacksWithReasoning(
+        val onToken: (String) -> Unit,
+        val onComplete: (String, Usage?) -> Unit,
+        val onError: (Throwable) -> Unit,
+        val onReasoningToken: (String) -> Unit
+    )
 
     /** Format a phase transition label: "{prefix}{model}{suffix}" using i18n keys. */
     private fun phaseTransitionLabel(model: String, phaseKey: String): String =
         I18n.tr("chat.agent.${phaseKey}.prefix") + model + I18n.tr("chat.agent.${phaseKey}.suffix")
+
+    // ════════════════════════════════════════════════════════════════
+    //  思考推演过程解析 — 从 AI 响应中提取 <thinking> 块与最终答案
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * 解析 AI 响应，提取思考推演过程和最终答案。
+     *
+     * @param response 原始 AI 响应文本
+     * @return Triple(原始响应, 展示内容, 思考推演文本)
+     *         - first:  原始完整响应
+     *         - second: 最终答案部分（移除 <thinking> 块后的内容）
+     *         - third:  思考推演文本（<thinking> 块内内容），无 thinking 块时为 null
+     */
+    private fun parseThinkingResponse(response: String): Triple<String, String, String?> {
+        val thinkingRegex = Regex("<thinking>([\\s\\S]*?)</thinking>", RegexOption.MULTILINE)
+        val match = thinkingRegex.find(response)
+
+        if (match == null) {
+            // 没有 thinking 块 → 整段作为最终答案
+            return Triple(response, response, null)
+        }
+
+        val thinkingContent = match.groupValues[1].trim()
+        // 移除 <thinking> 块，剩余部分作为展示内容
+        val displayContent = response.replace(thinkingRegex, "").trim()
+
+        return Triple(response, displayContent.ifEmpty { response }, thinkingContent.ifEmpty { null })
+    }
 }

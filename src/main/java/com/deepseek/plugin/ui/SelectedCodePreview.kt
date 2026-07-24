@@ -7,10 +7,12 @@ import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
+import java.awt.Graphics
+import java.awt.Graphics2D
+import java.awt.RenderingHints
 import javax.swing.JLabel
 import javax.swing.JPanel
 import com.deepseek.plugin.i18n.I18n
-import javax.swing.border.CompoundBorder
 
 /**
  * A compact badge shown above the chat input indicating the selected code range.
@@ -35,16 +37,19 @@ class SelectedCodePreview(
         val bg = JBColor(0xF0F4FF, 0x253341)
         val borderColor = JBColor(0xC5D5F0, 0x3A4A5A)
 
-        val chip = JPanel(BorderLayout()).apply {
-            background = bg
-            isOpaque = true
-            border = CompoundBorder(
-                JBUI.Borders.compound(
-                    JBUI.Borders.customLine(borderColor, 1, 1, 1, 1),
-                    JBUI.Borders.empty(1, 6, 1, 2)
-                ),
-                JBUI.Borders.empty(0, 0, 0, 0)
-            )
+        val chip = object : JPanel(BorderLayout()) {
+            override fun paintComponent(g: Graphics) {
+                val g2 = g.create() as Graphics2D
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                g2.color = bg
+                g2.fillRoundRect(0, 0, width - 1, height - 1, 12, 12)
+                g2.color = borderColor
+                g2.drawRoundRect(0, 0, width - 1, height - 1, 12, 12)
+                g2.dispose()
+            }
+        }.apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(1, 8, 1, 2)
 
             // File info label
             val infoLabel = JLabel("$fileName: $startLine-$endLine").apply {

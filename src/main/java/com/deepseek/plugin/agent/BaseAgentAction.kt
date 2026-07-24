@@ -84,7 +84,7 @@ abstract class BaseAgentAction : AnAction() {
         }
 
         // 注入语言指令（使用 AI 输出语言设置，与 Chat 面板统一）
-        val langInstruction = if (settings.aiLanguage == "en")
+        val langInstruction = if (settings.language == "en")
             "\n\nPlease reply in English."
         else
             "\n\n请用中文回复。"

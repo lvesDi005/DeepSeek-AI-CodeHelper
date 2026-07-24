@@ -75,6 +75,14 @@
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
 
+        <!-- Toggle AI Completion on/off -->
+        <action id="DeepSeekAI.ToggleCompletion"
+                class="com.deepseek.plugin.completion.ToggleCompletionAction"
+                text="Toggle AI Completion"
+                description="Enable or disable AI-powered code completion">
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift COMMA"/>
+        </action>
+
         <!-- Right-click context menu actions -->
         <group id="DeepSeekAI.AgentGroup" text="DeepSeek AI" icon="com.deepseek.plugin.icons.PluginIcons.ACTION"
                popup="true" description="DeepSeek AI Agent actions">

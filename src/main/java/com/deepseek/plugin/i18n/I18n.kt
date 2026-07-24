@@ -28,9 +28,11 @@ object I18n {
         // ── ChatPanel ──
         "chat.send" to "发送",
         "chat.stop" to "停止",
-        "chat.send.enter" to "\u25B6 发送 (Enter)",
-        "chat.stop.enter" to "\u25A0 停止",
+        "chat.send.enter" to "发送",
+        "chat.stop.enter" to "停止",
         "chat.load.more" to "\u25B2 加载更早消息",
+        "chat.analysis.complete" to "✅ 上下文分析完成",
+        "chat.analysis.failed" to "上下文分析失败",
         "chat.yes.this.is.what.i.mean" to "\u2705 是，就是这个意思",
         "chat.no.i.need.to.supplement" to "\u274C 不是，我需要补充",
         "chat.tooltip.send" to "发送消息",
@@ -85,7 +87,7 @@ object I18n {
         "chat.error.operation.title" to "操作失败",
 
         // ── ChatPanel ──
-        "chat.no.messages" to "暂无消息",
+        "chat.no.messages" to "该会话内暂无消息",
 
         // ── ChatToolbar ──
         "toolbar.history" to "会话历史",
@@ -123,6 +125,10 @@ object I18n {
         "bubble.me" to "me",
         "bubble.dp.helper" to "DP Helper",
         "bubble.thinking" to "思考中...",
+        "bubble.reasoning" to "思考过程",
+        "bubble.reasoning.word.count" to "共 {0} 字",
+        "bubble.reasoning.collapse" to "收起思考",
+        "bubble.reasoning.expand" to "展开思考过程",
         "bubble.delete" to "删除此消息",
 
         // ── UnifiedSettings ──
@@ -138,6 +144,7 @@ object I18n {
         "settings.theme.follow" to "跟随IDEA",
         "settings.theme.dark" to "Dark 暗黑",
         "settings.theme.light" to "White 纯白",
+        "settings.font.size" to "字体大小 / Font Size",
 
         // ── ApiConfigPanel ──
         "api.group.title" to "API Configuration (API 设置)",
@@ -345,8 +352,8 @@ object I18n {
         "changelog.ok.en" to "Got it",
 
         // ── Misc ──
-        "lang.label" to "界面语言 / UI Language",
-        "lang.agent.label" to "AI 输出语言 / AI Output Language",
+        "lang.label" to "语言 / Language",
+        // "lang.agent.label" 已合并到 lang.label
         "selected.code.remove" to "移除选中代码引用",
         "file.remove" to "移除",
         "code.copy" to "复制代码",
@@ -363,9 +370,11 @@ object I18n {
     private val en = mapOf(
         "chat.send" to "Send",
         "chat.stop" to "Stop",
-        "chat.send.enter" to "\u25B6 Send (Enter)",
-        "chat.stop.enter" to "\u25A0 Stop",
+        "chat.send.enter" to "Send",
+        "chat.stop.enter" to "Stop",
         "chat.load.more" to "\u25B2 Load earlier messages",
+        "chat.analysis.complete" to "\u2705 Context analysis complete",
+        "chat.analysis.failed" to "Context analysis failed",
         "chat.yes.this.is.what.i.mean" to "\u2705 Yes, that's what I mean",
         "chat.no.i.need.to.supplement" to "\u274C No, I need to add more",
         "chat.tooltip.send" to "Send message",
@@ -454,6 +463,10 @@ object I18n {
         "bubble.me" to "me",
         "bubble.dp.helper" to "DP Helper",
         "bubble.thinking" to "Thinking...",
+        "bubble.reasoning" to "Reasoning",
+        "bubble.reasoning.word.count" to "{0} chars",
+        "bubble.reasoning.collapse" to "Collapse reasoning",
+        "bubble.reasoning.expand" to "Expand reasoning",
         "bubble.delete" to "Delete this message",
 
         "settings.theme" to "Theme",
@@ -468,6 +481,7 @@ object I18n {
         "settings.theme.follow" to "Follow IDE",
         "settings.theme.dark" to "Dark",
         "settings.theme.light" to "White",
+        "settings.font.size" to "Font Size",
 
         "api.group.title" to "API Configuration",
         "api.provider" to "API Provider:",
@@ -491,7 +505,7 @@ object I18n {
         "api.openrouter.group" to "OpenRouter",
         "api.openrouter.key" to "API Key:",
         "api.openrouter.model" to "Model:",
-        "api.openrouter.model.comment" to "<a href='https://openrouter.ai/models'>openrouter.ai/models</a> — e.g. poolside/laguna-xs-2.1:free",
+        "api.openrouter.model.comment" to "<a href='https://openrouter.ai/models'>openrouter.ai/models</a> — e.g. inclusionai/ling-3.0-flash:free",
         "api.openrouter.base.url" to "Base URL:",
 
         "pipeline.group.title" to "Agent Pipeline Configuration",
@@ -663,8 +677,8 @@ object I18n {
         "changelog.ok.zh" to "Got it",
         "changelog.ok.en" to "Got it",
 
-        "lang.label" to "UI Language",
-        "lang.agent.label" to "AI Output Language",
+        "lang.label" to "Language",
+        // "lang.agent.label" merged into lang.label
         "selected.code.remove" to "Remove selected code reference",
         "file.remove" to "Remove",
         "code.copy" to "Copy Code",

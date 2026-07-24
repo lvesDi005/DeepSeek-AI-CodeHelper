@@ -177,7 +177,8 @@ class DeepSeekApiClient {
         messages: List<ChatMessage>,
         onToken: (String) -> Unit,
         onComplete: (fullResponse: String, usage: Usage?) -> Unit,
-        onError: (Throwable) -> Unit
+        onError: (Throwable) -> Unit,
+        onReasoningToken: ((String) -> Unit)? = null
     ): EventSource {
         val settings = DeepSeekSettings.instance
         return chatStreamWithExplicitConfig(
@@ -189,7 +190,8 @@ class DeepSeekApiClient {
             messages = messages,
             onToken = onToken,
             onComplete = onComplete,
-            onError = onError
+            onError = onError,
+            onReasoningToken = onReasoningToken
         )
     }
 
@@ -211,7 +213,8 @@ class DeepSeekApiClient {
         messages: List<ChatMessage>,
         onToken: (String) -> Unit,
         onComplete: (fullResponse: String, usage: Usage?) -> Unit,
-        onError: (Throwable) -> Unit
+        onError: (Throwable) -> Unit,
+        onReasoningToken: ((String) -> Unit)? = null
     ): EventSource {
         // 请求限流检查
         if (!HttpClientProvider.chatRateLimiter.tryAcquire()) {
@@ -259,6 +262,10 @@ class DeepSeekApiClient {
                     if (content.isNotEmpty()) {
                         fullResponse.append(content)
                         onToken(content)
+                    }
+                    val reasoningContent = delta?.reasoningContent ?: ""
+                    if (reasoningContent.isNotEmpty()) {
+                        onReasoningToken?.invoke(reasoningContent)
                     }
                     chunk?.usage?.let { lastUsage = it }
                 } catch (_: Exception) {}
@@ -362,6 +369,99 @@ class DeepSeekApiClient {
                     completionsResponse.choices.firstOrNull()?.text?.trim()
                 } catch (_: Exception) { null } finally { response.close() }
                 onResult(suggestion)
+            }
+        })
+    }
+
+    /**
+     * 流式 FIM 补全 —— 使用 SSE 逐 token 返回结果，首 token 即可展示。
+     *
+     * @param onToken    每收到一个新 token 时回调（可来自后台线程）
+     * @param onComplete 所有 token 接收完毕时回调（含完整文本 + usage）
+     * @param onError    出错时回调
+     * @return EventSource 句柄，可用于取消
+     */
+    fun completionFimStream(
+        prefix: String,
+        suffix: String,
+        language: String,
+        fileContext: String,
+        mode: com.deepseek.plugin.completion.TriggerMode = com.deepseek.plugin.completion.TriggerMode.AUTO,
+        onToken: (String) -> Unit,
+        onComplete: (fullResponse: String) -> Unit,
+        onError: (Throwable) -> Unit
+    ): okhttp3.sse.EventSource {
+        // 限流检查
+        if (!HttpClientProvider.completionRateLimiter.tryAcquire()) {
+            onError(okhttp3.internal.http2.ConnectionShutdownException())
+            return object : okhttp3.sse.EventSource {
+                override fun cancel() {}
+                override fun request() = Request.Builder().url("https://unknown").build()
+            }
+        }
+        val settings = DeepSeekSettings.instance
+        val prompt = buildFimPrompt(prefix, suffix, language, fileContext)
+
+        val temperature = if (mode == com.deepseek.plugin.completion.TriggerMode.MANUAL)
+            settings.completionManualTemperature else 0.0
+        val maxTokens = if (mode == com.deepseek.plugin.completion.TriggerMode.MANUAL)
+            settings.completionManualMaxTokens else settings.completionMaxTokens
+        val stop = if (mode == com.deepseek.plugin.completion.TriggerMode.MANUAL)
+            null else listOf("\n\n", "\r\n\r\n")
+
+        val request = FimRequest(
+            model = settings.completionModel.ifBlank { provider(settings).model(settings) },
+            prompt = prompt,
+            suffix = suffix,
+            maxTokens = maxTokens,
+            temperature = temperature,
+            topP = 0.95,
+            stop = stop,
+            stream = true
+        )
+
+        val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
+        val httpRequest = Request.Builder()
+            .url("${provider(settings).baseUrl(settings)}/completions")
+            .header("Authorization", "Bearer ${provider(settings).apiKey(settings)}")
+            .header("Content-Type", "application/json")
+            .post(body)
+            .build()
+
+        val factory = okhttp3.sse.EventSources.createFactory(completionClient)
+        val fullResponse = StringBuilder()
+        var completed = false
+
+        return factory.newEventSource(httpRequest, object : okhttp3.sse.EventSourceListener() {
+            override fun onEvent(eventSource: okhttp3.sse.EventSource, id: String?, type: String?, data: String) {
+                if (data == "[DONE]") {
+                    if (!completed) {
+                        completed = true
+                        onComplete(fullResponse.toString())
+                    }
+                    return
+                }
+                try {
+                    val chunk = gson.fromJson(data, FimStreamChunk::class.java)
+                    val text = chunk?.choices?.firstOrNull()?.text ?: ""
+                    if (text.isNotEmpty()) {
+                        fullResponse.append(text)
+                        onToken(text)
+                    }
+                } catch (_: Exception) {}
+            }
+
+            override fun onFailure(eventSource: okhttp3.sse.EventSource, t: Throwable?, response: okhttp3.Response?) {
+                if (completed) return
+                completed = true
+                onError(t ?: Exception("FIM stream failed: HTTP ${response?.code}"))
+            }
+
+            override fun onClosed(eventSource: okhttp3.sse.EventSource) {
+                if (!completed) {
+                    completed = true
+                    onComplete(fullResponse.toString())
+                }
             }
         })
     }

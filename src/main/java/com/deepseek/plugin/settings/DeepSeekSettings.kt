@@ -39,7 +39,7 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
     var completionStatusBarEnabled: Boolean = true // 是否在状态栏显示补全状态
 
     // Ghost Text 渲染模式（替代 Lookup 列表）
-    var completionGhostTextEnabled: Boolean = false // 是否启用 Ghost Text 渲染（默认关闭）
+    var completionGhostTextEnabled: Boolean = true // 是否启用 Ghost Text 渲染（默认开启）
 
     // API Provider 选择: "deepseek" | "agnes" | "nvidia"
     var provider: String = "deepseek"
@@ -56,7 +56,7 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
 
     // OpenRouter 配置
     var openrouterApiKey: String = ""
-    var openrouterModel: String = "poolside/laguna-xs-2.1:free"
+    var openrouterModel: String = "inclusionai/ling-3.0-flash:free"
     var openrouterBaseUrl: String = "https://openrouter.ai/api/v1"
 
     // 图片解析配置
@@ -69,11 +69,11 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
     // 更新日志语言偏好: "zh" | "en"
     var changelogLanguage: String = "zh"
 
-    // UI 界面语言: "zh" | "en"
+    // 语言设置（控制 UI 界面 + AI 输出）: "zh" | "en"
     var language: String = "zh"
 
-    // AI 输出语言（Chat + 右键 Explain/Review）: "zh" | "en"，与 UI 语言独立
-    var aiLanguage: String = "zh"
+    // 内容展示字号（聊天正文、Markdown、流式输出等）: 12~16
+    var contentFontSize: Int = 13
 
     // Agentic Search 配置
     var agenticSearchEnabled: Boolean = true   // 是否启用 Agentic Search（替代 RAG 的代码搜索）

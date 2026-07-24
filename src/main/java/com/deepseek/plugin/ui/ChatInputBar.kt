@@ -318,9 +318,6 @@ class ChatInputBar(
         }
 
         // ── 右侧：发送/停止按钮 ──
-        sendStopButton.apply {
-            font = font.deriveFont(Font.BOLD, 12f)
-        }
         bar.add(sendStopButton, BorderLayout.EAST)
 
         return bar

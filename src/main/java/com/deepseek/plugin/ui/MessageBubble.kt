@@ -2,6 +2,7 @@ package com.deepseek.plugin.ui
 
 import com.deepseek.plugin.ui.CodeBlockCard.Companion.parseResponse
 import com.deepseek.plugin.i18n.I18n
+import com.deepseek.plugin.settings.DeepSeekSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.util.IconLoader
 import com.intellij.ui.InplaceButton
@@ -70,7 +71,9 @@ class MessageBubble(
     /** 用户消息右上角删除按钮的回调（传 null 则不显示删除按钮） */
     private val onDelete: (() -> Unit)? = null,
     /** 代码文件标签列表（显示在用户消息中，带 ☕ 图标） */
-    private val fileTabs: List<String> = emptyList()
+    private val fileTabs: List<String> = emptyList(),
+    /** 模型的深度思考过程（reasoning_content），仅 ASSISTANT 角色使用 */
+    private val reasoning: String? = null
 ) : JPanel(GridBagLayout()) {
 
     /** 消息创建时间（HH:mm 格式） */
@@ -119,13 +122,16 @@ class MessageBubble(
     // ── 可视化内容面板（即圆角矩形内的全部内容）──
     private lateinit var contentPanel: JPanel
 
+    /** 思考过程面板的展开/收起状态 */
+    private var reasoningExpanded = false
+
     init {
         isOpaque = false
         alignmentX = Component.LEFT_ALIGNMENT
 
         when (role) {
             Role.USER -> setupUserMessage(content)
-            Role.ASSISTANT -> setupAssistantMessage(content, segments)
+            Role.ASSISTANT -> setupAssistantMessage(content, segments, reasoning)
             Role.STREAMING -> setupStreamingArea()
         }
     }
@@ -266,7 +272,7 @@ class MessageBubble(
             isOpaque = false
             lineWrap = true
             wrapStyleWord = true
-            font = font.deriveFont(Font.PLAIN, 13f)
+            font = font.deriveFont(Font.PLAIN, DeepSeekSettings.instance.contentFontSize.toFloat())
             foreground = JBColor(0x1A1A1A, 0xE0E0E0)
             background = Color(0, 0, 0, 0)
             highlighter = null
@@ -300,7 +306,8 @@ class MessageBubble(
 
     private fun setupAssistantMessage(
         content: String,
-        segments: List<ResponseSegment>?
+        segments: List<ResponseSegment>?,
+        reasoning: String? = null
     ) {
         val header = createModernHeader()
 
@@ -317,9 +324,10 @@ class MessageBubble(
             when (seg) {
                 is ResponseSegment.Text -> {
                     if (!isFirst) contentBody.add(Box.createVerticalStrut(8))
+                    val contentFontSize = DeepSeekSettings.instance.contentFontSize
                     val mdPane = MarkdownRenderer.createPane(
                         markdownText = seg.content,
-                        fontSize = 13,
+                        fontSize = contentFontSize,
                         fgColor = JBColor(0x1A1A1A, 0xE0E0E0),
                         bgColor = null
                     )
@@ -347,14 +355,98 @@ class MessageBubble(
             contentBody.add(Box.createVerticalStrut(2))
         }
 
+        // ── 中心面板：思考过程(可选) + 最终回答 ──
+        val centerPanel = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            if (reasoning != null && reasoning.isNotBlank()) {
+                add(createReasoningPanel(reasoning))
+                add(Box.createVerticalStrut(12))
+            }
+            add(contentBody)
+        }
+
         contentPanel = JPanel(BorderLayout()).apply {
             isOpaque = false
             border = EmptyBorder(12, 16, 16, 16)
             add(header, BorderLayout.NORTH)
-            add(contentBody, BorderLayout.CENTER)
+            add(centerPanel, BorderLayout.CENTER)
         }
 
         attachContent()
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  可折叠「思考过程」面板
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * 创建可折叠的思考过程面板，位于 AI 回复头部与正文之间。
+     * - 折叠时：显示 "🧠 思考过程  ▸  共 xxx 字"
+     * - 展开时：显示思考内容（灰色底色 + 灰色文字），可再次折叠
+     */
+    private fun createReasoningPanel(reasoningText: String): JPanel {
+        val reasoningBody = JPanel(BorderLayout())
+        reasoningBody.isOpaque = false
+
+        // ── 内容区域（初始隐藏）──
+        val contentArea = JBTextArea(reasoningText.trim()).apply {
+            isEditable = false
+            lineWrap = true
+            wrapStyleWord = true
+            font = JBUI.Fonts.create("SansSerif", (DeepSeekSettings.instance.contentFontSize - 1).coerceAtLeast(10))
+            margin = JBUI.insets(8, 10, 8, 10)
+            border = JBUI.Borders.customLine(JBColor(0xD0D0D0, 0x444444), 1)
+            background = JBColor(0xF0F0F0, 0x2A2A2A)
+            foreground = JBColor(0x666666, 0x999999)
+            isOpaque = true
+            isVisible = false
+        }
+
+        // ── 头部行：▶ 思考过程  共 xxx 字 ──
+        val toggleArrow = JLabel("\u25B6") // ▶ (collapsed)
+        toggleArrow.font = toggleArrow.font.deriveFont(10f)
+
+        val titleLabel = JLabel(I18n.tr("bubble.reasoning")).apply {
+            font = font.deriveFont(Font.PLAIN, 11f)
+            foreground = JBColor(0x888888, 0xAAAAAA)
+        }
+
+        val headerPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 2)).apply {
+            isOpaque = false
+            add(toggleArrow)
+            add(titleLabel)
+        }
+
+        reasoningBody.add(headerPanel, BorderLayout.NORTH)
+
+        // ── 点击切换展开/收起 ──
+        reasoningExpanded = false
+        val toggleListener = object : java.awt.event.MouseAdapter() {
+            override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                reasoningExpanded = !reasoningExpanded
+                contentArea.isVisible = reasoningExpanded
+                toggleArrow.text = if (reasoningExpanded) "\u25BC" else "\u25B6" // ▼ / ▶
+                // 触发父容器重新布局
+                reasoningBody.revalidate()
+                var parent = reasoningBody.parent
+                while (parent != null) {
+                    parent.revalidate()
+                    parent = parent.parent
+                }
+            }
+        }
+        headerPanel.addMouseListener(toggleListener)
+
+        reasoningBody.add(contentArea, BorderLayout.CENTER)
+
+        // 整体包一层，保证 BoxLayout 中纵向布局正确
+        val wrapper = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            maximumSize = Dimension(Short.MAX_VALUE.toInt(), Short.MAX_VALUE.toInt())
+            add(reasoningBody, BorderLayout.NORTH)
+        }
+        return wrapper
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -433,7 +525,7 @@ class MessageBubble(
             isOpaque = false
             lineWrap = true
             wrapStyleWord = true
-            font = font.deriveFont(Font.PLAIN, 13f)
+            font = font.deriveFont(Font.PLAIN, DeepSeekSettings.instance.contentFontSize.toFloat())
             background = Color(0, 0, 0, 0)
             margin = JBUI.insets(0, 0, 0, 0)
             border = EmptyBorder(0, 0, 0, 0)

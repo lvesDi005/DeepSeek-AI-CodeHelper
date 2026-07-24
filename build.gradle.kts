@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.deepseek.plugin"
-version = "2.5.9"
+version = "2.6.0"
 
 repositories {
     mavenCentral()
@@ -47,6 +47,16 @@ intellijPlatform {
         }
         changeNotes = """
             <h1>中文/Chinese</h1>
+            <h3>v2.6.0</h3>
+            <ul>
+              <li>【新增】深度思考过程显示 — AI 回复中的推理内容（reasoning_content）折叠展示，可展开/收起，字数统计，深色/浅色主题自适应</li>
+              <li>【新增】字体大小设置 — 主题设置新增「字体大小/Font Size」下拉框(12px~16px)，控制聊天面板内容文字大小</li>
+              <li>【新增】语言设置合并 — 「界面语言」与「AI 输出语言」合并为一个「语言/Language」设置</li>
+              <li>【新增】OpenRouter 默认模型更换 — 默认模型改为 inclusionai/ling-3.0-flash:free，模型输入框改为可编辑下拉框</li>
+              <li>【优化】代码补全：Ghost Text 默认开启、状态栏恢复、连续失败提示、Python 预检层减少无效 API 调用</li>
+              <li>【优化】代码补全：流式 FIM — 支持 SSE 逐 token 返回，首 token 即显示到 Ghost Text，降低感知延迟</li>
+              <li>【优化】代码补全：新增 Ctrl+Shift+, 快捷键切换补全启用/禁用</li>
+            </ul>
             <h3>v2.5.9</h3>
             <ul>
               <li>agent模式意图解析优化</li>
@@ -265,6 +275,16 @@ intellijPlatform {
               <li>API Key 配置页面</li>
             </ul>
             <h1>English</h1>
+            <h3>v2.6.0</h3>
+            <ul>
+              <li>[New] Reasoning display — AI reasoning content (reasoning_content) shown in collapsible panel with word count, supports light/dark themes</li>
+              <li>[New] Font Size setting — Theme settings now include "Font Size" dropdown (12px~16px) controlling chat content text size</li>
+              <li>[New] Unified Language setting — "UI Language" and "AI Output Language" merged into single "Language" setting</li>
+              <li>[New] OpenRouter default model changed to inclusionai/ling-3.0-flash:free; model selector now an editable combo box</li>
+              <li>[Improved] Code Completion — Ghost Text enabled by default, status bar widget restored, consecutive failure balloon notifications, Python pre-check layer reduces unnecessary API calls</li>
+              <li>[Improved] Code Completion — Streaming FIM: SSE token-by-token response, first token displays immediately as Ghost Text, reducing perceived latency</li>
+              <li>[Improved] Code Completion — New Ctrl+Shift+, shortcut to toggle completion on/off</li>
+            </ul>
             <h3>v2.5.9</h3>
             <ul>
             <li>Optimized intent parsing in agent mode</li>

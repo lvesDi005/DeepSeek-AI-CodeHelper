@@ -66,7 +66,7 @@ class OpenRouterProvider : LlmProvider {
 
     override fun baseUrl(settings: DeepSeekSettings): String = settings.openrouterBaseUrl.trimEnd('/')
     override fun apiKey(settings: DeepSeekSettings): String = settings.openrouterApiKey
-    override fun model(settings: DeepSeekSettings): String = settings.openrouterModel.ifBlank { "poolside/laguna-xs-2.1:free" }
+    override fun model(settings: DeepSeekSettings): String = settings.openrouterModel.ifBlank { "inclusionai/ling-3.0-flash:free" }
 }
 
 // ============== 注册表 ==============

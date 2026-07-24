@@ -17,7 +17,9 @@ data class ChatRequest(
 
 data class ChatMessage(
     val role: String,  // "system", "user", "assistant"
-    val content: String
+    val content: String,
+    /** 模型的深度思考过程（reasoning_content），仅在 role="assistant" 时有值 */
+    val reasoning: String? = null
 )
 
 // ── 多模态消息（支持 text + image_url 混合 content）──
@@ -57,7 +59,9 @@ data class Choice(
 
 data class Delta(
     val role: String? = null,
-    val content: String? = null
+    val content: String? = null,
+    /** DeepSeek 等模型在 SSE 流中发送的深度思考内容，与 content 互斥出现 */
+    @SerializedName("reasoning_content") val reasoningContent: String? = null
 )
 
 data class Usage(
@@ -77,7 +81,8 @@ data class FimRequest(
     @SerializedName("top_p") val topP: Double = 0.95,
     @SerializedName("frequency_penalty") val frequencyPenalty: Double = 0.0,
     @SerializedName("presence_penalty") val presencePenalty: Double = 0.0,
-    val stop: List<String>? = null
+    val stop: List<String>? = null,
+    val stream: Boolean = false
 )
 
 data class FimResponse(
@@ -93,6 +98,22 @@ data class FimChoice(
     val index: Int,
     val text: String,
     @SerializedName("finish_reason") val finishReason: String?
+)
+
+/** FIM 流式 SSE 响应中的单条 chunk */
+data class FimStreamChunk(
+    val id: String? = null,
+    val `object`: String? = null,
+    val created: Long? = null,
+    val model: String? = null,
+    val choices: List<FimStreamChoice>? = null,
+    val usage: Usage? = null
+)
+
+data class FimStreamChoice(
+    val index: Int? = null,
+    val text: String? = null,
+    @SerializedName("finish_reason") val finishReason: String? = null
 )
 
 // --- Streaming SSE chunk ---

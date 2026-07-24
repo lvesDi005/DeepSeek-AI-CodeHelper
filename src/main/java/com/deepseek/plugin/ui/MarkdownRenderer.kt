@@ -1,5 +1,6 @@
 package com.deepseek.plugin.ui
 
+import com.deepseek.plugin.settings.DeepSeekSettings
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import org.intellij.markdown.flavours.commonmark.CommonMarkFlavourDescriptor
@@ -46,7 +47,7 @@ object MarkdownRenderer {
      */
     fun createPane(
         markdownText: String,
-        fontSize: Int = 13,
+        fontSize: Int = DeepSeekSettings.instance.contentFontSize,
         fgColor: java.awt.Color = JBColor.foreground(),
         bgColor: java.awt.Color? = null,
         linkCallback: ((String) -> Unit)? = null
@@ -61,6 +62,7 @@ object MarkdownRenderer {
             putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, true)
             font = font.deriveFont(fontSize.toFloat())
             border = JBUI.Borders.empty()
+            margin = JBUI.insets(0)
             // Apply custom styles
             (editorKit as? HTMLEditorKit)?.styleSheet = createStyleSheet(fontSize, fgColor)
         }
@@ -165,7 +167,7 @@ object MarkdownRenderer {
 
         ss.addRule("body { font-family: sans-serif; font-size: ${fontSize}pt; color: $hexFg; margin: 0; padding: 0; }")
         ss.addRule("p { margin: 0 0 6px 0; padding: 0; }")
-        ss.addRule("h1, h2, h3, h4, h5, h6 { margin: 10px 0 4px 0; font-weight: bold; }")
+        ss.addRule("h1, h2, h3, h4, h5, h6 { margin: 10px 0 4px 0; margin-left: 0; padding-left: 0; font-weight: bold; }")
         ss.addRule("ul, ol { margin: 2px 0 6px 0; padding-left: 22px; }")
         ss.addRule("li { margin: 2px 0; }")
         ss.addRule("a { color: $linkColor; text-decoration: underline; }")

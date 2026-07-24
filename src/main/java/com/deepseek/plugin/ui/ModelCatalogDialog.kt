@@ -35,6 +35,7 @@ class ModelCatalogDialog : DialogWrapper(true) {
         // StepFun (image parsing)
         ModelEntry("stepfun", "StepFun", "step-1o-turbo-vision", "多模态视觉解析（图片解析专用）"),
         // OpenRouter
+        ModelEntry("openrouter", "OpenRouter", "inclusionai/ling-3.0-flash:free", "Ling 3.0 Flash 免费版，适合日常对话与代码"),
         ModelEntry("openrouter", "OpenRouter", "poolside/laguna-xs-2.1:free", "Poolside Laguna XS 免费版，适合代码生成")
     )
 

@@ -35,6 +35,7 @@ class CompletionStatusService {
 
     private val stateRef = AtomicReference(State.IDLE)
     private var errorMessage: String = ""
+    private var consecutiveErrors: Int = 0
     private var listeners: MutableList<(State) -> Unit> = mutableListOf()
 
     /** 获取当前状态 */
@@ -42,6 +43,12 @@ class CompletionStatusService {
 
     /** 获取最近的错误消息 */
     fun getErrorMessage(): String = errorMessage
+
+    /** 获取连续失败次数 */
+    fun getConsecutiveErrors(): Int = consecutiveErrors
+
+    /** 重置连续失败计数 */
+    fun resetConsecutiveErrors() { consecutiveErrors = 0 }
 
     /** 切换到 GENERATING 状态 */
     fun onGenerating() {
@@ -54,6 +61,7 @@ class CompletionStatusService {
 
     /** 切换到 READY 状态（有补全结果） */
     fun onReady() {
+        consecutiveErrors = 0
         val prev = stateRef.getAndSet(State.READY)
         if (prev != State.READY) {
             LOG.debug("Completion status: READY")
@@ -63,6 +71,7 @@ class CompletionStatusService {
 
     /** 切换到 ERROR 状态 */
     fun onError(message: String) {
+        consecutiveErrors++
         errorMessage = message
         val prev = stateRef.getAndSet(State.ERROR)
         if (prev != State.ERROR) {
@@ -73,6 +82,7 @@ class CompletionStatusService {
 
     /** 切换到 IDLE 状态 */
     fun onIdle() {
+        consecutiveErrors = 0
         val prev = stateRef.getAndSet(State.IDLE)
         if (prev != State.IDLE) {
             notifyListeners(State.IDLE)

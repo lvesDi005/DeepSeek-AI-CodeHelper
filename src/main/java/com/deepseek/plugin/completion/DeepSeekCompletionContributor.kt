@@ -9,6 +9,8 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.fileTypes.PlainTextFileType
+import com.intellij.openapi.ui.MessageType
+import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.patterns.PlatformPatterns
 import com.intellij.util.ProcessingContext
 
@@ -66,7 +68,16 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
         val lastLine = prefixTrimmed.lines().lastOrNull() ?: ""
         if (lastLine.length < settings.completionMinPrefix) return
 
-        // --- 2. 去抖 (debounce) ---
+        // --- 2.5 Python 预检层 (PyCharm 专用) ---
+        // 识别内置函数/关键字/魔术方法 → 跳过 AI 调用
+        if (!PythonCompletionPreChecker.shouldUseAI(
+                element = parameters.position,
+                file = parameters.originalFile,
+                prefix = lastLine
+            )
+        ) return
+
+        // --- 3. 去抖 (debounce) ---
         val now = System.currentTimeMillis()
         val elapsed = now - lastRequestTime
         if (elapsed < settings.completionDelayMs && elapsed > 0) return
@@ -118,53 +129,132 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
             LOG.debug("Cache MISS: will call API")
         }
 
-        // --- 6. 异步调用 FIM API (非阻塞!, AUTO 模式) ---
+        // --- 6. 异步调用 FIM API ---
         statusService.onGenerating()
-        client.completionFim(
-            prefix = prefix,
-            suffix = suffix,
-            language = language,
-            fileContext = fileContext,
-            mode = TriggerMode.AUTO
-        ) { suggestionRaw ->
-            if (suggestionRaw.isNullOrBlank()) {
-                statusService.onIdle()
-                return@completionFim
-            }
 
-            val suggestion = CompletionPostProcessor.process(suggestionRaw, lastLine, suffix)
-            if (suggestion.isBlank()) {
-                statusService.onIdle()
-                return@completionFim
-            }
-
-            // 存入缓存
-            if (settings.completionCacheEnabled) {
-                CompletionCache.getInstance().put(filePath, cursorLine, cursorColumn, lastLine, suggestion)
-            }
-
-            // 回到 EDT 写入补全结果
-            ApplicationManager.getApplication().invokeLater {
-                try {
-                    result.addElement(
-                        PrioritizedLookupElement.withPriority(
-                            LookupElementBuilder.create(suggestion)
-                                .withTypeText("DeepSeek AI", true)
-                                .withIcon(com.intellij.icons.AllIcons.Actions.Find),
-                            Double.MAX_VALUE
-                        )
-                    )
-
-                    // Ghost Text 渲染模式
-                    if (settings.completionGhostTextEnabled && !editor.isDisposed) {
-                        GhostTextManager.showGhostText(editor, suggestion, caretOffset)
+        // 流式/同步分支：Ghost Text 模式下优先流式展示
+        if (settings.completionGhostTextEnabled && !editor.isDisposed) {
+            // === 流式 FIM 路径：首 token 即显示到 Ghost Text ===
+            var accumulatedPrefix = ""
+            client.completionFimStream(
+                prefix = prefix,
+                suffix = suffix,
+                language = language,
+                fileContext = fileContext,
+                mode = TriggerMode.AUTO,
+                onToken = { token ->
+                    accumulatedPrefix += token
+                    ApplicationManager.getApplication().invokeLater {
+                        if (!editor.isDisposed) {
+                            GhostTextManager.showGhostText(editor, accumulatedPrefix, caretOffset)
+                        }
                     }
+                },
+                onComplete = { fullRaw ->
+                    val suggestion = CompletionPostProcessor.process(fullRaw, lastLine, suffix)
+                    if (suggestion.isBlank()) {
+                        statusService.onIdle()
+                        return@completionFimStream
+                    }
+                    if (settings.completionCacheEnabled) {
+                        CompletionCache.getInstance().put(filePath, cursorLine, cursorColumn, lastLine, suggestion)
+                    }
+                    ApplicationManager.getApplication().invokeLater {
+                        try {
+                            result.addElement(
+                                PrioritizedLookupElement.withPriority(
+                                    LookupElementBuilder.create(suggestion)
+                                        .withTypeText("DeepSeek AI", true)
+                                        .withIcon(com.intellij.icons.AllIcons.Actions.Find),
+                                    Double.MAX_VALUE
+                                )
+                            )
+                            LOG.info("AI Completion (stream) | length=${suggestion.length}")
+                            statusService.onReady()
+                        } catch (e: Exception) {
+                            LOG.warn("Failed to add streamed AI completion element", e)
+                            statusService.onError(e.message ?: "Stream completion error")
+                        }
+                    }
+                },
+                onError = { error ->
+                    statusService.onError(error.message ?: "FIM stream error")
+                    if (statusService.getConsecutiveErrors() >= 3) {
+                        ApplicationManager.getApplication().invokeLater {
+                            val project = parameters.editor.project ?: return@invokeLater
+                            if (!project.isDisposed) {
+                                val errMsg = statusService.getErrorMessage().ifBlank { "请检查 API Key 或网络连接" }
+                                ToolWindowManager.getInstance(project).notifyByBalloon(
+                                    "DeepSeek AI CodeHelper",
+                                    MessageType.WARNING,
+                                    "AI 补全连续失败 (x" + statusService.getConsecutiveErrors() + ")：" + errMsg
+                                )
+                                statusService.resetConsecutiveErrors()
+                            }
+                        }
+                    }
+                    statusService.onIdle()
+                }
+            )
+        } else {
+            // === 同步 FIM 路径（查找列表模式） ===
+            client.completionFim(
+                prefix = prefix,
+                suffix = suffix,
+                language = language,
+                fileContext = fileContext,
+                mode = TriggerMode.AUTO
+            ) { suggestionRaw ->
+                if (suggestionRaw.isNullOrBlank()) {
+                    if (statusService.getConsecutiveErrors() >= 3) {
+                        ApplicationManager.getApplication().invokeLater {
+                            val project = parameters.editor.project ?: return@invokeLater
+                            if (!project.isDisposed) {
+                                val errMsg = statusService.getErrorMessage().ifBlank { "请检查 API Key 或网络连接" }
+                                ToolWindowManager.getInstance(project).notifyByBalloon(
+                                    "DeepSeek AI CodeHelper",
+                                    MessageType.WARNING,
+                                    "AI 补全连续失败 (x" + statusService.getConsecutiveErrors() + ")：" + errMsg
+                                )
+                                statusService.resetConsecutiveErrors()
+                            }
+                        }
+                    }
+                    statusService.onIdle()
+                    return@completionFim
+                }
 
-                    LOG.info("AI Completion added | length=${suggestion.length} | preview=${suggestion.take(40).replace("\n","\\n")}")
-                    statusService.onReady()
-                } catch (e: Exception) {
-                    LOG.warn("Failed to add AI completion element", e)
-                    statusService.onError(e.message ?: "Failed to add completion")
+                val suggestion = CompletionPostProcessor.process(suggestionRaw, lastLine, suffix)
+                if (suggestion.isBlank()) {
+                    statusService.onIdle()
+                    return@completionFim
+                }
+
+                if (settings.completionCacheEnabled) {
+                    CompletionCache.getInstance().put(filePath, cursorLine, cursorColumn, lastLine, suggestion)
+                }
+
+                ApplicationManager.getApplication().invokeLater {
+                    try {
+                        result.addElement(
+                            PrioritizedLookupElement.withPriority(
+                                LookupElementBuilder.create(suggestion)
+                                    .withTypeText("DeepSeek AI", true)
+                                    .withIcon(com.intellij.icons.AllIcons.Actions.Find),
+                                Double.MAX_VALUE
+                            )
+                        )
+
+                        if (settings.completionGhostTextEnabled && !editor.isDisposed) {
+                            GhostTextManager.showGhostText(editor, suggestion, caretOffset)
+                        }
+
+                        LOG.info("AI Completion added | length=${suggestion.length} | preview=${suggestion.take(40).replace("\n", "\\n")}")
+                        statusService.onReady()
+                    } catch (e: Exception) {
+                        LOG.warn("Failed to add AI completion element", e)
+                        statusService.onError(e.message ?: "Failed to add completion")
+                    }
                 }
             }
         }

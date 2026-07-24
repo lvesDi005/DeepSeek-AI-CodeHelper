@@ -60,7 +60,7 @@ class ThemeSettingsPanel : JPanel(BorderLayout()) {
             add(lightBtn)
         }
 
-        // ── Language selector (same level as title) ──
+        // ── 语言/Language 选择器 ──
         val langRow = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
             isOpaque = false
             alignmentX = Component.LEFT_ALIGNMENT
@@ -90,21 +90,21 @@ class ThemeSettingsPanel : JPanel(BorderLayout()) {
             add(combo)
         }
 
-        // ── Agent 输出语言选择器（与 UI 语言隔离）──
-        val agentLangRow = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
+        // ── 字体大小/Font Size 选择器 ──
+        val fontSizes = listOf(12, 13, 14, 15, 16)
+        val fontSizeRow = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
             isOpaque = false
             alignmentX = Component.LEFT_ALIGNMENT
-            val langs = listOf("zh" to "中文", "en" to "English")
-            val combo = JComboBox(langs.map { it.second }.toTypedArray()).apply {
-                selectedIndex = langs.indexOfFirst { it.first == settings.aiLanguage }.coerceAtLeast(0)
+            val combo = JComboBox(fontSizes.map { "${it}px" }.toTypedArray()).apply {
+                selectedIndex = fontSizes.indexOf(settings.contentFontSize).coerceAtLeast(0)
                 addActionListener {
                     val idx = selectedIndex
-                    if (idx in langs.indices) {
-                        settings.aiLanguage = langs[idx].first
+                    if (idx in fontSizes.indices) {
+                        settings.contentFontSize = fontSizes[idx]
                     }
                 }
             }
-            add(JLabel("  ${I18n.tr("lang.agent.label")}").apply {
+            add(JLabel(I18n.tr("settings.font.size")).apply {
                 font = JBUI.Fonts.label()
                 foreground = JBColor(Color(0x555555), Color(0xAAAAAA))
             })
@@ -122,7 +122,7 @@ class ThemeSettingsPanel : JPanel(BorderLayout()) {
             add(Box.createVerticalStrut(20))
             add(langRow)
             add(Box.createVerticalStrut(8))
-            add(agentLangRow)
+            add(fontSizeRow)
         }
         add(body, BorderLayout.NORTH)
     }
