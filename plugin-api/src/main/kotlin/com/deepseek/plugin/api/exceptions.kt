@@ -1,9 +1,5 @@
 package com.deepseek.plugin.api
 
-import com.intellij.notification.NotificationGroupManager
-import com.intellij.notification.NotificationType
-import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.project.Project
 import java.io.IOException
 
 /**
@@ -29,34 +25,6 @@ open class DeepSeekPluginException(
         append("[${severity.name}] $userMessage")
         if (techDetail.isNotBlank()) append(" | $techDetail")
         cause?.let { append(" | Caused by: ${it.message}") }
-    }
-
-    companion object {
-        private val LOG = Logger.getInstance(DeepSeekPluginException::class.java)
-
-        /**
-         * 记录异常并可选地向用户展示通知。
-         *
-         * @param project 可选，提供时才会弹出 IDE 通知气泡
-         */
-        fun handle(e: DeepSeekPluginException, project: Project? = null) {
-            when (e.severity) {
-                Severity.WARN -> LOG.warn(e.toLogString(), e)
-                Severity.ERROR -> LOG.error(e.toLogString(), e)
-                Severity.FATAL -> LOG.error(e.toLogString(), e)
-            }
-            if (project != null && !project.isDisposed) {
-                val type = when (e.severity) {
-                    Severity.WARN -> NotificationType.WARNING
-                    Severity.ERROR -> NotificationType.ERROR
-                    Severity.FATAL -> NotificationType.ERROR
-                }
-                NotificationGroupManager.getInstance()
-                    .getNotificationGroup("DeepSeek AI CodeHelper")
-                    .createNotification(e.userMessage, type)
-                    .notify(project)
-            }
-        }
     }
 }
 

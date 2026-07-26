@@ -1,6 +1,7 @@
 package com.deepseek.plugin.completion
 
 import com.deepseek.plugin.api.DeepSeekApiClient
+import com.deepseek.plugin.api.TriggerMode
 import com.deepseek.plugin.settings.DeepSeekSettings
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent

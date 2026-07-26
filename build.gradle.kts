@@ -4,8 +4,15 @@ plugins {
     id("org.jetbrains.intellij.platform") version "2.5.0"
 }
 
-group = "com.deepseek.plugin"
-version = "2.6.1"
+allprojects {
+    group = "com.deepseek.plugin"
+    version = "2.6.1"
+}
+
+subprojects {
+    apply(plugin = "java")
+    apply(plugin = "org.jetbrains.kotlin.jvm")
+}
 
 repositories {
     mavenCentral()
@@ -15,15 +22,16 @@ repositories {
 }
 
 dependencies {
+    // 子模块依赖
+    implementation(project(":plugin-api"))
+    implementation(project(":plugin-backend"))
+
     intellijPlatform {
         create("IU", "2024.3")
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
         // 编译期提供 Java PSI 类；运行时通过 plugin.xml 的 optional 依赖控制
         bundledPlugin("com.intellij.java")
     }
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
-    implementation("com.google.code.gson:gson:2.11.0")
 }
 
 intellijPlatform {

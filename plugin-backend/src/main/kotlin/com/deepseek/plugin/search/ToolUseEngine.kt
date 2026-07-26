@@ -1,5 +1,7 @@
 package com.deepseek.plugin.search
 
+import com.deepseek.plugin.api.*
+
 import com.deepseek.plugin.api.ChatMessage
 import com.deepseek.plugin.api.DOMAIN_RESTRICTION_PROMPT
 import com.deepseek.plugin.api.DeepSeekApiClient

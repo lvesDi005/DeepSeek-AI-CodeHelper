@@ -3,8 +3,11 @@ package com.deepseek.plugin.agent
 import com.deepseek.plugin.api.ChatMessage
 import com.deepseek.plugin.api.DeepSeekApiClient
 import com.deepseek.plugin.api.LlmProviderRegistry
+import com.deepseek.plugin.api.SettingsSnapshot
+import com.deepseek.plugin.api.resolveApiKey
 import com.deepseek.plugin.i18n.I18n
 import com.deepseek.plugin.settings.DeepSeekSettings
+import com.deepseek.plugin.settings.toSnapshot
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -43,8 +46,7 @@ abstract class BaseAgentAction : AnAction() {
         val project = e.project ?: return
         capturedProject = project
         val settings = DeepSeekSettings.instance
-        val currentProvider = LlmProviderRegistry.get(settings.provider)
-        if (currentProvider.apiKey(settings).isBlank()) {
+        if (settings.toSnapshot().resolveApiKey().isBlank()) {
             com.intellij.openapi.ui.Messages.showWarningDialog(
                 project,
                 I18n.tr("agent.config.required"),

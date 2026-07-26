@@ -163,7 +163,7 @@ object I18n {
         "api.deepseek.max.tokens" to "Max Tokens:",
         "api.deepseek.temperature" to "Temperature:",
         "api.deepseek.temperature.comment" to "0.0 - 2.0",
-        "api.agnes.group" to "Agnes 2.0 Flash",
+        "api.agnes.group" to "Agnes",
         "api.agnes.key" to "API Key:",
         "api.agnes.model" to "Model:",
         "api.agnes.model.comment" to "agnes-2.0-flash",

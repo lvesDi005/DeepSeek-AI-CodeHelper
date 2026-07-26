@@ -1,6 +1,9 @@
 package com.deepseek.plugin.api
 
+import com.deepseek.plugin.api.SettingsSnapshot
+import com.deepseek.plugin.api.TriggerMode
 import com.deepseek.plugin.settings.DeepSeekSettings
+import com.deepseek.plugin.settings.toSnapshot
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import okhttp3.*
@@ -102,9 +105,9 @@ class DeepSeekApiClient {
 
     private fun chatSync(settings: DeepSeekSettings, messages: List<ChatMessage>): Result<String> {
         return chatSyncWithExplicitConfig(
-            baseUrl = provider(settings).baseUrl(settings),
-            apiKey = provider(settings).apiKey(settings),
-            model = provider(settings).model(settings),
+            baseUrl = provider(settings).baseUrl(settings.toSnapshot()),
+            apiKey = provider(settings).apiKey(settings.toSnapshot()),
+            model = provider(settings).model(settings.toSnapshot()),
             temperature = settings.temperature,
             maxTokens = settings.maxTokens,
             messages = messages
@@ -182,9 +185,9 @@ class DeepSeekApiClient {
     ): EventSource {
         val settings = DeepSeekSettings.instance
         return chatStreamWithExplicitConfig(
-            baseUrl = provider(settings).baseUrl(settings),
-            apiKey = provider(settings).apiKey(settings),
-            model = provider(settings).model(settings),
+            baseUrl = provider(settings).baseUrl(settings.toSnapshot()),
+            apiKey = provider(settings).apiKey(settings.toSnapshot()),
+            model = provider(settings).model(settings.toSnapshot()),
             temperature = settings.temperature,
             maxTokens = settings.maxTokens,
             messages = messages,
@@ -310,7 +313,7 @@ class DeepSeekApiClient {
         suffix: String,
         language: String,
         fileContext: String,
-        mode: com.deepseek.plugin.completion.TriggerMode = com.deepseek.plugin.completion.TriggerMode.AUTO,
+        mode: TriggerMode = TriggerMode.AUTO,
         onResult: (String?) -> Unit
     ) {
         // H3: FIM 请求限流检查（每分钟最多 60 次）
@@ -322,24 +325,24 @@ class DeepSeekApiClient {
         val prompt = buildFimPrompt(prefix, suffix, language, fileContext)
 
         // 根据触发模式选择不同的 temperature/maxTokens/stop
-        val temperature = if (mode == com.deepseek.plugin.completion.TriggerMode.MANUAL)
+        val temperature = if (mode == TriggerMode.MANUAL)
             settings.completionManualTemperature
         else
             0.0
 
-        val maxTokens = if (mode == com.deepseek.plugin.completion.TriggerMode.MANUAL)
+        val maxTokens = if (mode == TriggerMode.MANUAL)
             settings.completionManualMaxTokens
         else
             settings.completionMaxTokens
 
         // MANUAL 模式允许更长输出，不设早停
-        val stop = if (mode == com.deepseek.plugin.completion.TriggerMode.MANUAL)
+        val stop = if (mode == TriggerMode.MANUAL)
             null
         else
             listOf("\n\n", "\r\n\r\n")
 
         val request = FimRequest(
-            model = settings.completionModel.ifBlank { provider(settings).model(settings) },
+            model = settings.completionModel.ifBlank { provider(settings).model(settings.toSnapshot()) },
             prompt = prompt,
             suffix = suffix,
             maxTokens = maxTokens,
@@ -351,8 +354,8 @@ class DeepSeekApiClient {
         val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
 
         val httpRequest = Request.Builder()
-            .url("${provider(settings).baseUrl(settings)}/completions")
-            .header("Authorization", "Bearer ${provider(settings).apiKey(settings)}")
+            .url("${provider(settings).baseUrl(settings.toSnapshot())}/completions")
+            .header("Authorization", "Bearer ${provider(settings).apiKey(settings.toSnapshot())}")
             .header("Content-Type", "application/json")
             .post(body)
             .build()
@@ -386,7 +389,7 @@ class DeepSeekApiClient {
         suffix: String,
         language: String,
         fileContext: String,
-        mode: com.deepseek.plugin.completion.TriggerMode = com.deepseek.plugin.completion.TriggerMode.AUTO,
+        mode: TriggerMode = TriggerMode.AUTO,
         onToken: (String) -> Unit,
         onComplete: (fullResponse: String) -> Unit,
         onError: (Throwable) -> Unit
@@ -402,15 +405,15 @@ class DeepSeekApiClient {
         val settings = DeepSeekSettings.instance
         val prompt = buildFimPrompt(prefix, suffix, language, fileContext)
 
-        val temperature = if (mode == com.deepseek.plugin.completion.TriggerMode.MANUAL)
+        val temperature = if (mode == TriggerMode.MANUAL)
             settings.completionManualTemperature else 0.0
-        val maxTokens = if (mode == com.deepseek.plugin.completion.TriggerMode.MANUAL)
+        val maxTokens = if (mode == TriggerMode.MANUAL)
             settings.completionManualMaxTokens else settings.completionMaxTokens
-        val stop = if (mode == com.deepseek.plugin.completion.TriggerMode.MANUAL)
+        val stop = if (mode == TriggerMode.MANUAL)
             null else listOf("\n\n", "\r\n\r\n")
 
         val request = FimRequest(
-            model = settings.completionModel.ifBlank { provider(settings).model(settings) },
+            model = settings.completionModel.ifBlank { provider(settings).model(settings.toSnapshot()) },
             prompt = prompt,
             suffix = suffix,
             maxTokens = maxTokens,
@@ -422,8 +425,8 @@ class DeepSeekApiClient {
 
         val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
         val httpRequest = Request.Builder()
-            .url("${provider(settings).baseUrl(settings)}/completions")
-            .header("Authorization", "Bearer ${provider(settings).apiKey(settings)}")
+            .url("${provider(settings).baseUrl(settings.toSnapshot())}/completions")
+            .header("Authorization", "Bearer ${provider(settings).apiKey(settings.toSnapshot())}")
             .header("Content-Type", "application/json")
             .post(body)
             .build()
@@ -494,7 +497,7 @@ class DeepSeekApiClient {
         val settings = DeepSeekSettings.instance
 
         val request = FimRequest(
-            model = settings.completionModel.ifBlank { provider(settings).model(settings) },
+            model = settings.completionModel.ifBlank { provider(settings).model(settings.toSnapshot()) },
             prompt = prefix,
             suffix = suffix,
             maxTokens = settings.completionMaxTokens,
@@ -504,8 +507,8 @@ class DeepSeekApiClient {
         val body = gson.toJson(request).toRequestBody(JSON_MEDIA)
 
         val httpRequest = Request.Builder()
-            .url("${provider(settings).baseUrl(settings)}/completions")
-            .header("Authorization", "Bearer ${provider(settings).apiKey(settings)}")
+            .url("${provider(settings).baseUrl(settings.toSnapshot())}/completions")
+            .header("Authorization", "Bearer ${provider(settings).apiKey(settings.toSnapshot())}")
             .header("Content-Type", "application/json")
             .post(body)
             .build()

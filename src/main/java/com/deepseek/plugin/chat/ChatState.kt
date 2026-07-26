@@ -2,6 +2,7 @@ package com.deepseek.plugin.chat
 
 import com.deepseek.plugin.ui.MessageBubble
 import okhttp3.sse.EventSource
+import javax.swing.Timer
 
 /**
  * 聊天状态的有限状态机。
@@ -25,6 +26,10 @@ sealed class ChatState {
         val buffer: StringBuilder = StringBuilder(),
         val reasoningBuffer: StringBuilder = StringBuilder(),
         val bubble: MessageBubble,
+        /** 刷新 timer — 停止时必须 stop() 避免操作已移除的组件 */
+        val flushTimer: Timer? = null,
+        /** 思考动画 timer */
+        val thinkingTimer: Timer? = null,
         /** 请求发起的毫秒时间戳 */
         val startTime: Long = System.currentTimeMillis()
     ) : ChatState()

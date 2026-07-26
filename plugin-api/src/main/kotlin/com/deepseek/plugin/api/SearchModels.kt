@@ -1,4 +1,4 @@
-package com.deepseek.plugin.search
+package com.deepseek.plugin.api
 
 /**
  * grep 搜索结果中的单条匹配。

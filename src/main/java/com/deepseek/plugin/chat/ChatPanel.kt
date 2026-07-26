@@ -4,6 +4,8 @@ package com.deepseek.plugin.chat
 
 import com.deepseek.plugin.api.ChatMessage
 
+import com.deepseek.plugin.api.ChatSession
+
 import com.deepseek.plugin.api.DOMAIN_RESTRICTION_PROMPT
 
 import com.deepseek.plugin.api.DeepSeekApiClient
@@ -33,6 +35,7 @@ import com.deepseek.plugin.search.ToolUseEngine
 import com.deepseek.plugin.store.SessionStore
 
 import com.deepseek.plugin.settings.DeepSeekSettings
+import com.deepseek.plugin.settings.toSnapshot
 
 import com.deepseek.plugin.ui.AttachedFile
 
@@ -157,20 +160,6 @@ enum class ChatMode {
     Q_A, Q_A_SCAN, AGENT
 
 }
-
-
-
-data class ChatSession(
-
-    val name: String,
-
-    val messages: MutableList<ChatMessage> = mutableListOf(),
-
-    var totalTokens: Int = 0,
-
-    var lastActiveTime: Long = System.currentTimeMillis()
-
-)
 
 
 
@@ -2011,7 +2000,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                     eventSource = eventSource,
 
-                    bubble = streamBubble
+                    bubble = streamBubble,
+                    flushTimer = flushTimer,
+                    thinkingTimer = thinkingTimer
 
                 ))
 
@@ -2544,7 +2535,11 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         inputArea.text = ""
 
-
+        // 提取图片附件（全文扫描也要解析图片）
+        val imageFiles = attachedFiles.filter { isImageFile(it.name) }
+        val imagePaths = imageFiles.map { it.absolutePath }
+        // 先从 attachedFiles 中移除图片（文本文件仍保留到 fileContext）
+        attachedFiles.removeAll(imageFiles)
 
         // 1. 构建初始文本（包含编辑器选中代码 + 已上传文件上下文）
 
@@ -2636,11 +2631,26 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 val projectStructure = buildProjectStructure()
 
+                // 解析图片（如有）
+                val imageContext = if (imagePaths.isNotEmpty()) {
+                    val results = imagePaths.map { path ->
+                        val fileName = java.nio.file.Paths.get(path).fileName.toString()
+                        val description = stepFunClient.parseImage(path)
+                            .getOrElse { e -> "[图片解析失败: " + e.message + "]" }
+                        "图片 `" + fileName + "` 的解析结果：\n> " + description
+                    }
+                    "\n\n" + results.joinToString("\n\n---\n\n")
+                } else ""
+
                 val searchResult = searchCoordinator.search(userText)
 
                 val relatedContext = searchResult.contextText
 
 
+
+                val enrichedSearchContext = if (imageContext.isNotEmpty()) {
+                    imageContext + "\n\n---\n\n" + relatedContext
+                } else relatedContext
 
                 val reasoningDetail = buildString {
 
@@ -3389,7 +3399,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         val p0Provider = LlmProviderRegistry.get(settings.agentPhase0Provider)
 
-        val p0ApiKey = p0Provider.apiKey(settings)
+        val p0ApiKey = p0Provider.apiKey(settings.toSnapshot())
 
 
 
@@ -3445,7 +3455,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
             val p2Provider = LlmProviderRegistry.get(settings.agentPhase2Provider)
 
-            val p2Config = Pair(p2Provider.baseUrl(settings), p2Provider.apiKey(settings))
+            val snap = settings.toSnapshot()
+            val p2Config = Pair(p2Provider.baseUrl(snap), p2Provider.apiKey(snap))
 
             val p2Model = settings.agentPhase2Model
 
@@ -3525,7 +3536,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         val p0Provider = LlmProviderRegistry.get(s.agentPhase0Provider)
 
-        val phase0Config = Pair(p0Provider.baseUrl(s), p0Provider.apiKey(s))
+        val snap = s.toSnapshot()
+        val phase0Config = Pair(p0Provider.baseUrl(snap), p0Provider.apiKey(snap))
 
         val phase0Model = s.agentPhase0Model
 
@@ -3745,7 +3757,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                     val p1ProviderLocal = LlmProviderRegistry.get(s.agentPhase1Provider)
 
-                    val p1ConfigLocal = Pair(p1ProviderLocal.baseUrl(s), p1ProviderLocal.apiKey(s))
+                    val snap = s.toSnapshot()
+                    val p1ConfigLocal = Pair(p1ProviderLocal.baseUrl(snap), p1ProviderLocal.apiKey(snap))
 
                     val p1ModelLocal = s.agentPhase1Model
 
@@ -3767,7 +3780,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                                 val p2Provider = LlmProviderRegistry.get(s.agentPhase2Provider)
 
-                                val p2Config = Pair(p2Provider.baseUrl(s), p2Provider.apiKey(s))
+                                val snap = s.toSnapshot()
+                                val p2Config = Pair(p2Provider.baseUrl(snap), p2Provider.apiKey(snap))
 
                                 val p2Model = s.agentPhase2Model
 
@@ -3935,7 +3949,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                         val p2ProviderErr = LlmProviderRegistry.get(s.agentPhase2Provider)
 
-                        val p2ConfigErr = Pair(p2ProviderErr.baseUrl(s), p2ProviderErr.apiKey(s))
+                        val snap = s.toSnapshot()
+                        val p2ConfigErr = Pair(p2ProviderErr.baseUrl(snap), p2ProviderErr.apiKey(snap))
 
                         val p2ModelErr = s.agentPhase2Model
 
@@ -4001,7 +4016,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         val p1Provider = LlmProviderRegistry.get(s.agentPhase1Provider)
 
-        val p1Config = Pair(p1Provider.baseUrl(s), p1Provider.apiKey(s))
+        val snap = s.toSnapshot()
+        val p1Config = Pair(p1Provider.baseUrl(snap), p1Provider.apiKey(snap))
 
         val p1Model = s.agentPhase1Model
 
@@ -4093,7 +4109,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 val p2Provider = LlmProviderRegistry.get(s.agentPhase2Provider)
 
-                val p2Config = Pair(p2Provider.baseUrl(s), p2Provider.apiKey(s))
+                val snap = s.toSnapshot()
+                val p2Config = Pair(p2Provider.baseUrl(snap), p2Provider.apiKey(snap))
 
                 val p2Model = s.agentPhase2Model
 
@@ -4295,11 +4312,11 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                     val p3Provider = LlmProviderRegistry.get(s.agentPhase3Provider)
 
-                    val p3ApiKey = p3Provider.apiKey(s)
+                    val p3ApiKey = p3Provider.apiKey(s.toSnapshot())
 
                     if (p3ApiKey.isNotBlank()) {
 
-                        val p3Config = Pair(p3Provider.baseUrl(s), p3ApiKey)
+                        val p3Config = Pair(p3Provider.baseUrl(s.toSnapshot()), p3ApiKey)
 
                         val p3Model = s.agentPhase3Model
 
@@ -4590,6 +4607,10 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         val oldState = chatState.getAndSet(ChatState.Idle)
 
         if (oldState is ChatState.Streaming) {
+
+            // 停止所有运行中的 Timer，防止它们操作已移除的组件
+            oldState.flushTimer?.stop()
+            oldState.thinkingTimer?.stop()
 
             oldState.eventSource.cancel()
 

@@ -115,9 +115,9 @@ class MessageBubble(
         STREAMING
     }
 
-    /** 当前气泡画圆角背景的锚点方向（USER=右对齐→左边空，ASSISTANT=左对齐→右边空） */
+    /** 当前气泡画圆角背景的锚点方向（USER=左对齐，ASSISTANT=左对齐） */
     private val anchor: Int
-        get() = if (role == Role.USER) GridBagConstraints.EAST else GridBagConstraints.WEST
+        get() = GridBagConstraints.WEST
 
     // ── 可视化内容面板（即圆角矩形内的全部内容）──
     private lateinit var contentPanel: JPanel
