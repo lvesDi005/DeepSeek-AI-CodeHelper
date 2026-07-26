@@ -68,6 +68,12 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * HTML changelog content displayed in the update dialog.
          */
         private val CHANGELOG_HTML = """
+            <h3>v2.6.1</h3>
+            <ul>
+              <li>【新增】思考过程开关 — 设置菜单新增"显示思考过程"复选项，关闭后 Q&A/Q&A 全文扫描模式隐藏 AI 推理内容，AGENT 模式不受影响</li>
+              <li>【优化】停止保留内容 — 点击停止时已生成的流式内容自动保留并渲染为完整消息气泡（Markdown/代码块/表格），不再丢失</li>
+              <li>【修复】Agent 内容左对齐 — 修复 Agent 模式下代码块下方文本左侧空白过大的问题</li>
+            </ul>
             <h3>v2.6.0</h3>
             <ul>
               <li>【新增】深度思考过程显示 — AI 回复中的推理内容（reasoning_content）折叠展示，可展开/收起，字数统计，深色/浅色主题自适应</li>
@@ -305,6 +311,12 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * English version of the changelog HTML.
          */
         private val CHANGELOG_HTML_EN = """
+            <h3>v2.6.1</h3>
+            <ul>
+              <li>[New] Reasoning toggle — New "Show Reasoning" checkbox in settings menu; when disabled, hides AI reasoning content in Q&A and Q&A Full Scan modes (Agent mode unaffected)</li>
+              <li>[Improved] Stop preserves content — Clicking Stop now retains streamed content and renders it as a complete message bubble (Markdown/code blocks/tables) instead of discarding it</li>
+              <li>[Fixed] Agent left-alignment — Fixed excessive left margin on text below code blocks in Agent mode</li>
+            </ul>
             <h3>v2.6.0</h3>
             <ul>
               <li>[New] Reasoning display — AI reasoning content (reasoning_content) shown in collapsible panel with word count</li>

@@ -94,6 +94,13 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
 
     // 流式输出开关 — 关闭时使用同步调用，一次性返回完整结果
     var streamingEnabled: Boolean = true
+
+    // 思考过程显示开关 — 关闭时 Q&A/Q&A 全文扫描模式下不显示模型的思考内容
+    var thinkingEnabled: Boolean = true
+
+    // 输出速度等级：0=最快(不限) 1=快速 2=适中 3=慢速
+    var outputSpeedLevel: Int = 2
+
     var agentPhase1Provider: String = "deepseek"       // 规划 Provider
     var agentPhase1Model: String = "deepseek-v4-pro"   // 规划 Model
     var agentPhase2Provider: String = "deepseek"       // 编码 Provider

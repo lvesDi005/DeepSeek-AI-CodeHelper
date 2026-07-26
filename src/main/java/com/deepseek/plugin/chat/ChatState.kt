@@ -23,6 +23,7 @@ sealed class ChatState {
     data class Streaming(
         val eventSource: EventSource,
         val buffer: StringBuilder = StringBuilder(),
+        val reasoningBuffer: StringBuilder = StringBuilder(),
         val bubble: MessageBubble,
         /** 请求发起的毫秒时间戳 */
         val startTime: Long = System.currentTimeMillis()

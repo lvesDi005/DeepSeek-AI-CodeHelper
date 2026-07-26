@@ -330,7 +330,9 @@ class MessageBubble(
                         fontSize = contentFontSize,
                         fgColor = JBColor(0x1A1A1A, 0xE0E0E0),
                         bgColor = null
-                    )
+                    ).apply {
+                        alignmentX = Component.LEFT_ALIGNMENT
+                    }
                     contentBody.add(mdPane)
                 }
                 is ResponseSegment.Code -> {
@@ -340,12 +342,16 @@ class MessageBubble(
                         code = seg.content,
                         language = seg.language,
                         showInsertButton = true
-                    )
+                    ).apply {
+                        alignmentX = Component.LEFT_ALIGNMENT
+                    }
                     contentBody.add(codeCard)
                 }
                 is ResponseSegment.Table -> {
                     if (!isFirst) contentBody.add(Box.createVerticalStrut(8))
-                    val tablePanel = MessageTable(seg.headers, seg.rows)
+                    val tablePanel = MessageTable(seg.headers, seg.rows).apply {
+                        alignmentX = Component.LEFT_ALIGNMENT
+                    }
                     contentBody.add(tablePanel)
                 }
             }
@@ -359,6 +365,7 @@ class MessageBubble(
         val centerPanel = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
             if (reasoning != null && reasoning.isNotBlank()) {
                 add(createReasoningPanel(reasoning))
                 add(Box.createVerticalStrut(12))
@@ -443,6 +450,7 @@ class MessageBubble(
         // 整体包一层，保证 BoxLayout 中纵向布局正确
         val wrapper = JPanel(BorderLayout()).apply {
             isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
             maximumSize = Dimension(Short.MAX_VALUE.toInt(), Short.MAX_VALUE.toInt())
             add(reasoningBody, BorderLayout.NORTH)
         }
@@ -531,6 +539,7 @@ class MessageBubble(
             border = EmptyBorder(0, 0, 0, 0)
             foreground = JBColor(0x1A1A1A, 0xE0E0E0)
             (caret as DefaultCaret).updatePolicy = DefaultCaret.ALWAYS_UPDATE
+            alignmentX = Component.LEFT_ALIGNMENT
             text = "... 思考中 \u25D0"
         }
 
