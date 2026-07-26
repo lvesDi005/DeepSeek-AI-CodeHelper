@@ -1174,20 +1174,37 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 popupMenu.add(thinkingItem)
 
-                // ── 输出速度单选按钮组（向上弹出，类似模式选择） ──
-                val speedGroup = ButtonGroup()
+                // ── 输出速度微调器（↑↓ 箭头切换，不弹出列表） ──
+                val speedLabel = JLabel(I18n.tr("chat.output.speed") + ":  ").apply {
+                    font = font.deriveFont(11f)
+                    foreground = JBColor(0x666666, 0xAAAAAA)
+                }
                 val speedLevels = listOf(
                     I18n.tr("chat.output.speed.fastest"),
                     I18n.tr("chat.output.speed.fast"),
                     I18n.tr("chat.output.speed.medium"),
                     I18n.tr("chat.output.speed.slow")
                 )
-                speedLevels.forEachIndexed { index, label ->
-                    val item = JRadioButtonMenuItem(label, DeepSeekSettings.instance.outputSpeedLevel == index)
-                    item.addActionListener { DeepSeekSettings.instance.outputSpeedLevel = index }
-                    speedGroup.add(item)
-                    popupMenu.add(item)
+                val speedSpinner = JSpinner(SpinnerListModel(speedLevels)).apply {
+                    value = speedLevels[DeepSeekSettings.instance.outputSpeedLevel]
+                    preferredSize = Dimension(100, 24)
+                    addChangeListener {
+                        val idx = speedLevels.indexOf(value)
+                        if (idx >= 0) DeepSeekSettings.instance.outputSpeedLevel = idx
+                    }
+                    // 让编辑器不可编辑，只能通过箭头切换
+                    editor = JSpinner.DefaultEditor(this).apply {
+                        textField.isEditable = false
+                        textField.font = textField.font.deriveFont(11f)
+                    }
                 }
+                val speedPanel = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+                    isOpaque = false
+                    border = JBUI.Borders.empty(4, 8, 4, 8)
+                    add(speedLabel)
+                    add(speedSpinner)
+                }
+                popupMenu.add(speedPanel)
                 popupMenu.addSeparator()
 
 
