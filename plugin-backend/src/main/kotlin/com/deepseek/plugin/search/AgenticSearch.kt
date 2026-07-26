@@ -1,5 +1,7 @@
 package com.deepseek.plugin.search
 
+import com.deepseek.plugin.api.*
+
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectRootManager

@@ -1,6 +1,7 @@
 package com.deepseek.plugin.completion
 
 import com.deepseek.plugin.api.DeepSeekApiClient
+import com.deepseek.plugin.api.TriggerMode
 import com.deepseek.plugin.settings.DeepSeekSettings
 import com.intellij.codeInsight.completion.*
 import com.intellij.codeInsight.lookup.LookupElementBuilder

@@ -1,8 +1,8 @@
 package com.deepseek.plugin.store
 
 import com.deepseek.plugin.api.ChatMessage
+import com.deepseek.plugin.api.ChatSession
 import com.deepseek.plugin.api.SessionException
-import com.deepseek.plugin.chat.ChatSession
 import com.google.gson.Gson
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.ui.Messages

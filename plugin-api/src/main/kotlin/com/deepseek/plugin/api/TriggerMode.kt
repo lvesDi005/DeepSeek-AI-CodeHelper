@@ -1,4 +1,4 @@
-package com.deepseek.plugin.completion
+package com.deepseek.plugin.api
 
 /**
  * 补全触发模式。
@@ -16,7 +16,7 @@ enum class TriggerMode {
         /** MANUAL 模式的默认 temperature */
         const val MANUAL_TEMPERATURE = 0.2
         /** AUTO 模式的默认 max_tokens */
-        const val AUTO_MAX_TOKENS = 256
+        const val AUTO_MAX_TOKENS = 128
         /** MANUAL 模式的默认 max_tokens */
         const val MANUAL_MAX_TOKENS = 512
     }

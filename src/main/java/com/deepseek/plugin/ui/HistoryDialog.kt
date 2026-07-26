@@ -1,6 +1,6 @@
 package com.deepseek.plugin.ui
 
-import com.deepseek.plugin.chat.ChatSession
+import com.deepseek.plugin.api.ChatSession
 import com.deepseek.plugin.i18n.I18n
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.project.Project
