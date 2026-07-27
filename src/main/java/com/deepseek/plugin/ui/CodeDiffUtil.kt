@@ -211,7 +211,7 @@ object CodeDiffUtil {
         init {
             title = I18n.tr("diff.batch.title", items.size)
             isResizable = true
-            setOKButtonText(I18n.tr("diff.batch.execute"))
+            setOKButtonText(I18n.tr("diff.batch.load"))
             setCancelButtonText(I18n.tr("chat.cancel"))
             init()
         }

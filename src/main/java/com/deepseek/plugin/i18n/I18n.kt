@@ -303,6 +303,7 @@ object I18n {
         "diff.batch.execute" to "执行所有变更",
         "diff.batch.expand" to "▶ 查看变更",
         "diff.batch.collapse" to "▼ 收起",
+        "diff.batch.load" to "加载到文件系统",
 
         // ── Agent ──
         "agent.asking" to "Asking DeepSeek...",
@@ -638,6 +639,7 @@ object I18n {
         "diff.batch.execute" to "Execute All Changes",
         "diff.batch.expand" to "▶ View Changes",
         "diff.batch.collapse" to "▼ Collapse",
+        "diff.batch.load" to "Load File System Changes",
 
         "agent.asking" to "Asking DeepSeek...",
         "agent.explaining" to "Explaining Code...",

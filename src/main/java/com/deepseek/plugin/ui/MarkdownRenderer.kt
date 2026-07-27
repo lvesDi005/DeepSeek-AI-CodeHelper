@@ -165,9 +165,9 @@ object MarkdownRenderer {
         val codeFg = toHex(JBColor(0x1976D2, 0x7CB7FF))
         val linkColor = toHex(JBColor(0x1A73E8, 0x64B5F6))
 
-        ss.addRule("body { font-family: sans-serif; font-size: ${fontSize}pt; color: $hexFg; margin: 0; padding: 0; }")
-        ss.addRule("p { margin: 0 0 6px 0; padding: 0; }")
-        ss.addRule("h1, h2, h3, h4, h5, h6 { margin: 10px 0 4px 0; margin-left: 0; padding-left: 0; font-weight: bold; }")
+        ss.addRule("body { font-family: sans-serif; font-size: ${fontSize}pt; color: $hexFg; margin: 0; padding: 0; text-align: left; }")
+        ss.addRule("p { margin: 0 0 6px 0; padding: 0; text-align: left; }")
+        ss.addRule("h1, h2, h3, h4, h5, h6 { margin: 10px 0 4px 0; margin-left: 0; padding-left: 0; font-weight: bold; text-align: left; }")
         ss.addRule("ul, ol { margin: 2px 0 6px 0; padding-left: 22px; }")
         ss.addRule("li { margin: 2px 0; }")
         ss.addRule("a { color: $linkColor; text-decoration: underline; }")
