@@ -6,7 +6,7 @@ plugins {
 
 allprojects {
     group = "com.deepseek.plugin"
-    version = "2.6.1"
+    version = "2.6.2"
 }
 
 subprojects {
@@ -55,11 +55,15 @@ intellijPlatform {
         }
         changeNotes = """
             <h1>中文/Chinese</h1>
-            <h3>v2.6.1</h3>
+            <h3>v2.6.2</h3>
             <ul>
               <li>【新增】思考过程开关 — 设置菜单新增"显示思考过程"复选项，关闭后 Q&A/Q&A 全文扫描模式隐藏 AI 推理内容，AGENT 模式不受影响</li>
               <li>【优化】停止保留内容 — 点击停止时已生成的流式内容自动保留并渲染为完整消息气泡（Markdown/代码块/表格），不再丢失</li>
               <li>【修复】Agent 内容左对齐 — 修复 Agent 模式下代码块下方文本左侧空白过大的问题</li>
+            </ul>
+            <h3>v2.6.1</h3>
+            <ul>
+              <li>布局优化</li>
             </ul>
             <h3>v2.6.0</h3>
             <ul>
@@ -289,11 +293,15 @@ intellijPlatform {
               <li>API Key 配置页面</li>
             </ul>
             <h1>English</h1>
-            <h3>v2.6.1</h3>
+            <h3>v2.6.2</h3>
             <ul>
               <li>[New] Reasoning toggle — New "Show Reasoning" checkbox in settings menu; when disabled, hides AI reasoning content in Q&A and Q&A Full Scan modes (Agent mode unaffected)</li>
               <li>[Improved] Stop preserves content — Clicking Stop now retains streamed content and renders it as a complete message bubble (Markdown/code blocks/tables) instead of discarding it</li>
               <li>[Fixed] Agent left-alignment — Fixed excessive left margin on text below code blocks in Agent mode</li>
+            </ul>
+            <h3>v2.6.1</h3>
+            <ul>
+            <li>Layout optimization</li>
             </ul>
             <h3>v2.6.0</h3>
             <ul>
