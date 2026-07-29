@@ -26,7 +26,8 @@ class AcceptGhostTextAction : AnAction(), DumbAware {
         // 没有 Ghost Text 时，调用默认 Tab 行为
         val defaultTab = ActionManager.getInstance().getAction("EditorTab")
         if (defaultTab != null) {
-            defaultTab.actionPerformed(e)
+            val inputEvent = e.getInputEvent()
+            ActionManager.getInstance().tryToExecute(defaultTab, inputEvent, null, "EditorTab", false)
         }
     }
 

@@ -1,5 +1,6 @@
 package com.deepseek.plugin.mcp.service
 
+import com.deepseek.plugin.mcp.client.ExternalMcpManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.notification.NotificationGroupManager
@@ -12,10 +13,8 @@ import com.deepseek.plugin.settings.DeepSeekSettings
 /**
  * Application-level service that manages the MCP Server lifecycle.
  *
- * Responsibilities:
- * - Start/stop the HTTP server
- * - Wire up the MCP protocol handler with the tool registry
- * - Provide status information for the UI
+ * Startup is triggered via invokeLater in init to avoid internal API
+ * usage (AppLifecycleListener is marked internal).
  */
 class McpServerService {
 
@@ -28,6 +27,18 @@ class McpServerService {
     @Volatile
     var isRunning: Boolean = false
         private set
+
+    init {
+        // Schedule startup after IDE is fully initialized
+        ApplicationManager.getApplication().invokeLater {
+            onAppStarted()
+            try {
+                ExternalMcpManager.getInstance().connectAll()
+            } catch (e: Exception) {
+                logger.error("External MCP client startup failed", e)
+            }
+        }
+    }
 
     companion object {
         fun getInstance(): McpServerService =
