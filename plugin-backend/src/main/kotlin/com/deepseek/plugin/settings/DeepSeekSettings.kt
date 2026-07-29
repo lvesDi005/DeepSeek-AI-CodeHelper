@@ -110,6 +110,11 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
 
     // Q&A 分类器复用主 API Configuration 的 Provider/Model，无需单独存储字段
 
+    // ===== MCP Server 配置 =====
+    var mcpEnabled: Boolean = false      // 是否启用 MCP Server
+    var mcpAutoStart: Boolean = false    // IDE 启动时自动启动
+    var mcpPort: Int = 8080              // 监听端口
+
     override fun getState(): DeepSeekSettings = this
     override fun loadState(state: DeepSeekSettings) {
         XmlSerializerUtil.copyBean(state, this)

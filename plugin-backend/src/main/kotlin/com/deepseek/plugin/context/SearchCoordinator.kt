@@ -16,9 +16,13 @@ import com.intellij.openapi.project.Project
  *   val result = coordinator.search("用户关于 getUserById 的问题")
  *   // result.contextText 是格式化后的上下文文本，可直接注入 system prompt
  */
-class SearchCoordinator(private val project: Project) {
+class SearchCoordinator(
+    private val project: Project,
+    private val externalToolDefinitions: String = "",
+    private val externalToolExecutor: ((String, Map<String, String>) -> String?)? = null
+) {
 
-    private val toolUseEngine = ToolUseEngine(project)
+    private val toolUseEngine = ToolUseEngine(project, externalToolDefinitions = externalToolDefinitions, externalToolExecutor = externalToolExecutor)
     private val ragRetriever = RagRetriever(project)
     private val contextProvider = ProjectContextProvider(project)
 

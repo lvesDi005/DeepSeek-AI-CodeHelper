@@ -48,6 +48,7 @@ sealed class ToolResult {
     data class Glob(val result: GlobResult) : ToolResult()
     data class Read(val result: ReadResult) : ToolResult()
     data class Error(val message: String) : ToolResult()
+    data class External(val text: String) : ToolResult()
 }
 
 /**

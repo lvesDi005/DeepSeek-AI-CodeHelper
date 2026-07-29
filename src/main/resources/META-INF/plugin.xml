@@ -16,6 +16,14 @@
     <depends>com.intellij.modules.platform</depends>
     <depends optional="true" config-file="javaExtras.xml">com.intellij.java</depends>
 
+    <!-- Extension Points -->
+    <extensionPoints>
+        <extensionPoint
+            name="mcpToolProvider"
+            interface="com.deepseek.plugin.mcp.tool.McpToolProvider"
+            dynamic="true"/>
+    </extensionPoints>
+
     <!-- Application-level services -->
     <extensions defaultExtensionNs="com.intellij">
         <!-- Application Service -->
@@ -55,6 +63,28 @@
             id="DeepSeek AI CodeHelper"
             displayType="BALLOON"/>
 
+        <!-- ===== MCP Server ===== -->
+        <applicationService
+            serviceImplementation="com.deepseek.plugin.mcp.service.McpServerService"/>
+
+        <!-- ===== External MCP Client ===== -->
+        <applicationService
+            serviceImplementation="com.deepseek.plugin.mcp.client.ExternalMcpStore"/>
+
+        <applicationService
+            serviceImplementation="com.deepseek.plugin.mcp.client.ExternalMcpManager"/>
+
+        <applicationListener
+            listener="com.deepseek.plugin.mcp.service.McpStartupListener"
+            topic="com.intellij.ide.AppLifecycleListener"/>
+
+    </extensions>
+
+    <!-- MCP Built-in Tools (registered via our own extension point) -->
+    <extensions defaultExtensionNs="com.deepseek.plugin">
+        <mcpToolProvider implementation="com.deepseek.plugin.mcp.tools.FileToolProvider"/>
+        <mcpToolProvider implementation="com.deepseek.plugin.mcp.tools.SearchToolProvider"/>
+        <mcpToolProvider implementation="com.deepseek.plugin.mcp.tools.ProjectToolProvider"/>
     </extensions>
 
     <!-- Editor Action Handlers -->

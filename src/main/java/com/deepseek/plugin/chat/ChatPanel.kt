@@ -30,6 +30,11 @@ import com.deepseek.plugin.context.SearchCoordinator
 
 import com.deepseek.plugin.search.AgenticSearch
 
+import com.deepseek.plugin.access.ChainedFileAccess
+import com.deepseek.plugin.access.FileAccessService
+
+import com.deepseek.plugin.mcp.client.ExternalMcpManager
+
 import com.deepseek.plugin.search.ToolUseEngine
 
 import com.deepseek.plugin.store.SessionStore
@@ -203,9 +208,23 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
     private val ragRetriever = RagRetriever(project)
 
-    private val searchCoordinator = SearchCoordinator(project)
+    private val searchCoordinator = SearchCoordinator(
+        project,
+        externalToolDefinitions = ExternalMcpManager.getInstance().getToolDefinitionsForLlm(),
+        externalToolExecutor = { name, params ->
+            val tool = ExternalMcpManager.getInstance().findTool(name)
+            if (tool != null) {
+                val result = tool.execute(params)
+                if (result.isError) "[错误: ${result.content.firstOrNull()?.let { it } }]"
+                else result.content.firstOrNull()?.let { (it as? com.deepseek.plugin.mcp.protocol.McpContent.Text)?.text }
+            } else null
+        }
+    )
 
     private val agenticSearch = AgenticSearch(project)
+
+    /** Unified file access for scanning/searching, with automatic fallback. */
+    private val fileAccess: FileAccessService = ChainedFileAccess()
 
     private val sessionStore = SessionStore(project.basePath)
 
@@ -2812,11 +2831,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
             val contentRoots = ProjectRootManager.getInstance(project).contentSourceRoots
 
-            var count = 0
-
             for (root in contentRoots) {
 
-                collectFilesForContext(root, root, sb, maxFiles, 0)
+                collectFilesForContext(root.path, sb, maxFiles, 0)
 
             }
 
@@ -2834,9 +2851,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
     private fun collectFilesForContext(
 
-        root: VirtualFile,
-
-        dir: VirtualFile,
+        rootPath: String,
 
         sb: StringBuilder,
 
@@ -2848,13 +2863,19 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         if (depth > 15) return
 
-        for (child in dir.children ?: return) {
+        val entries = try {
+
+            fileAccess.listDirectory(rootPath, project)
+
+        } catch (_: Exception) { return }
+
+        for (entry in entries) {
 
             if (sb.count { it == '\n' } >= maxFiles * 3) return
 
-            if (child.isDirectory) {
+            if (entry.isDirectory) {
 
-                val name = child.name
+                val name = entry.name
 
                 if (name.startsWith(".") || name == "node_modules" || name == "build" ||
 
@@ -2864,19 +2885,19 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 ) continue
 
-                collectFilesForContext(root, child, sb, maxFiles, depth + 1)
+                collectFilesForContext(entry.path, sb, maxFiles, depth + 1)
 
-            } else if (isSourceExt(child.extension)) {
+            } else if (isSourceExt(entry.name.substringAfterLast('.', ""))) {
 
-                val relativePath = child.path.substring(root.path.length).trimStart('/')
+                val relativePath = entry.path
 
                 val content = try {
 
-                    String(child.contentsToByteArray(), Charsets.UTF_8)
+                    fileAccess.readFile(entry.path, project)
 
-                } catch (_: Exception) { continue }
+                } catch (_: Exception) { null }
 
-                if (content.length > 8000) continue // skip very large files
+                if (content == null || content.length > 8000) continue
 
                 sb.appendLine("--- $relativePath ---")
 

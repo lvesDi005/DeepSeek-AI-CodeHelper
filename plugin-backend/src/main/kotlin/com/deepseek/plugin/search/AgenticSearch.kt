@@ -2,6 +2,8 @@ package com.deepseek.plugin.search
 
 import com.deepseek.plugin.api.*
 
+import com.deepseek.plugin.access.ChainedFileAccess
+import com.deepseek.plugin.access.FileAccessService
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectRootManager
@@ -14,8 +16,11 @@ import java.io.File
  * Agentic Search 引擎。
  *
  * 提供 grep / glob / read 三个搜索工具，供 LLM 自主调用以检索代码信息。
- * 不同于 RAG 的语义模糊匹配，本引擎基于确定性关键词与正则匹配以及按需读取，
- * 使模型能像人类程序员一样搜索、阅读、判断、再搜索。
+ *
+ * grep 和 read 委托给 [FileAccessService]（统一文件访问层），与 MCP 工具
+ * 和 Q&A 全文扫描共享同一套实现。若 FileAccessService 调用失败会自动降级。
+ *
+ * glob 保持独立实现（纯模式匹配，无需文件读取）。
  *
  * 用法：
  *   val engine = AgenticSearch(project)
@@ -23,7 +28,10 @@ import java.io.File
  *   val files = engine.glob("glob pattern")
  *   val content = engine.read("path/to/file.java", 10, 50)
  */
-class AgenticSearch(private val project: Project) {
+class AgenticSearch(
+    private val project: Project,
+    private val fileAccess: FileAccessService = ChainedFileAccess()
+) {
 
     // ── 最大行数限制（防止单文件过大撑爆上下文） ──
     private val maxReadLines = 500
@@ -50,11 +58,55 @@ class AgenticSearch(private val project: Project) {
     /**
      * 内容搜索（类似 ripgrep）。
      *
+     * 委托给 [FileAccessService.searchInProject]，失败时自动降级到
+     * VirtualFile 递归扫描。
+     *
      * @param query       搜索关键词或正则表达式
      * @param filePattern 可选的文件名通配符过滤
      * @return GrepResult 包含所有匹配行
      */
     fun grep(query: String, filePattern: String? = null): GrepResult {
+        val basePath = project.basePath ?: return GrepResult(query, emptyList(), 0, false)
+        val regex = try {
+            Regex(query, setOf(RegexOption.IGNORE_CASE))
+        } catch (e: Exception) {
+            Regex.escape(query).toRegex(RegexOption.IGNORE_CASE)
+        }
+
+        // 先尝试通过 FileAccessService 搜索
+        try {
+            val searchResults = fileAccess.searchInProject(query, maxGrepMatches, project, basePath)
+            if (searchResults.isNotEmpty()) {
+                val matches = searchResults.map { sr ->
+                    val matchResult = regex.find(sr.lineContent) ?: return@map null
+                    GrepMatch(
+                        filePath = sr.filePath,
+                        lineNumber = sr.lineNumber,
+                        lineText = sr.lineContent,
+                        matchStart = matchResult.range.first,
+                        matchEnd = matchResult.range.last + 1
+                    )
+                }.filterNotNull()
+
+                if (matches.isNotEmpty()) {
+                    val filesInResult = matches.map { it.filePath }.distinct()
+                    return GrepResult(
+                        query = query,
+                        matches = matches.take(maxGrepMatches),
+                        totalMatches = matches.size,
+                        truncated = filesInResult.size > maxGrepFiles
+                    )
+                }
+            }
+        } catch (_: Exception) {
+            // FileAccessService failed, fall through to legacy
+        }
+
+        // 降级：旧版 VirtualFile 递归扫描
+        return grepLegacy(query, filePattern, regex)
+    }
+
+    private fun grepLegacy(query: String, filePattern: String?, regex: Regex): GrepResult {
         val allMatches = mutableListOf<GrepMatch>()
         val roots = getSourceRoots()
         var truncated = false
@@ -64,7 +116,7 @@ class AgenticSearch(private val project: Project) {
                 truncated = true
                 break
             }
-            val matches = grepInDir(root, root, query, filePattern, allMatches.size)
+            val matches = grepInDir(root, root, regex, filePattern, allMatches.size)
             allMatches.addAll(matches)
             if (allMatches.size >= maxGrepMatches) {
                 truncated = true
@@ -72,7 +124,6 @@ class AgenticSearch(private val project: Project) {
             }
         }
 
-        // 文件数截断
         val filesInResult = allMatches.map { it.filePath }.distinct()
         if (filesInResult.size > maxGrepFiles) {
             truncated = true
@@ -111,7 +162,9 @@ class AgenticSearch(private val project: Project) {
     /**
      * 读取指定文件的内容。
      *
-     * @param filePath  相对于项目根目录的文件路径，如 "src/main/java/com/example/UserService.java"
+     * 委托给 [FileAccessService.readFile]，失败时降级到 File.readText().
+     *
+     * @param filePath  相对于项目根目录的文件路径
      * @param startLine 可选，起始行号（1-based，包含）
      * @param endLine   可选，结束行号（1-based，包含）
      * @return ReadResult 包含文件内容
@@ -119,7 +172,22 @@ class AgenticSearch(private val project: Project) {
     fun read(filePath: String, startLine: Int? = null, endLine: Int? = null): ReadResult {
         val basePath = project.basePath ?: return ReadResult(filePath, "", 0, 0, 0)
 
-        // 尝试多个根目录
+        // 先尝试通过 FileAccessService 读取
+        try {
+            val content = fileAccess.readFile(filePath, project)
+            if (content != null) {
+                return buildReadResult(filePath, content, startLine, endLine)
+            }
+        } catch (_: Exception) {
+            // fall through
+        }
+
+        // 降级：旧版直接文件读取
+        return readLegacy(filePath, startLine, endLine)
+    }
+
+    private fun readLegacy(filePath: String, startLine: Int?, endLine: Int?): ReadResult {
+        val basePath = project.basePath ?: return ReadResult(filePath, "", 0, 0, 0)
         val roots = getSourceRootPaths()
         val allTryPaths = listOf(basePath) + roots
         var file: File? = null
@@ -130,7 +198,6 @@ class AgenticSearch(private val project: Project) {
                 file = candidate
                 break
             }
-            // 也直接尝试绝对路径
             val absolute = File(filePath)
             if (absolute.exists() && absolute.isFile) {
                 file = absolute
@@ -142,17 +209,21 @@ class AgenticSearch(private val project: Project) {
             return ReadResult(filePath, "", 0, 0, 0)
         }
 
-        val lines = try {
-            file.readText().lines()
+        val content = try {
+            file.readText()
         } catch (e: Exception) {
             return ReadResult(filePath, "", 0, 0, 0)
         }
 
-        val totalLines = lines.size
-        val actualStart = (startLine ?: 1).coerceIn(1, totalLines) - 1  // 转 0-based
-        val actualEnd = (endLine ?: totalLines).coerceIn(1, totalLines)   // 1-based inclusive
+        return buildReadResult(filePath, content, startLine, endLine)
+    }
 
-        // 截断过长的范围
+    private fun buildReadResult(filePath: String, content: String, startLine: Int?, endLine: Int?): ReadResult {
+        val lines = content.lines()
+        val totalLines = lines.size
+        val actualStart = (startLine ?: 1).coerceIn(1, totalLines) - 1
+        val actualEnd = (endLine ?: totalLines).coerceIn(1, totalLines)
+
         val limitedEnd = if ((actualEnd - actualStart) > maxReadLines) {
             actualStart + maxReadLines
         } else {
@@ -160,49 +231,41 @@ class AgenticSearch(private val project: Project) {
         }
 
         val selectedLines = lines.subList(actualStart, limitedEnd.coerceAtMost(totalLines))
-        var content = selectedLines.joinToString("\n")
+        var resultContent = selectedLines.joinToString("\n")
 
-        // 截断过长的字符
-        if (content.length > maxReadChars) {
-            content = content.take(maxReadChars) + "\n// ... (truncated ${content.length - maxReadChars} chars)"
+        if (resultContent.length > maxReadChars) {
+            resultContent = resultContent.take(maxReadChars) + "\n// ... (truncated ${resultContent.length - maxReadChars} chars)"
         }
 
         return ReadResult(
             filePath = filePath,
-            content = content,
-            startLine = actualStart + 1,  // 转回 1-based
+            content = resultContent,
+            startLine = actualStart + 1,
             endLine = limitedEnd,
             totalLines = totalLines
         )
     }
 
     // ════════════════════════════════════════════════════════════════
-    //  Directory 扫描
+    //  Directory 扫描（降级用）
     // ════════════════════════════════════════════════════════════════
 
     private fun grepInDir(
         root: VirtualFile,
         dir: VirtualFile,
-        query: String,
+        regex: Regex,
         filePattern: String?,
         currentCount: Int
     ): List<GrepMatch> {
         if (currentCount >= maxGrepMatches) return emptyList()
-
         val result = mutableListOf<GrepMatch>()
-        val regex = try {
-            Regex(query, setOf(RegexOption.IGNORE_CASE))
-        } catch (e: Exception) {
-            // 非法的正则表达式，当作普通字符串
-            Regex.escape(query).toRegex(RegexOption.IGNORE_CASE)
-        }
 
         for (child in dir.children ?: return result) {
             if (result.size >= maxGrepMatches) break
             if (child.isDirectory) {
                 val name = child.name
                 if (name in ignoredDirs || name.startsWith(".")) continue
-                result.addAll(grepInDir(root, child, query, filePattern, result.size + currentCount))
+                result.addAll(grepInDir(root, child, regex, filePattern, result.size + currentCount))
             } else if (isCodeFile(child) && matchesFilePattern(child, filePattern)) {
                 val match = searchInFile(root, child, regex)
                 if (match != null) {
@@ -232,7 +295,7 @@ class AgenticSearch(private val project: Project) {
             matches.add(
                 GrepMatch(
                     filePath = relativePath,
-                    lineNumber = index + 1,  // 1-based
+                    lineNumber = index + 1,
                     lineText = line.trim(),
                     matchStart = matchResult.range.first,
                     matchEnd = matchResult.range.last + 1
@@ -311,10 +374,6 @@ class AgenticSearch(private val project: Project) {
         }
     }
 
-    /**
-     * 将 glob 通配模式转换为正则表达式。
-     * 支持: * (匹配目录内任意), ** (匹配跨目录任意), ? (单字符)
-     */
     private fun globToRegex(pattern: String): Regex {
         val regexStr = buildString {
             append('^')
@@ -323,7 +382,6 @@ class AgenticSearch(private val project: Project) {
                 val c = pattern[i]
                 when {
                     c == '*' && i + 1 < pattern.length && pattern[i + 1] == '*' -> {
-                        // ** 匹配零个或多个路径段
                         append(".*")
                         i += 2
                         if (i < pattern.length && pattern[i] == '/') {
@@ -332,7 +390,7 @@ class AgenticSearch(private val project: Project) {
                         }
                     }
                     c == '*' -> {
-                        append("[^/]*") // 单个 * 不跨目录
+                        append("[^/]*")
                         i++
                     }
                     c == '?' -> {

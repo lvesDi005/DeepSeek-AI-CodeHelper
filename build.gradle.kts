@@ -6,7 +6,7 @@ plugins {
 
 allprojects {
     group = "com.deepseek.plugin"
-    version = "2.6.2"
+    version = "2.7.0"
 }
 
 subprojects {
@@ -55,6 +55,13 @@ intellijPlatform {
         }
         changeNotes = """
             <h1>中文/Chinese</h1>
+            <h3>v2.7.0</h3>
+            <ul>
+              <li>【新增】MCP Server — 在 IDE 内启动 MCP (Model Context Protocol) 服务，以 SSE/HTTP 端点暴露 IDEA 能力，外部 AI 客户端（Claude Desktop、Cursor 等）可连接调用文件读写、代码搜索、符号导航等 Tool</li>
+              <li>【新增】MCP 设置 — 主题设置中新增 "MCP Server" 选项卡，可配置启用/关闭、端口（默认 8080）、自动启动</li>
+              <li>【新增】内置 8 个 MCP Tool — read_file / write_file / list_directory / search_in_project / find_symbol / get_project_info / get_open_files / get_active_editor_content</li>
+              <li>【新增】Extension Point — 提供 mcpToolProvider EP，供其他插件注册自定义 MCP Tool</li>
+            </ul>
             <h3>v2.6.2</h3>
             <ul>
               <li>【新增】思考过程开关 — 设置菜单新增"显示思考过程"复选项，关闭后 Q&A/Q&A 全文扫描模式隐藏 AI 推理内容，AGENT 模式不受影响</li>
@@ -293,6 +300,13 @@ intellijPlatform {
               <li>API Key 配置页面</li>
             </ul>
             <h1>English</h1>
+            <h3>v2.7.0</h3>
+            <ul>
+              <li>[New] MCP Server — Launches an MCP (Model Context Protocol) server within the IDE, exposing IDEA capabilities via SSE/HTTP endpoint. External AI clients (Claude Desktop, Cursor, etc.) can connect to invoke tools: file read/write, code search, symbol navigation, and more</li>
+              <li>[New] MCP Settings — New "MCP Server" tab in theme settings: enable/disable, port (default 8080), auto-start on IDE launch</li>
+              <li>[New] 8 built-in MCP Tools — read_file / write_file / list_directory / search_in_project / find_symbol / get_project_info / get_open_files / get_active_editor_content</li>
+              <li>[New] Extension Point — Exposes mcpToolProvider EP for other plugins to register custom MCP Tools</li>
+            </ul>
             <h3>v2.6.2</h3>
             <ul>
               <li>[New] Reasoning toggle — New "Show Reasoning" checkbox in settings menu; when disabled, hides AI reasoning content in Q&A and Q&A Full Scan modes (Agent mode unaffected)</li>

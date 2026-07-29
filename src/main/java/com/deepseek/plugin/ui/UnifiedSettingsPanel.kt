@@ -81,6 +81,12 @@ class UnifiedSettingsPanel(
         contentPanel.add(CodeSearchPanel(), "codeSearch")
         contentPanel.add(ImageParsingPanel(), "imageParsing")
 
+        // MCP Server settings
+        contentPanel.add(McpSettingsPanel(), "mcpServer")
+
+        // External MCP Servers
+        contentPanel.add(ExternalMcpSettingsPanel(), "externalMcp")
+
         val contentScrollPane = JBScrollPane(contentPanel).apply {
             verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
             horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
@@ -121,7 +127,9 @@ class UnifiedSettingsPanel(
             NavItem("agentPipeline", AllIcons.Actions.Execute, I18n.tr("settings.agent.pipeline")),
             NavItem("codeCompletion", AllIcons.Actions.IntentionBulb, I18n.tr("settings.code.completion")),
             NavItem("codeSearch", AllIcons.Actions.Find, I18n.tr("settings.code.search")),
-            NavItem("imageParsing", AllIcons.Actions.Preview, I18n.tr("settings.image.parsing"))
+            NavItem("imageParsing", AllIcons.Actions.Preview, I18n.tr("settings.image.parsing")),
+            NavItem("mcpServer", AllIcons.Nodes.Plugin, I18n.tr("settings.mcp.server")),
+            NavItem("externalMcp", AllIcons.General.Web, I18n.tr("settings.mcp.external"))
         )
 
         for (item in navItems) {

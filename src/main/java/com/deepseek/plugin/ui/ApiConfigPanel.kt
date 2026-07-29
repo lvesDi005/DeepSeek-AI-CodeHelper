@@ -143,7 +143,7 @@ class ApiConfigPanel : JPanel(BorderLayout()) {
                     }
                     row(I18n.tr("api.nvidia.model")) {
                         nvidiaModelComboBox = comboBox<String>(
-                            listOf("z-ai/glm-5.2", "minimaxai/minimax-m3", "stepfun-ai/step-3.7-flash")
+                            listOf("z-ai/glm-5.2", "minimaxai/minimax-m3", "stepfun-ai/step-3.7-flash","deepseek-ai/deepseek-v4-flash","deepseek-ai/deepseek-v4-pro")
                         ).apply {
                             component.isEditable = true
                             component.selectedItem = settings.nvidiaModel
