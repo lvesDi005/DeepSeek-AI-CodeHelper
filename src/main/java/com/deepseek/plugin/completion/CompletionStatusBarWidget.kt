@@ -9,12 +9,12 @@ import java.awt.Cursor
 import java.awt.Font
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.util.function.Consumer
 import javax.swing.JLabel
 
 /**
  * 状态栏 Widget — 显示 AI 代码补全当前状态（空闲/生成中/就绪/出错）。
  *
- * 使用 2024.1+ 兼容的 StatusBarWidget API（StatusBarWidget + JLabel 组合）。
  * 点击可切换补全启用/禁用。
  */
 class CompletionStatusBarWidgetFactory : com.intellij.openapi.wm.StatusBarWidgetFactory {
@@ -38,9 +38,8 @@ class CompletionStatusBarWidgetFactory : com.intellij.openapi.wm.StatusBarWidget
 
 /**
  * 状态栏组件 — JLabel 直接实现 StatusBarWidget，显示当前 AI 补全状态。
- * 点击可切换补全启用/禁用。
  */
-class CompletionStatusWidget : JLabel(), StatusBarWidget {
+class CompletionStatusWidget : JLabel(), StatusBarWidget, StatusBarWidget.WidgetPresentation {
 
     private var lastState: CompletionStatusService.State = CompletionStatusService.State.IDLE
 
@@ -88,9 +87,19 @@ class CompletionStatusWidget : JLabel(), StatusBarWidget {
         repaint()
     }
 
+    // StatusBarWidget
+
     override fun ID(): String = "DeepSeekCompletionStatus"
 
     override fun install(statusBar: StatusBar) {}
 
     override fun dispose() {}
+
+    // WidgetPresentation — return self so the framework uses this JLabel directly
+
+    override fun getPresentation(): StatusBarWidget.WidgetPresentation? = this
+
+    override fun getClickConsumer() = null
+
+    override fun getTooltipText(): String? = null
 }
