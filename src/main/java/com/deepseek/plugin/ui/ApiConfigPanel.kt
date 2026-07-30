@@ -104,7 +104,7 @@ class ApiConfigPanel : JPanel(BorderLayout()) {
                                 override fun focusLost(e: FocusEvent) { saveSettings() }
                             })
                         }).component as JBPasswordField
-                        comment("<a href='https://platform.agnes-ai.com'>platform.agnes-ai.com</a>")
+                        comment("<a href='https://www.agnes-ai.cn'>www.agnes-ai.cn</a>")
                     }
                     row(I18n.tr("api.agnes.model")) {
                         agnesModelField = cell(JBTextField().apply {
@@ -126,7 +126,7 @@ class ApiConfigPanel : JPanel(BorderLayout()) {
                                 override fun focusLost(e: FocusEvent) { saveSettings() }
                             })
                         }).component as JBTextField
-                        comment("https://apihub.agnes-ai.com/v1")
+                        comment("https://api.agnes-ai.cn/v1")
                     }
                 }
                 group(I18n.tr("api.nvidia.group")) {
@@ -210,8 +210,8 @@ class ApiConfigPanel : JPanel(BorderLayout()) {
         settings.temperature = temperatureField?.text?.toDoubleOrNull() ?: 0.7
         settings.provider = providerComboBox?.selectedItem as? String ?: "deepseek"
         settings.agnesApiKey = agnesApiKeyField?.password?.let { String(it) } ?: ""
-        settings.agnesModel = agnesModelField?.text ?: "Agnes-2.0-Flash"
-        settings.agnesBaseUrl = agnesBaseUrlField?.text ?: "https://apihub.agnes-ai.com/v1"
+        settings.agnesModel = agnesModelField?.text ?: "agnes-2.5-flash"
+        settings.agnesBaseUrl = agnesBaseUrlField?.text ?: "https://api.agnes-ai.cn/v1"
         settings.nvidiaApiKey = nvidiaApiKeyField?.password?.let { String(it) } ?: ""
         settings.nvidiaModel = nvidiaModelComboBox?.selectedItem as? String ?: "z-ai/glm-5.2"
         settings.nvidiaBaseUrl = nvidiaBaseUrlField?.text ?: "https://integrate.api.nvidia.com/v1"

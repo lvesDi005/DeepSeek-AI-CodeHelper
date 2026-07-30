@@ -27,7 +27,7 @@ class ModelCatalogDialog : DialogWrapper(true) {
         ModelEntry("deepseek", "DeepSeek", "deepseek-v4-flash", "高速编码，支持 FIM 代码补全（默认）"),
         ModelEntry("deepseek", "DeepSeek", "deepseek-v4-pro", "深度推理/规划，适合 Planner 角色"),
         // Agnes
-        ModelEntry("agnes", "Agnes 2.0 Flash", "agnes-2.0-flash", "轻量分析/审查，适合意图确认和 Reviewer"),
+        ModelEntry("agnes", "Agnes 2.5 Flash", "agnes-2.5-flash", "轻量分析/审查，适合意图确认和 Reviewer"),
         // NVIDIA
         ModelEntry("nvidia", "NVIDIA NIM", "z-ai/glm-5.2", "GLM-5.2 中文理解强，适合需求分析"),
         ModelEntry("nvidia", "NVIDIA NIM", "minimaxai/minimax-m3", "MiniMax M3 推理均衡，适合代码审查"),

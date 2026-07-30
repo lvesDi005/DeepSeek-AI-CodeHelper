@@ -6,6 +6,7 @@ import com.intellij.openapi.wm.StatusBarWidget
 import com.intellij.util.ui.JBUI
 import org.jetbrains.annotations.Nls
 import java.awt.Cursor
+import java.awt.Component
 import java.awt.Font
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
@@ -37,11 +38,18 @@ class CompletionStatusBarWidgetFactory : com.intellij.openapi.wm.StatusBarWidget
 }
 
 /**
- * 状态栏组件 — JLabel 直接实现 StatusBarWidget，显示当前 AI 补全状态。
+ * 状态栏组件 — JLabel 实现 StatusBarWidget，通过 TextPresentation 提供文字渲染。
  */
-class CompletionStatusWidget : JLabel(), StatusBarWidget, StatusBarWidget.WidgetPresentation {
+class CompletionStatusWidget : JLabel(), StatusBarWidget {
 
     private var lastState: CompletionStatusService.State = CompletionStatusService.State.IDLE
+
+    private val myPresentation = object : StatusBarWidget.TextPresentation {
+        override fun getText() = this@CompletionStatusWidget.text ?: ""
+        override fun getAlignment(): Float = Component.CENTER_ALIGNMENT
+        override fun getClickConsumer() = null
+        override fun getTooltipText(): String? = null
+    }
 
     init {
         font = font.deriveFont(Font.PLAIN, JBUI.Fonts.label().size.toFloat())
@@ -83,8 +91,6 @@ class CompletionStatusWidget : JLabel(), StatusBarWidget, StatusBarWidget.Widget
                 CompletionStatusService.State.ERROR -> java.awt.Color(0xFF5722)
             }
         }
-        revalidate()
-        repaint()
     }
 
     // StatusBarWidget
@@ -95,11 +101,5 @@ class CompletionStatusWidget : JLabel(), StatusBarWidget, StatusBarWidget.Widget
 
     override fun dispose() {}
 
-    // WidgetPresentation — return self so the framework uses this JLabel directly
-
-    override fun getPresentation(): StatusBarWidget.WidgetPresentation? = this
-
-    override fun getClickConsumer() = null
-
-    override fun getTooltipText(): String? = null
+    override fun getPresentation(): StatusBarWidget.WidgetPresentation? = myPresentation
 }

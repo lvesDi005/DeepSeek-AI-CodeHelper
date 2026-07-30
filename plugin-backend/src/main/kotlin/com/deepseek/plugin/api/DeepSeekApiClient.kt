@@ -203,7 +203,7 @@ class DeepSeekApiClient {
      *
      * @param baseUrl  API base URL（如 "https://api.deepseek.com/v1"）
      * @param apiKey   API Key
-     * @param model    模型名（如 "deepseek-v4-pro"、"deepseek-v4-flash"、"agnes-2.0-flash"）
+     * @param model    模型名（如 "deepseek-v4-pro"、"deepseek-v4-flash"、"agnes-2.5-flash"）
      * @param temperature 温度
      * @param maxTokens 最大 Token 数
      */

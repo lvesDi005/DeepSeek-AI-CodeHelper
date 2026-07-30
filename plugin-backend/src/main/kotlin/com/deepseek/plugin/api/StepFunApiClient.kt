@@ -69,7 +69,7 @@ class StepFunApiClient {
             else -> ProviderConfig(  // "agnes" (default)
                 baseUrl = settings.agnesBaseUrl.trimEnd('/'),
                 apiKey = settings.agnesApiKey,
-                model = settings.agnesModel.ifBlank { "agnes-2.0-flash" },
+                model = settings.agnesModel.ifBlank { "agnes-2.5-flash" },
                 displayName = "Agnes Image 2.1 Flash"
             )
         }

@@ -40,7 +40,7 @@ fun SettingsSnapshot.resolveBaseUrl(): String = when (provider) {
 /** 根据 Provider 类型从快照中提取 model */
 fun SettingsSnapshot.resolveModel(): String = when (provider) {
     "deepseek" -> model
-    "agnes" -> agnesModel.ifBlank { "agnes-2.0-flash" }
+    "agnes" -> agnesModel.ifBlank { "agnes-2.5-flash" }
     "nvidia" -> nvidiaModel.ifBlank { "z-ai/glm-5.2" }
     "openrouter" -> openrouterModel.ifBlank { "inclusionai/ling-3.0-flash:free" }
     else -> model

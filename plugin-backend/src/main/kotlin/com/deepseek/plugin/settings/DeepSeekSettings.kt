@@ -46,8 +46,8 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
 
     // Agnes 2.0 Flash 配置
     var agnesApiKey: String = ""
-    var agnesModel: String = "agnes-2.0-flash"
-    var agnesBaseUrl: String = "https://apihub.agnes-ai.com/v1"
+    var agnesModel: String = "agnes-2.5-flash"
+    var agnesBaseUrl: String = "https://api.agnes-ai.cn/v1"
 
     // NVIDIA 配置
     var nvidiaApiKey: String = ""
@@ -81,7 +81,7 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
 
     // Agent Pipeline 各 Phase 独立配置
     var agentPhase0Provider: String = "agnes"          // 意图确认 Provider
-    var agentPhase0Model: String = "agnes-2.0-flash"  // 意图确认 Model
+    var agentPhase0Model: String = "agnes-2.5-flash"  // 意图确认 Model
 
     // Phase 0 意图确认开关 — 关闭时跳过意图确认直接进入规划阶段
     var agentPhase0Enabled: Boolean = true
@@ -106,7 +106,7 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
     var agentPhase2Provider: String = "deepseek"       // 编码 Provider
     var agentPhase2Model: String = "deepseek-v4-flash" // 编码 Model
     var agentPhase3Provider: String = "agnes"          // 审查 Provider
-    var agentPhase3Model: String = "agnes-2.0-flash"   // 审查 Model
+    var agentPhase3Model: String = "agnes-2.5-flash"   // 审查 Model
 
     // Q&A 分类器复用主 API Configuration 的 Provider/Model，无需单独存储字段
 

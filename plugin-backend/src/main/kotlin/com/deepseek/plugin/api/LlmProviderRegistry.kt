@@ -49,7 +49,7 @@ class AgnesProvider : LlmProvider {
 
     override fun baseUrl(settings: SettingsSnapshot): String = settings.agnesBaseUrl.trimEnd('/')
     override fun apiKey(settings: SettingsSnapshot): String = settings.agnesApiKey
-    override fun model(settings: SettingsSnapshot): String = settings.agnesModel.ifBlank { "agnes-2.0-flash" }
+    override fun model(settings: SettingsSnapshot): String = settings.agnesModel.ifBlank { "agnes-2.5-flash" }
 }
 
 /** NVIDIA NIM API */

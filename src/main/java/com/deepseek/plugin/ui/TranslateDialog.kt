@@ -395,7 +395,7 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
             mapOf("role" to "user", "content" to "请将以下${sourceLang}文本翻译为${targetLang}，只返回翻译结果，不要添加任何解释：\n\n$text")
         )
         val bodyMap = mapOf(
-            "model" to settings.agnesModel.ifBlank { "agnes-2.0-flash" },
+            "model" to settings.agnesModel.ifBlank { "agnes-2.5-flash" },
             "messages" to messages,
             "max_tokens" to 4096,
             "stream" to false

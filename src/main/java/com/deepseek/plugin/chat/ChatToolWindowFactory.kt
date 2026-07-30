@@ -70,6 +70,7 @@ class ChatToolWindowFactory : ToolWindowFactory {
         private val CHANGELOG_HTML = """
             <h3>v2.7.0</h3>
             <ul>
+              <li>切换Agnes国内可用</li>
               <li>【新增】MCP Server — 在 IDE 内启动 MCP (Model Context Protocol) 服务，以 SSE/HTTP 端点暴露 IDEA 能力，外部 AI 客户端（Claude Desktop、Cursor 等）可连接调用文件读写、代码搜索、符号导航等 Tool</li>
               <li>【新增】MCP 设置 — 主题设置中新增 "MCP Server" 选项卡，可配置启用/关闭、端口（默认 8080）、自动启动</li>
               <li>【新增】内置 8 个 MCP Tool — read_file / write_file / list_directory / search_in_project / find_symbol / get_project_info / get_open_files / get_active_editor_content</li>
@@ -324,6 +325,7 @@ class ChatToolWindowFactory : ToolWindowFactory {
         private val CHANGELOG_HTML_EN = """
             <h3>v2.7.0</h3>
             <ul>
+              <li>Switch to Agnes is available in China</li>
               <li>[New] MCP Server — Launches an MCP (Model Context Protocol) server within the IDE, exposing IDEA capabilities via SSE/HTTP endpoint. External AI clients (Claude Desktop, Cursor, etc.) can connect to invoke tools: file read/write, code search, symbol navigation, and more</li>
               <li>[New] MCP Settings — New "MCP Server" tab in theme settings: enable/disable, port (default 8080), auto-start on IDE launch</li>
               <li>[New] 8 built-in MCP Tools — read_file / write_file / list_directory / search_in_project / find_symbol / get_project_info / get_open_files / get_active_editor_content</li>
