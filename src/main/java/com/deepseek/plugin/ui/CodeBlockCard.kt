@@ -6,9 +6,11 @@ import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
+import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
 import java.awt.Toolkit
@@ -16,6 +18,7 @@ import java.awt.datatransfer.StringSelection
 import javax.swing.Box
 import javax.swing.JLabel
 import javax.swing.JPanel
+import javax.swing.JScrollPane
 import javax.swing.Timer
 
 /**
@@ -38,8 +41,8 @@ class CodeBlockCard(
 ) : JPanel(BorderLayout()) {
 
     init {
-        border = JBUI.Borders.customLine(JBColor(0xE0E0E0, 0x3A3A3A), 1)
-        background = JBColor(0xF5F5F5, 0x222226)
+        border = JBUI.Borders.customLine(PluginTheme.border(), 1)
+        background = PluginTheme.color(0xF5F5F5, 0x2B2B2B)
 
         // ── Header bar ──
         add(createHeader(language, showInsertButton), BorderLayout.NORTH)
@@ -54,27 +57,27 @@ class CodeBlockCard(
 
     private fun createHeader(language: String, showInsert: Boolean): JPanel {
         val header = JPanel(BorderLayout())
-        header.background = JBColor(0xE8E8E8, 0x333337)
+        header.background = PluginTheme.color(0xE8E8E8, 0x303030)
         header.border = JBUI.Borders.empty(4, 10, 4, 6)
         header.isOpaque = true
 
         // Language badge (left)
         val langLabel = JLabel(if (language.isNotBlank()) language.uppercase() else "CODE")
         langLabel.font = langLabel.font.deriveFont(Font.BOLD, 11f)
-        langLabel.foreground = JBColor(0x666666, 0xAAAAAA)
+        langLabel.foreground = PluginTheme.textHeading()
         header.add(langLabel, BorderLayout.WEST)
 
         // Buttons (right)
         val actionsPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 2, 0))
         actionsPanel.isOpaque = false
 
-        val copyBtn = createActionButton(AllIcons.Actions.Copy, I18n.tr("code.copy")) {
+        val copyBtn = createActionButton(AllIcons.Actions.Copy, I18n.tr("code.copy"), "code.copy") {
             copyToClipboard(code)
         }
         actionsPanel.add(copyBtn)
 
         if (showInsert) {
-            val insertBtn = createActionButton(AllIcons.Actions.Edit, I18n.tr("code.insert")) {
+            val insertBtn = createActionButton(AllIcons.Actions.Edit, I18n.tr("code.insert"), "code.insert") {
                 insertCodeAtCursor(project, code)
             }
             actionsPanel.add(Box.createHorizontalStrut(4))
@@ -90,15 +93,26 @@ class CodeBlockCard(
     // ================================================================
 
     private fun createCodeArea(): JPanel {
-        val bg = JBColor(0xF5F5F5, 0x1A1A1A)
-        val fg = JBColor(0x333333, 0xD4D4D4)
+        val bg = PluginTheme.color(0xF5F5F5, 0x2B2B2B)
+        val fg = PluginTheme.textPrimary()
 
-        val textArea = JBTextArea(code).apply {
+        // 覆写 viewport 尺寸：JTextArea 默认返回固定几行高，这里改为全部内容高度，
+        // 保证长代码完整展开（外层消息面板负责整体纵向滚动）。
+        val textArea = object : JBTextArea(code) {
+            override fun getPreferredScrollableViewportSize(): Dimension {
+                val fm = getFontMetrics(font)
+                val lineCount = code.lines().size.coerceAtLeast(1)
+                val textH = lineCount * fm.height
+                val h = textH + insets.top + insets.bottom + margin.top + margin.bottom
+                return Dimension(100, h)
+            }
+        }.apply {
             isEditable = false
             isFocusable = true
             background = bg
             foreground = fg
             font = JBUI.Fonts.create("Monospaced", JBUI.Fonts.label().size)
+            // 不换行：保持代码原始格式（缩进/对齐），超长行通过横向滚动条左右拉动查看
             lineWrap = false
             tabSize = 4
             margin = JBUI.insets(4, 10)
@@ -107,10 +121,26 @@ class CodeBlockCard(
             // Allow text selection for copy (isEditable=false still allows selection in JBTextArea)
         }
 
+        // 用滚动面板包裹：横向可左右拉动，竖向恰好全显
+        // 三环锁定高度（preferred/minimum/maximum）= 全部内容高度，防止 BoxLayout 压缩
+        val scrollPane = JBScrollPane(textArea).apply {
+            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
+            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_NEVER
+            border = JBUI.Borders.empty()
+            isOpaque = true
+            background = bg
+            viewport.isOpaque = true
+            viewport.background = bg
+            val contentHeight = textArea.preferredSize.height + JBUI.scale(2)
+            preferredSize = Dimension(100, contentHeight)
+            minimumSize = Dimension(100, contentHeight)
+            maximumSize = Dimension(Int.MAX_VALUE, contentHeight)
+        }
+
         return JPanel(BorderLayout()).apply {
             isOpaque = true
             background = bg
-            add(textArea, BorderLayout.CENTER)
+            add(scrollPane, BorderLayout.CENTER)
         }
     }
 
@@ -223,8 +253,8 @@ class CodeBlockCard(
     // Helpers
     // ================================================================
 
-    private fun createActionButton(icon: javax.swing.Icon, tooltip: String, onClick: () -> Unit): JPanel {
-        val btn = createToolbarButton(icon, tooltip, onClick = onClick)
+    private fun createActionButton(icon: javax.swing.Icon, tooltip: String, tooltipKey: String? = null, onClick: () -> Unit): JPanel {
+        val btn = createToolbarButton(icon, tooltip, tooltipKey = tooltipKey, onClick = onClick)
         val wrapper = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0))
         wrapper.isOpaque = false
         wrapper.add(btn)
@@ -267,33 +297,64 @@ class CodeBlockCard(
 
         /**
          * Parse a response string into a list of segments (text blocks and code blocks).
-         * Code blocks are delimited by ```language? ... ```.
+         *
+         * 逐行流式扫描，支持两种 Markdown 围栏：``` 和 ~~~。
+         * - 围栏行：``` 或 ~~~，可选语言标签（须后随换行才算标签）
+         * - 未闭合围栏：宽容处理，从围栏行到结尾视为代码块
+         * - 有语言标签 → 代码块；无语言标签 → 用 [looksLikeCode] 判断，
+         *   不像代码的内容按普通文字处理（避免文字被塞进代码框）
          */
         @JvmStatic
         fun parseResponse(response: String): List<ResponseSegment> {
             val segments = mutableListOf<ResponseSegment>()
-            val regex = Regex("```(\\w*)\\s*\\n?([\\s\\S]*?)```")
-            var lastEnd = 0
+            val textBuffer = StringBuilder()
 
-            for (match in regex.findAll(response)) {
-                // text before this code block
-                val before = response.substring(lastEnd, match.range.first).trim()
-                if (before.isNotEmpty()) {
-                    segments.addAll(parseNonCodeText(before))
+            fun flushText() {
+                val text = textBuffer.toString().trim()
+                textBuffer.clear()
+                if (text.isNotEmpty()) {
+                    segments.addAll(parseNonCodeText(text))
                 }
-                val language = match.groupValues[1].ifBlank { "" }
-                val code = match.groupValues[2].trim()
-                if (code.isNotEmpty()) {
-                    segments.add(ResponseSegment.Code(code, language))
-                }
-                lastEnd = match.range.last + 1
             }
 
-            // remaining text after the last code block
-            val after = response.substring(lastEnd).trim()
-            if (after.isNotEmpty()) {
-                segments.addAll(parseNonCodeText(after))
+            val lines = response.split("\n")
+            var i = 0
+            while (i < lines.size) {
+                val line = lines[i]
+                val fenceMatch = FENCE_REGEX.find(line)
+                if (fenceMatch != null) {
+                    flushText()
+                    val fence = fenceMatch.groupValues[1]
+                    val language = fenceMatch.groupValues[2]
+                    val codeLines = mutableListOf<String>()
+                    var j = i + 1
+                    var closed = false
+                    while (j < lines.size) {
+                        if (lines[j].trim() == fence) {
+                            closed = true
+                            break
+                        }
+                        codeLines.add(lines[j])
+                        j++
+                    }
+                    val code = codeLines.joinToString("\n").trim()
+                    if (code.isNotEmpty()) {
+                        // 有语言标签或未闭合围栏（围栏意图明确）→ 代码块；
+                        // 已闭合且无语言标签 → 用 looksLikeCode 判断，不像代码按文字处理
+                        if (language.isNotBlank() || !closed || looksLikeCode(code)) {
+                            segments.add(ResponseSegment.Code(code, language))
+                        } else {
+                            // 无语言标签且不像代码：按普通文字处理（表格/说明文本等）
+                            segments.addAll(parseNonCodeText(code))
+                        }
+                    }
+                    i = if (closed) j + 1 else lines.size
+                } else {
+                    textBuffer.appendLine(line)
+                    i++
+                }
             }
+            flushText()
 
             // If no segments found at all, treat the whole thing as text
             if (segments.isEmpty() && response.isNotBlank()) {
@@ -301,6 +362,65 @@ class CodeBlockCard(
             }
 
             return segments
+        }
+
+        /** 围栏行：``` 或 ~~~，可选语言标签（word/点/加减号），标签后必须到行尾 */
+        private val FENCE_REGEX = Regex("^\\s*(```|~~~)\\s*([\\w.+\\-]*)\\s*$")
+
+        /**
+         * 判断围栏内容是否像代码或流程描述。无语言标签时用于分类：
+         * 1. 代码特征（关键字/分号/花括号/调用）≥2 且非大段中文 → 代码
+         * 2. 流程特征（箭头符号/图语法/步骤词）→ 也进代码框（伪代码、时序图、流程图等）
+         */
+        private fun looksLikeCode(code: String): Boolean {
+            val trimmed = code.trim()
+            if (trimmed.isEmpty()) return false
+            val lines = trimmed.lines()
+
+            val strongKeywords = listOf(
+                "class ", "interface ", "enum ", "struct ", "func ", "function ", "def ",
+                "import ", "package ", "namespace ", "using ", "#include", "public ", "private ",
+                "protected ", "static ", "return ", "const ", "=>", "::", "=== "
+            )
+            val hasStrong = strongKeywords.any { trimmed.contains(it) }
+            val hasSemicolons = lines.count { it.trimEnd().endsWith(";") } >= 1
+            val hasBraces = trimmed.contains("{") && trimmed.contains("}")
+            val hasCall = Regex("\\w+\\([^)]*\\)").containsMatchIn(trimmed)
+
+            // 中文占比（代码通常不含大段中文）
+            val chineseCount = trimmed.count { it in '\u4e00'..'\u9fff' }
+            val ratio = chineseCount.toDouble() / trimmed.length.coerceAtLeast(1)
+
+            val score = listOf(hasStrong, hasSemicolons, hasBraces, hasCall).count { it }
+            val isCode = score >= 2 && ratio < 0.3
+
+            // ── 流程特征：伪代码 / 时序图 / 流程图 / 步骤序列 → 也进代码框 ──
+            val arrowLines = lines.count { line ->
+                line.contains("->") || line.contains("->>") || line.contains("=>") ||
+                    line.contains("→") || line.contains("←") || line.contains("-->") ||
+                    line.contains("==>")
+            }
+            val flowKeywords = listOf(
+                "flowchart", "graph TD", "sequenceDiagram", "stateDiagram", "classDiagram",
+                "participant", "erDiagram", "步骤", "Step ", "第\\d+步"
+            )
+            val hasFlowKeyword = flowKeywords.any { kw ->
+                if (kw.startsWith("第")) Regex("第\\s*\\d+\\s*步").containsMatchIn(trimmed)
+                else trimmed.contains(kw)
+            }
+            // 伪代码流程控制关键字：强关键字单独出现即判定；弱关键字需 ≥2 个（防英文句子误判）
+            val strongPseudo = listOf(
+                "while ", "loop", "repeat ", "switch ", "end if", "endfor", "endwhile",
+                "for each", "begin ", "until ", "then "
+            )
+            val weakPseudo = listOf("if ", "else ", "case ", "do ", "try ", "catch ")
+            val hasStrongPseudo = strongPseudo.any { trimmed.contains(it, ignoreCase = true) }
+            val weakCount = weakPseudo.count { trimmed.contains(it, ignoreCase = true) }
+            val hasPseudo = hasStrongPseudo || weakCount >= 2
+            // 2 行以上含箭头，或含图语法/步骤关键词，或伪代码结构 → 视为流程
+            val isFlow = (arrowLines >= 1 && lines.size >= 2) || hasFlowKeyword || hasPseudo
+
+            return isCode || isFlow
         }
 
         /**

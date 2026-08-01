@@ -1,9 +1,11 @@
 package com.deepseek.plugin.ui
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
+import java.awt.BorderLayout
 import java.awt.Dimension
 import javax.swing.*
 import javax.swing.table.DefaultTableCellRenderer
@@ -36,6 +38,10 @@ class ModelCatalogDialog : DialogWrapper(true) {
         ModelEntry("stepfun", "StepFun", "step-1o-turbo-vision", "多模态视觉解析（图片解析专用）"),
         // OpenRouter
         ModelEntry("openrouter", "OpenRouter", "inclusionai/ling-3.0-flash:free", "Ling 3.0 Flash 免费版，适合日常对话与代码"),
+        // 智谱 AI
+        ModelEntry("zhipu", "BigModel", "glm-4", "GLM-4 通用模型，适合日常对话与代码"),
+        ModelEntry("zhipu", "BigModel", "glm-4-flash", "GLM-4-Flash 轻量快速版"),
+        ModelEntry("zhipu", "BigModel", "glm-4v", "GLM-4V 多模态视觉版"),
         ModelEntry("openrouter", "OpenRouter", "poolside/laguna-xs-2.1:free", "Poolside Laguna XS 免费版，适合代码生成")
     )
 

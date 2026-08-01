@@ -72,6 +72,7 @@ class ChangeManagementPanel(
         val closeButton = createToolbarButton(
             icon = AllIcons.Actions.Close,
             tooltip = I18n.tr("change.back"),
+            tooltipKey = "change.back",
             onClick = { onClose() }
         )
         titleRow.add(closeButton, BorderLayout.EAST)
@@ -180,6 +181,7 @@ class ChangeManagementPanel(
             val rollbackThisBtn = createToolbarButton(
                 icon = AllIcons.Actions.Rollback,
                 tooltip = I18n.tr("change.rollback"),
+                tooltipKey = "change.rollback",
                 size = 22,
                 onClick = { rollbackThisRecord() }
             )
@@ -188,6 +190,7 @@ class ChangeManagementPanel(
             val deleteThisBtn = createToolbarButton(
                 icon = AllIcons.Actions.GC,
                 tooltip = I18n.tr("change.delete"),
+                tooltipKey = "change.delete",
                 size = 22,
                 onClick = { deleteThisRecord() }
             )
@@ -326,6 +329,7 @@ class ChangeManagementPanel(
             val viewChangesBtn = createToolbarButton(
                 icon = AllIcons.Actions.Diff,
                 tooltip = I18n.tr("change.view"),
+                tooltipKey = "change.view",
                 size = 22,
                 onClick = { showDiff(change) }
             )
@@ -335,6 +339,7 @@ class ChangeManagementPanel(
             val rollbackBtn = createToolbarButton(
                 icon = AllIcons.Actions.Rollback,
                 tooltip = I18n.tr("change.rollback.file"),
+                tooltipKey = "change.rollback.file",
                 size = 22,
                 onClick = { rollbackFile(change) }
             )

@@ -6,7 +6,7 @@ plugins {
 
 allprojects {
     group = "com.deepseek.plugin"
-    version = "2.7.0"
+    version = "2.7.1"
 }
 
 subprojects {
@@ -55,6 +55,10 @@ intellijPlatform {
         }
         changeNotes = """
             <h1>中文/Chinese</h1>
+            <h3>v2.7.1</h3>
+            <ul>
+              <li>【新增】智谱配置项</li>
+            </ul>
             <h3>v2.7.0</h3>
             <ul>
               <li>切换Agnes国内可用</li>
@@ -301,6 +305,10 @@ intellijPlatform {
               <li>API Key 配置页面</li>
             </ul>
             <h1>English</h1>
+            <h3>v2.7.1</h3>
+            <ul>
+              <li>[New] Zhipu configuration options</li>
+            </ul>
             <h3>v2.7.0</h3>
             <ul>
               <li>Switch to Agnes is available in China</li>

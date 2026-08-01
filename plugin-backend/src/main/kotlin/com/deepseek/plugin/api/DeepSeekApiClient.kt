@@ -104,11 +104,13 @@ class DeepSeekApiClient {
     }
 
     private fun chatSync(settings: DeepSeekSettings, messages: List<ChatMessage>): Result<String> {
+        val prov = provider(settings)
+        val temp = prov.temperature ?: settings.temperature
         return chatSyncWithExplicitConfig(
-            baseUrl = provider(settings).baseUrl(settings.toSnapshot()),
-            apiKey = provider(settings).apiKey(settings.toSnapshot()),
-            model = provider(settings).model(settings.toSnapshot()),
-            temperature = settings.temperature,
+            baseUrl = prov.baseUrl(settings.toSnapshot()),
+            apiKey = prov.apiKey(settings.toSnapshot()),
+            model = prov.model(settings.toSnapshot()),
+            temperature = temp,
             maxTokens = settings.maxTokens,
             messages = messages
         )
@@ -184,11 +186,13 @@ class DeepSeekApiClient {
         onReasoningToken: ((String) -> Unit)? = null
     ): EventSource {
         val settings = DeepSeekSettings.instance
+        val prov = provider(settings)
+        val temp = prov.temperature ?: settings.temperature
         return chatStreamWithExplicitConfig(
-            baseUrl = provider(settings).baseUrl(settings.toSnapshot()),
-            apiKey = provider(settings).apiKey(settings.toSnapshot()),
-            model = provider(settings).model(settings.toSnapshot()),
-            temperature = settings.temperature,
+            baseUrl = prov.baseUrl(settings.toSnapshot()),
+            apiKey = prov.apiKey(settings.toSnapshot()),
+            model = prov.model(settings.toSnapshot()),
+            temperature = temp,
             maxTokens = settings.maxTokens,
             messages = messages,
             onToken = onToken,

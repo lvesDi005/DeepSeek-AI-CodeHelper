@@ -1,5 +1,6 @@
 package com.deepseek.plugin.ui
 
+import com.deepseek.plugin.i18n.I18n
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import java.awt.Color
@@ -19,15 +20,19 @@ import javax.swing.JComponent
  * is set via [JComponent.setToolTipText], which auto-registers the component
  * with [javax.swing.ToolTipManager].
  *
- * @param icon   The icon to display on the button.
- * @param tooltip The tooltip text shown on hover.
- * @param size   The width and height of the button in pixels (default 24).
- * @param onClick Called when the button is clicked.
+ * @param icon      The icon to display on the button.
+ * @param tooltip   The tooltip text shown on hover.
+ * @param size      The width and height of the button in pixels (default 24).
+ * @param tooltipKey Optional i18n key for the tooltip. When provided, the tooltip
+ *                   is tracked via [I18n.tooltip] and refreshes automatically on
+ *                   language switch.
+ * @param onClick   Called when the button is clicked.
  */
 fun createToolbarButton(
     icon: javax.swing.Icon,
     tooltip: String,
     size: Int = 24,
+    tooltipKey: String? = null,
     onClick: () -> Unit
 ): JButton {
     val dim = Dimension(JBUI.scale(size), JBUI.scale(size))
@@ -41,7 +46,11 @@ fun createToolbarButton(
             g2.dispose()
         }
     }.apply {
-        toolTipText = tooltip
+        if (tooltipKey != null) {
+            I18n.tooltip(this, tooltipKey)
+        } else {
+            toolTipText = tooltip
+        }
         isOpaque = false
         isContentAreaFilled = false
         isBorderPainted = false

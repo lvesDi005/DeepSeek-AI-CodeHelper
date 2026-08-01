@@ -154,7 +154,7 @@ class ChatInputBar(
                 maximumSize = Dimension(Short.MAX_VALUE.toInt(), 8)
                 isOpaque = false
                 cursor = Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR)
-                toolTipText = I18n.tr("input.drag.resize")
+                I18n.tooltip(this, "input.drag.resize")
 
                 // 监听输入框的焦点变化，控制分隔栏的显隐
                 inputScrollPane.components.forEach { comp: java.awt.Component ->

@@ -14,6 +14,7 @@ object LlmProviderRegistry {
         register(AgnesProvider())
         register(NvidiaProvider())
         register(OpenRouterProvider())
+        register(ZhipuProvider())
     }
 
     fun register(provider: LlmProvider) {
@@ -71,3 +72,14 @@ class OpenRouterProvider : LlmProvider {
     override fun apiKey(settings: SettingsSnapshot): String = settings.openrouterApiKey
     override fun model(settings: SettingsSnapshot): String = settings.openrouterModel.ifBlank { "inclusionai/ling-3.0-flash:free" }
 }
+
+/** 智谱 AI GLM */
+class ZhipuProvider : LlmProvider {
+    override val id = "zhipu"
+    override val displayName = "BigModel"
+
+    override fun baseUrl(settings: SettingsSnapshot): String = settings.zhipuBaseUrl.trimEnd('/')
+    override fun apiKey(settings: SettingsSnapshot): String = settings.zhipuApiKey
+    override fun model(settings: SettingsSnapshot): String = settings.zhipuModel.ifBlank { "glm-4" }
+}
+

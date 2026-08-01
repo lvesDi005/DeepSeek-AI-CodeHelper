@@ -115,13 +115,13 @@ class FileAttachmentPreview(
 
         val nameLabel = JLabel(truncateFileName(file.name, 16))
         nameLabel.font = nameLabel.font.deriveFont(Font.PLAIN, 11f)
-        nameLabel.foreground = JBColor(0x333333, 0xDDDDDD)
+        nameLabel.foreground = JBColor(0x000000, 0xDDDDDD)
         nameLabel.toolTipText = file.name
         infoPanel.add(nameLabel)
 
         val sizeLabel = JLabel(file.sizeDisplay)
         sizeLabel.font = sizeLabel.font.deriveFont(Font.PLAIN, 10f)
-        sizeLabel.foreground = JBColor(0x888888, 0x999999)
+        sizeLabel.foreground = JBColor(0x000000, 0xBBBBBB)
         infoPanel.add(sizeLabel)
 
         card.add(infoPanel, BorderLayout.CENTER)
@@ -130,6 +130,7 @@ class FileAttachmentPreview(
         val removeBtn = createToolbarButton(
             icon = AllIcons.Actions.Close,
             tooltip = I18n.tr("file.remove") + " " + file.name,
+            tooltipKey = "file.remove",
             size = 16,
             onClick = { onRemove(index) }
         )

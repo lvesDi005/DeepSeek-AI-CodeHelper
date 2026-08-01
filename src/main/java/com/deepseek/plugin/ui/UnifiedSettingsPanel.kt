@@ -1,6 +1,8 @@
 package com.deepseek.plugin.ui
 
 import com.deepseek.plugin.i18n.I18n
+import com.deepseek.plugin.i18n.I18nTopics
+import com.deepseek.plugin.i18n.LanguageChangeListener
 import com.intellij.icons.AllIcons
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
@@ -51,12 +53,22 @@ class UnifiedSettingsPanel(
     }
 
     /** The embedded skill settings panel — exposed for [getEnabledSkillsContent]. */
-    private val skillSettingsPanel: SkillSettingsPanel
+    private lateinit var skillSettingsPanel: SkillSettingsPanel
 
     init {
         background = JBColor(Color(0xF0F0F0), Color(0x3C3F41))
         border = JBUI.Borders.empty()
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
+
+        // ── 订阅语言切换事件：刷新导航按钮 tooltip 等悬浮文字 ──
+        project.messageBus.connect().subscribe(
+            I18nTopics.LANGUAGE_CHANGED,
+            object : LanguageChangeListener {
+                override fun languageChanged() {
+                    I18n.refreshTooltips(this@UnifiedSettingsPanel)
+                }
+            }
+        )
 
         // ── Navigation bar (fixed) ──
         val navBar = createNavBar()
@@ -67,6 +79,24 @@ class UnifiedSettingsPanel(
         // ── Content area: horizontal scroll only, vertical uses natural size ──
         contentPanel.isOpaque = false
 
+        buildContentPanels()
+
+        val contentScrollPane = JBScrollPane(contentPanel).apply {
+            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
+            border = JBUI.Borders.empty()
+            isOpaque = false
+            viewport.isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
+        add(contentScrollPane)
+
+        // Show theme settings by default
+        showPage("themeSettings")
+    }
+
+    /** 构建所有设置子页面并加入 contentPanel（主题切换后重建用）。 */
+    private fun buildContentPanels() {
         // Theme Settings page
         contentPanel.add(ThemeSettingsPanel(), "themeSettings")
 
@@ -86,20 +116,8 @@ class UnifiedSettingsPanel(
 
         // External MCP Servers
         contentPanel.add(ExternalMcpSettingsPanel(), "externalMcp")
-
-        val contentScrollPane = JBScrollPane(contentPanel).apply {
-            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
-            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
-            border = JBUI.Borders.empty()
-            isOpaque = false
-            viewport.isOpaque = false
-            alignmentX = Component.LEFT_ALIGNMENT
-        }
-        add(contentScrollPane)
-
-        // Show theme settings by default
-        showPage("themeSettings")
     }
+
 
     /**
      * Create the top navigation bar with icon buttons for each settings section.
@@ -118,22 +136,22 @@ class UnifiedSettingsPanel(
             isOpaque = false
         }
 
-        data class NavItem(val key: String, val icon: Icon, val tooltip: String)
+        data class NavItem(val key: String, val icon: Icon, val tooltip: String, val tooltipKey: String)
 
         val navItems = listOf(
-            NavItem("themeSettings", AllIcons.Actions.Checked, I18n.tr("settings.theme")),
-            NavItem("skillSettings", AllIcons.General.Settings, I18n.tr("settings.skills")),
-            NavItem("apiConfig", AllIcons.General.ExternalTools, I18n.tr("settings.api.config")),
-            NavItem("agentPipeline", AllIcons.Actions.Execute, I18n.tr("settings.agent.pipeline")),
-            NavItem("codeCompletion", AllIcons.Actions.IntentionBulb, I18n.tr("settings.code.completion")),
-            NavItem("codeSearch", AllIcons.Actions.Find, I18n.tr("settings.code.search")),
-            NavItem("imageParsing", AllIcons.Actions.Preview, I18n.tr("settings.image.parsing")),
-            NavItem("mcpServer", AllIcons.Nodes.Plugin, I18n.tr("settings.mcp.server")),
-            NavItem("externalMcp", AllIcons.General.Web, I18n.tr("settings.mcp.external"))
+            NavItem("themeSettings", AllIcons.Actions.Checked, I18n.tr("settings.theme"), "settings.theme"),
+            NavItem("skillSettings", AllIcons.General.Settings, I18n.tr("settings.skills"), "settings.skills"),
+            NavItem("apiConfig", AllIcons.General.ExternalTools, I18n.tr("settings.api.config"), "settings.api.config"),
+            NavItem("agentPipeline", AllIcons.Actions.Execute, I18n.tr("settings.agent.pipeline"), "settings.agent.pipeline"),
+            NavItem("codeCompletion", AllIcons.Actions.IntentionBulb, I18n.tr("settings.code.completion"), "settings.code.completion"),
+            NavItem("codeSearch", AllIcons.Actions.Find, I18n.tr("settings.code.search"), "settings.code.search"),
+            NavItem("imageParsing", AllIcons.Actions.Preview, I18n.tr("settings.image.parsing"), "settings.image.parsing"),
+            NavItem("mcpServer", AllIcons.Nodes.Plugin, I18n.tr("settings.mcp.server"), "settings.mcp.server"),
+            NavItem("externalMcp", AllIcons.General.Web, I18n.tr("settings.mcp.external"), "settings.mcp.external")
         )
 
         for (item in navItems) {
-            val btn = createNavButton(item.icon, item.tooltip) {
+            val btn = createNavButton(item.icon, item.tooltip, item.tooltipKey) {
                 showPage(item.key)
             }
             navButtons[item.key] = btn
@@ -146,6 +164,7 @@ class UnifiedSettingsPanel(
         val closeBtn = createToolbarButton(
             icon = AllIcons.Actions.Close,
             tooltip = I18n.tr("settings.close"),
+            tooltipKey = "settings.close",
             onClick = onClose
         )
         val rightPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 0, 0)).apply {
@@ -160,7 +179,7 @@ class UnifiedSettingsPanel(
     /**
      * Create a single navigation button with hover effect.
      */
-    private fun createNavButton(icon: Icon, tooltip: String, onClick: () -> Unit): JButton {
+    private fun createNavButton(icon: Icon, tooltip: String, tooltipKey: String, onClick: () -> Unit): JButton {
         val dim = Dimension(JBUI.scale(32), JBUI.scale(32))
         return object : JButton(icon) {
             override fun paintComponent(g: Graphics) {
@@ -174,7 +193,7 @@ class UnifiedSettingsPanel(
                 g2.dispose()
             }
         }.apply {
-            toolTipText = tooltip
+            I18n.tooltip(this, tooltipKey)
             isOpaque = false
             isContentAreaFilled = false
             isBorderPainted = false

@@ -133,7 +133,7 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
         }
         translateBtn = JButton(I18n.tr("translate.button")).apply {
             font = font.deriveFont(Font.BOLD, 12f)
-            foreground = JBColor(0x333333, 0xCCCCCC)
+            foreground = JBColor(0x000000, 0xCCCCCC)
             background = JBColor(0xE0E0E0, 0x4E4E50)
             isOpaque = true
             isContentAreaFilled = true
@@ -196,7 +196,7 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
     private fun styleDropdown(combo: JComboBox<String>) {
         combo.apply {
             font = font.deriveFont(12f)
-            foreground = JBColor(0x333333, 0xD4D4D4)
+            foreground = JBColor(0x000000, 0xD4D4D4)
             background = JBColor(0xF0F0F0, 0x2B2B2B)
             isOpaque = true
             setBorder(BorderFactory.createCompoundBorder(
@@ -252,7 +252,7 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
             lineWrap = true
             wrapStyleWord = true
             font = font.deriveFont(13f)
-            foreground = JBColor(0x333333, 0xD4D4D4)
+            foreground = JBColor(0x000000, 0xD4D4D4)
             background = JBColor(0xFFFFFF, 0x3C3F41)
             caretColor = JBColor(0x333333, 0xD4D4D4)
             margin = JBUI.insets(10)
@@ -300,7 +300,7 @@ class TranslateDialog(project: Project?) : DialogWrapper(project, false) {
                 isBorderPainted = false
                 isFocusPainted = false
                 cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-                toolTipText = I18n.tr("translate.swap")
+                I18n.tooltip(this, "translate.swap")
 
                 addMouseListener(object : java.awt.event.MouseAdapter() {
                     override fun mouseEntered(e: java.awt.event.MouseEvent) { hovered = true; repaint() }

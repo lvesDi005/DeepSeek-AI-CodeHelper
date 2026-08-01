@@ -36,6 +36,16 @@ class WelcomePanel : JPanel(BorderLayout()) {
         add(createCenterPanel(), BorderLayout.CENTER)
     }
 
+    /**
+     * 语言切换即时刷新：重建欢迎面板内容（标题/副标题/快捷键提示等）。
+     */
+    fun refreshTexts() {
+        removeAll()
+        add(createCenterPanel(), BorderLayout.CENTER)
+        revalidate()
+        repaint()
+    }
+
     private fun createCenterPanel(): JPanel {
         val center = JPanel(GridBagLayout()).apply {
             isOpaque = false
@@ -59,7 +69,7 @@ class WelcomePanel : JPanel(BorderLayout()) {
         // ── Plugin name ──
         val nameLabel = JLabel(I18n.tr("welcome.title")).apply {
             font = font.deriveFont(Font.BOLD, 18f)
-            foreground = JBColor(0x1A1A1A, 0xE0E0E0)
+            foreground = JBColor(0x000000, 0xE0E0E0)
             alignmentX = Component.CENTER_ALIGNMENT
         }
         content.add(nameLabel)
@@ -68,7 +78,7 @@ class WelcomePanel : JPanel(BorderLayout()) {
         // ── Tagline ──
         val tagline = JLabel(I18n.tr("welcome.subtitle")).apply {
             font = font.deriveFont(Font.PLAIN, 12f)
-            foreground = JBColor(0x888888, 0x999999)
+            foreground = JBColor(0x000000, 0xBBBBBB)
             alignmentX = Component.CENTER_ALIGNMENT
         }
         content.add(tagline)
@@ -77,7 +87,7 @@ class WelcomePanel : JPanel(BorderLayout()) {
         // ── Quick tips section ──
         val tipsTitle = JLabel(I18n.tr("welcome.quickstart")).apply {
             font = font.deriveFont(Font.BOLD, 13f)
-            foreground = JBColor(0x333333, 0xBBBBBB)
+            foreground = JBColor(0x000000, 0xBBBBBB)
             alignmentX = Component.CENTER_ALIGNMENT
         }
         content.add(tipsTitle)
@@ -104,7 +114,7 @@ class WelcomePanel : JPanel(BorderLayout()) {
         // ── Version info ──
         val versionLabel = JLabel(I18n.tr("welcome.version") + "${PluginVersion.current}").apply {
             font = font.deriveFont(Font.PLAIN, 10f)
-            foreground = JBColor(0xAAAAAA, 0x666666)
+            foreground = JBColor(0x000000, 0x999999)
             alignmentX = Component.CENTER_ALIGNMENT
         }
         content.add(versionLabel)
@@ -130,7 +140,7 @@ class WelcomePanel : JPanel(BorderLayout()) {
 
         val descLabel = JLabel(tip.description).apply {
             font = font.deriveFont(Font.PLAIN, 12f)
-            foreground = JBColor(0x555555, 0xAAAAAA)
+            foreground = JBColor(0x000000, 0xAAAAAA)
         }
         row.add(descLabel)
 

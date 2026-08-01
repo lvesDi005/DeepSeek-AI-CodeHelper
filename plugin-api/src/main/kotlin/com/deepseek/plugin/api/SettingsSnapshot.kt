@@ -17,6 +17,9 @@ data class SettingsSnapshot(
     val openrouterApiKey: String,
     val openrouterModel: String,
     val openrouterBaseUrl: String,
+    val zhipuApiKey: String,
+    val zhipuModel: String,
+    val zhipuBaseUrl: String,
 )
 
 /** 根据 Provider 类型从快照中提取 API Key */
@@ -25,6 +28,7 @@ fun SettingsSnapshot.resolveApiKey(): String = when (provider) {
     "agnes" -> agnesApiKey
     "nvidia" -> nvidiaApiKey
     "openrouter" -> openrouterApiKey
+    "zhipu" -> zhipuApiKey
     else -> apiKey
 }
 
@@ -34,6 +38,7 @@ fun SettingsSnapshot.resolveBaseUrl(): String = when (provider) {
     "agnes" -> agnesBaseUrl.trimEnd('/')
     "nvidia" -> nvidiaBaseUrl.trimEnd('/')
     "openrouter" -> openrouterBaseUrl.trimEnd('/')
+    "zhipu" -> zhipuBaseUrl.trimEnd('/')
     else -> "https://api.deepseek.com/v1"
 }
 
@@ -43,5 +48,6 @@ fun SettingsSnapshot.resolveModel(): String = when (provider) {
     "agnes" -> agnesModel.ifBlank { "agnes-2.5-flash" }
     "nvidia" -> nvidiaModel.ifBlank { "z-ai/glm-5.2" }
     "openrouter" -> openrouterModel.ifBlank { "inclusionai/ling-3.0-flash:free" }
+    "zhipu" -> zhipuModel.ifBlank { "glm-4" }
     else -> model
 }

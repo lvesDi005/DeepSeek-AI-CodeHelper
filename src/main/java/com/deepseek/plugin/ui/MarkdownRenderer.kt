@@ -58,6 +58,9 @@ object MarkdownRenderer {
         val pane = JEditorPane("text/html", html).apply {
             isEditable = false
             isOpaque = bgColor != null
+            // 显式设置前景色：确保 refreshFont 等读取 pane.foreground 时用插件主题色，
+            // 避免 fallback 到 JBColor.foreground()（跟随 IDE，插件深色+IDE浅色时正文变深）
+            foreground = fgColor
             background = bgColor ?: java.awt.Color(0, 0, 0, 0) // transparent
             putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, true)
             font = font.deriveFont(fontSize.toFloat())
@@ -80,11 +83,29 @@ object MarkdownRenderer {
     }
 
     /**
+     * 更新已渲染 [JEditorPane] 的字体大小。
+     *
+     * 仅设置 pane.font 是不够的 — HTML 内容由 [StyleSheet] 的 CSS 规则驱动
+     * （`body { font-size: XXpt }`），CSS 优先级高于 JEditorPane 的 font 属性。
+     * 因此需用新字号重建 StyleSheet，已生成内容才能即时变化。
+     */
+    fun refreshFont(pane: JEditorPane, fontSize: Int) {
+        pane.font = pane.font.deriveFont(fontSize.toFloat())
+        val kit = pane.editorKit as? HTMLEditorKit
+        if (kit != null) {
+            kit.styleSheet = createStyleSheet(fontSize, pane.foreground ?: PluginTheme.textPrimary())
+            pane.revalidate()
+            pane.repaint()
+        }
+    }
+
+    /**
      * Convert Markdown text to an HTML string suitable for embedding in a
      * JEditorPane. Produces a full <html><body>...</body></html> document.
      */
     fun toHtml(markdownText: String): String {
         val flavour = CommonMarkFlavourDescriptor()
+        @Suppress("DEPRECATION")
         val parsedTree = MarkdownParser(flavour).buildMarkdownTreeFromString(markdownText)
         val generator = HtmlGenerator(markdownText, parsedTree, flavour, false)
         return generator.generateHtml()
@@ -161,21 +182,28 @@ object MarkdownRenderer {
     private fun createStyleSheet(fontSize: Int, fgColor: java.awt.Color): StyleSheet {
         val ss = StyleSheet()
         val hexFg = toHex(fgColor)
-        val codeBg = toHex(JBColor(0xE8E8E8, 0x33333A))
-        val codeFg = toHex(JBColor(0x1976D2, 0x7CB7FF))
-        val linkColor = toHex(JBColor(0x1A73E8, 0x64B5F6))
+        val hexHeading = toHex(PluginTheme.textHeading())
+        val hexBorder = toHex(PluginTheme.border())
+        val codeBg = toHex(PluginTheme.color(0xE8E8E8, 0x33333A))
+        val codeFg = toHex(PluginTheme.color(0x1976D2, 0x7CB7FF))
+        val linkColor = toHex(PluginTheme.link())
 
         ss.addRule("body { font-family: sans-serif; font-size: ${fontSize}pt; color: $hexFg; margin: 0; padding: 0; text-align: left; }")
         ss.addRule("p { margin: 0 0 6px 0; padding: 0; text-align: left; }")
-        ss.addRule("h1, h2, h3, h4, h5, h6 { margin: 10px 0 4px 0; margin-left: 0; padding-left: 0; font-weight: bold; text-align: left; }")
-        ss.addRule("ul, ol { margin: 2px 0 6px 0; padding-left: 22px; }")
-        ss.addRule("li { margin: 2px 0; }")
+        // 次级标题：跟随主题高对比（#111111/#F2F2F2 加粗），禁止浅灰淡字
+        ss.addRule("h1, h2, h3, h4, h5, h6 { margin: 10px 0 4px 0; margin-left: 0; padding-left: 0; font-weight: bold; color: $hexHeading; text-align: left; }")
+        ss.addRule("ul, ol { margin: 2px 0 6px 0; padding-left: 22px; color: $hexFg; }")
+        // 列表项显式继承正文高对比色：Swing HTML 渲染中 li 不总是继承 body 颜色，需显式指定，防止浅灰小字
+        ss.addRule("li { margin: 2px 0; color: $hexFg; }")
+        // 防御：即使内容含 small/sub/sup，也强制正文级字号与对比度，禁止缩小淡化
+        ss.addRule("small, sub, sup { font-size: inherit; color: $hexFg; }")
         ss.addRule("a { color: $linkColor; text-decoration: underline; }")
         // 内联代码：等宽 + 底色 + 颜色有别于正文，使其从中文中脱颖而出
         ss.addRule("code { font-family: monospace; font-size: ${fontSize - 1}pt; background-color: $codeBg; color: $codeFg; padding: 1px 4px; }")
         ss.addRule("pre { background-color: transparent; padding: 0; margin: 0; }")
-        ss.addRule("blockquote { margin: 4px 0; padding: 2px 10px; border-left: 3px solid #DDD; color: #888; }")
-        ss.addRule("hr { border: none; border-top: 1px solid #E0E0E0; margin: 10px 0; }")
+        // 引用块：正文标准对比度（不淡化），用左边框区分模块
+        ss.addRule("blockquote { margin: 4px 0; padding: 2px 10px; border-left: 3px solid $hexBorder; color: $hexFg; }")
+        ss.addRule("hr { border: none; border-top: 1px solid $hexBorder; margin: 10px 0; }")
         ss.addRule("strong { font-weight: bold; }")
         ss.addRule("em { font-style: italic; }")
         return ss

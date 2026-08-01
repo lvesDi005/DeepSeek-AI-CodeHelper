@@ -2,6 +2,7 @@ package com.deepseek.plugin.ui
 
 import com.deepseek.plugin.chat.ChatPanel
 import com.deepseek.plugin.i18n.I18n
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.JBColor
@@ -61,6 +62,7 @@ class ChangelogDialog(
         }
 
         init()
+
     }
 
     override fun createCenterPanel(): JComponent {
@@ -89,7 +91,7 @@ class ChangelogDialog(
 
         val titleLabel = JLabel().apply {
             font = font.deriveFont(Font.BOLD, 16f)
-            foreground = JBColor(0x1A1A1A, 0xE0E0E0)
+            foreground = JBColor(0x000000, 0xE0E0E0)
             alignmentX = Component.LEFT_ALIGNMENT
         }
         titleLabel.name = "titleLabel"
@@ -98,7 +100,7 @@ class ChangelogDialog(
 
         val versionLabel = JLabel().apply {
             font = font.deriveFont(Font.PLAIN, 11f)
-            foreground = JBColor(0x888888, 0x999999)
+            foreground = JBColor(0x000000, 0xBBBBBB)
             alignmentX = Component.LEFT_ALIGNMENT
         }
         versionLabel.name = "versionLabel"

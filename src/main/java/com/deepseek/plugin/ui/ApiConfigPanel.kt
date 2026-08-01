@@ -34,6 +34,9 @@ class ApiConfigPanel : JPanel(BorderLayout()) {
     private var openrouterApiKeyField: JBPasswordField? = null
     private var openrouterModelComboBox: com.intellij.openapi.ui.ComboBox<String>? = null
     private var openrouterBaseUrlField: JBTextField? = null
+    private var zhipuApiKeyField: JBPasswordField? = null
+    private var zhipuModelField: JBTextField? = null
+    private var zhipuBaseUrlField: JBTextField? = null
 
     init {
         isOpaque = false
@@ -41,7 +44,7 @@ class ApiConfigPanel : JPanel(BorderLayout()) {
         val form = panel {
             group(I18n.tr("api.group.title")) {
                 row(I18n.tr("api.provider")) {
-                    providerComboBox = comboBox<String>(listOf("deepseek", "agnes", "nvidia", "openrouter"))
+                    providerComboBox = comboBox<String>(listOf("deepseek", "agnes", "nvidia", "openrouter", "zhipu"))
                         .apply {
                             component.selectedItem = settings.provider
                             component.addActionListener { saveSettings() }
@@ -197,6 +200,41 @@ class ApiConfigPanel : JPanel(BorderLayout()) {
                         comment("https://openrouter.ai/api/v1")
                     }
                 }
+                group(I18n.tr("api.zhipu.group")) {
+                    row(I18n.tr("api.zhipu.key")) {
+                        zhipuApiKeyField = cell(JBPasswordField().apply {
+                            columns = 50
+                            text = settings.zhipuApiKey
+                            font = JBUI.Fonts.label()
+                            addFocusListener(object : FocusAdapter() {
+                                override fun focusLost(e: FocusEvent) { saveSettings() }
+                            })
+                        }).component as JBPasswordField
+                        comment("<a href='https://www.bigmodel.cn'>open.bigmodel.cn</a>")
+                    }
+                    row(I18n.tr("api.zhipu.model")) {
+                        zhipuModelField = cell(JBTextField().apply {
+                            columns = 30
+                            text = settings.zhipuModel
+                            font = JBUI.Fonts.label()
+                            addFocusListener(object : FocusAdapter() {
+                                override fun focusLost(e: FocusEvent) { saveSettings() }
+                            })
+                        }).component as JBTextField
+                        comment(I18n.tr("api.zhipu.model.comment"))
+                    }
+                    row(I18n.tr("api.zhipu.base.url")) {
+                        zhipuBaseUrlField = cell(JBTextField().apply {
+                            columns = 40
+                            text = settings.zhipuBaseUrl
+                            font = JBUI.Fonts.label()
+                            addFocusListener(object : FocusAdapter() {
+                                override fun focusLost(e: FocusEvent) { saveSettings() }
+                            })
+                        }).component as JBTextField
+                        comment("https://open.bigmodel.cn/api/paas/v4")
+                    }
+                }
             }
         }
 
@@ -218,5 +256,8 @@ class ApiConfigPanel : JPanel(BorderLayout()) {
         settings.openrouterApiKey = openrouterApiKeyField?.password?.let { String(it) } ?: ""
         settings.openrouterModel = openrouterModelComboBox?.selectedItem as? String ?: "inclusionai/ling-3.0-flash:free"
         settings.openrouterBaseUrl = openrouterBaseUrlField?.text ?: "https://openrouter.ai/api/v1"
+        settings.zhipuApiKey = zhipuApiKeyField?.password?.let { String(it) } ?: ""
+        settings.zhipuModel = zhipuModelField?.text ?: "glm-4"
+        settings.zhipuBaseUrl = zhipuBaseUrlField?.text ?: "https://open.bigmodel.cn/api/paas/v4"
     }
 }

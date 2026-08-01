@@ -146,9 +146,9 @@ class MessageBubble(
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
         val arc = 18
         val b = contentPanel.bounds
-        g2.color = JBColor(0xF8F9FA, 0x24242A)
+        g2.color = PluginTheme.background()
         g2.fillRoundRect(b.x, b.y, b.width, b.height, arc, arc)
-        g2.color = JBColor(0xE8EAED, 0x3A3A3A)
+        g2.color = PluginTheme.color(0xE8EAED, 0x3A3A3A)
         g2.drawRoundRect(b.x, b.y, b.width, b.height, arc, arc)
         g2.dispose()
     }
@@ -179,7 +179,7 @@ class MessageBubble(
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
                 g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
                 val size = minOf(width, height)
-                g2.color = JBColor(0x7C3AED, 0x7C3AED)
+                g2.color = PluginTheme.color(0x7C3AED, 0x7C3AED)
                 g2.fillOval(0, 0, size, size)
                 val padding = 4
                 val targetSize = size - padding * 2
@@ -208,7 +208,7 @@ class MessageBubble(
         // ── 时间戳 ──
         val timeLabel = JLabel(timestamp).apply {
             font = font.deriveFont(Font.PLAIN, 11f)
-            foreground = JBColor(0x666666, 0x888888)
+            foreground = PluginTheme.textMuted()
         }
 
         // ── 删除按钮（InplaceButton：原生 hover 高亮 + 点击反馈）
@@ -225,8 +225,8 @@ class MessageBubble(
             isOpaque = false
             add(avatar)
             val nameLabel = JLabel(I18n.tr("bubble.me")).apply {
-                font = font.deriveFont(Font.PLAIN, 12f)
-                foreground = JBColor(0x888888, 0xAAAAAA)
+                font = font.deriveFont(Font.BOLD, 12f)
+                foreground = PluginTheme.textHeading()
             }
             add(nameLabel)
             add(timeLabel)
@@ -246,9 +246,9 @@ class MessageBubble(
             for (tab in fileTabs) {
                 val tabLabel = JLabel("\u2615 " + tab).apply {
                     font = font.deriveFont(Font.PLAIN, 11f)
-                    foreground = JBColor(0x666666, 0x999999)
+                    foreground = PluginTheme.textPrimary()
                     border = BorderFactory.createCompoundBorder(
-                        BorderFactory.createLineBorder(JBColor(0xE0E0E0, 0x444444), 1),
+                        BorderFactory.createLineBorder(PluginTheme.border(), 1),
                         EmptyBorder(2, 8, 2, 8)
                     )
                 }
@@ -261,7 +261,7 @@ class MessageBubble(
         val divider = JPanel().apply {
             preferredSize = Dimension(1, 1)
             maximumSize = Dimension(Int.MAX_VALUE, 1)
-            background = JBColor(0xE8E8E8, 0x3A3A3A)
+            background = PluginTheme.border()
             isOpaque = true
         }
 
@@ -273,7 +273,7 @@ class MessageBubble(
             lineWrap = true
             wrapStyleWord = true
             font = font.deriveFont(Font.PLAIN, DeepSeekSettings.instance.contentFontSize.toFloat())
-            foreground = JBColor(0x1A1A1A, 0xE0E0E0)
+            foreground = PluginTheme.textPrimary()
             background = Color(0, 0, 0, 0)
             highlighter = null
             caretColor = Color(0, 0, 0, 0)
@@ -328,7 +328,7 @@ class MessageBubble(
                     val mdPane = MarkdownRenderer.createPane(
                         markdownText = seg.content,
                         fontSize = contentFontSize,
-                        fgColor = JBColor(0x1A1A1A, 0xE0E0E0),
+                        fgColor = PluginTheme.textPrimary(),
                         bgColor = null
                     ).apply {
                         alignmentX = Component.LEFT_ALIGNMENT
@@ -403,9 +403,9 @@ class MessageBubble(
             wrapStyleWord = true
             font = JBUI.Fonts.create("SansSerif", (DeepSeekSettings.instance.contentFontSize - 1).coerceAtLeast(10))
             margin = JBUI.insets(8, 10, 8, 10)
-            border = JBUI.Borders.customLine(JBColor(0xD0D0D0, 0x444444), 1)
-            background = JBColor(0xF0F0F0, 0x2A2A2A)
-            foreground = JBColor(0x666666, 0x999999)
+            border = JBUI.Borders.customLine(PluginTheme.border(), 1)
+            background = PluginTheme.color(0xF5F5F5, 0x262626)
+            foreground = PluginTheme.textPrimary()
             isOpaque = true
             isVisible = false
         }
@@ -413,10 +413,11 @@ class MessageBubble(
         // ── 头部行：▶ 思考过程  共 xxx 字 ──
         val toggleArrow = JLabel("\u25B6") // ▶ (collapsed)
         toggleArrow.font = toggleArrow.font.deriveFont(10f)
+        toggleArrow.foreground = PluginTheme.textHeading()
 
         val titleLabel = JLabel(I18n.tr("bubble.reasoning")).apply {
-            font = font.deriveFont(Font.PLAIN, 11f)
-            foreground = JBColor(0x888888, 0xAAAAAA)
+            font = font.deriveFont(Font.BOLD, 11f)
+            foreground = PluginTheme.textHeading()
         }
 
         val headerPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 2)).apply {
@@ -469,7 +470,7 @@ class MessageBubble(
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
                 g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
                 val size = minOf(width, height)
-                g2.color = JBColor(0x7C3AED, 0x7C3AED)
+                g2.color = PluginTheme.color(0x7C3AED, 0x7C3AED)
                 g2.fillOval(0, 0, size, size)
                 val padding = 3
                 val targetSize = size - padding * 2
@@ -494,8 +495,8 @@ class MessageBubble(
     private fun createModernHeader(): JPanel {
         val ringIcon = createRingIcon()
         val nameLabel = JLabel(I18n.tr("bubble.dp.helper")).apply {
-            font = font.deriveFont(Font.PLAIN, 12f)
-            foreground = JBColor(0x888888, 0xAAAAAA)
+            font = font.deriveFont(Font.BOLD, 12f)
+            foreground = PluginTheme.textHeading()
         }
         return JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
             isOpaque = false
@@ -512,12 +513,12 @@ class MessageBubble(
     private fun setupStreamingArea() {
         val ringIcon = createRingIcon()
         val nameLabel = JLabel(I18n.tr("bubble.dp.helper")).apply {
-            font = font.deriveFont(Font.PLAIN, 12f)
-            foreground = JBColor(0x888888, 0xAAAAAA)
+            font = font.deriveFont(Font.BOLD, 12f)
+            foreground = PluginTheme.textHeading()
         }
         val thinkingLabel = JLabel(I18n.tr("bubble.thinking")).apply {
             font = font.deriveFont(Font.ITALIC, 10f)
-            foreground = JBColor(0x999999, 0x888888)
+            foreground = PluginTheme.textPrimary()
         }
 
         val header = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
@@ -537,7 +538,7 @@ class MessageBubble(
             background = Color(0, 0, 0, 0)
             margin = JBUI.insets(0, 0, 0, 0)
             border = EmptyBorder(0, 0, 0, 0)
-            foreground = JBColor(0x1A1A1A, 0xE0E0E0)
+            foreground = PluginTheme.textPrimary()
             (caret as DefaultCaret).updatePolicy = DefaultCaret.ALWAYS_UPDATE
             alignmentX = Component.LEFT_ALIGNMENT
             text = "... 思考中 \u25D0"

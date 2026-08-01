@@ -1,6 +1,7 @@
 package com.deepseek.plugin.ui
 
 import com.deepseek.plugin.i18n.I18n
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
@@ -9,6 +10,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
+import java.awt.Color
 import java.awt.Dimension
 import java.awt.Font
 import java.awt.GridLayout
@@ -156,7 +158,7 @@ object CodeDiffUtil {
 
             // ── 标题行 ──
             val headerPanel = JPanel(GridLayout(1, 2))
-            headerPanel.add(createHeaderLabel(I18n.tr("diff.original"), JBColor(0x666666, 0x999999)))
+            headerPanel.add(createHeaderLabel(I18n.tr("diff.original"), JBColor(0x666666, 0xBBBBBB)))
             headerPanel.add(createHeaderLabel(I18n.tr("diff.generated"), JBColor(0x4477AA, 0x6699CC)))
             panel.add(headerPanel, BorderLayout.NORTH)
 
@@ -169,7 +171,7 @@ object CodeDiffUtil {
             return panel
         }
 
-        private fun createHeaderLabel(text: String, color: JBColor): JLabel {
+        private fun createHeaderLabel(text: String, color: Color): JLabel {
             return JLabel(text).apply {
                 font = font.deriveFont(Font.BOLD, 12f)
                 foreground = color
@@ -178,13 +180,13 @@ object CodeDiffUtil {
             }
         }
 
-        private fun createCodePanel(code: String, bg: JBColor): JComponent {
+        private fun createCodePanel(code: String, bg: Color): JComponent {
             val textArea = JBTextArea(code).apply {
                 isEditable = false
                 lineWrap = false
                 font = JBUI.Fonts.create("Monospaced", 12)
                 background = bg
-                foreground = JBColor(0x333333, 0xD4D4D4)
+                foreground = JBColor(0x000000, 0xD4D4D4)
                 caretColor = foreground
                 margin = JBUI.insets(10)
                 border = JBUI.Borders.customLine(JBColor(0xCCCCCC, 0x444444), 1)
@@ -275,7 +277,7 @@ object CodeDiffUtil {
 
                 val nameLabel = JLabel(item.filePath + actionLabel).apply {
                     font = font.deriveFont(Font.BOLD, 12f)
-                    foreground = JBColor(0x333333, 0xD4D4D4)
+                    foreground = JBColor(0x000000, 0xD4D4D4)
                 }
                 headerPanel.add(nameLabel, BorderLayout.WEST)
 
@@ -316,7 +318,7 @@ object CodeDiffUtil {
 
                 // 标题行
                 val headerPanel = JPanel(GridLayout(1, 2))
-                headerPanel.add(createBatchHeaderLabel(I18n.tr("diff.original"), JBColor(0x666666, 0x999999)))
+                headerPanel.add(createBatchHeaderLabel(I18n.tr("diff.original"), JBColor(0x666666, 0xBBBBBB)))
                 headerPanel.add(createBatchHeaderLabel(I18n.tr("diff.generated"), JBColor(0x4477AA, 0x6699CC)))
                 panel.add(headerPanel, BorderLayout.NORTH)
 
@@ -329,7 +331,7 @@ object CodeDiffUtil {
                 return panel
             }
 
-            private fun createBatchHeaderLabel(text: String, color: JBColor): JLabel {
+            private fun createBatchHeaderLabel(text: String, color: Color): JLabel {
                 return JLabel(text).apply {
                     font = font.deriveFont(Font.BOLD, 11f)
                     foreground = color
@@ -338,13 +340,13 @@ object CodeDiffUtil {
                 }
             }
 
-            private fun createCodePanel(code: String, bg: JBColor): JComponent {
+            private fun createCodePanel(code: String, bg: Color): JComponent {
                 val textArea = JBTextArea(code).apply {
                     isEditable = false
                     lineWrap = false
                     font = JBUI.Fonts.create("Monospaced", 11)
                     background = bg
-                    foreground = JBColor(0x333333, 0xD4D4D4)
+                    foreground = JBColor(0x000000, 0xD4D4D4)
                     caretColor = foreground
                     margin = JBUI.insets(6)
                     border = JBUI.Borders.customLine(JBColor(0xCCCCCC, 0x444444), 1)

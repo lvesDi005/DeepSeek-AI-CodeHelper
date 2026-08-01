@@ -60,7 +60,7 @@ class AutoResizingTextArea(
         font = Font(Font.MONOSPACED, Font.PLAIN, 13)
         margin = JBUI.insets(10, 14)
         border = EmptyBorder(0, 0, 0, 0)
-        foreground = JBColor(0x1A1A1A, 0xFFFFFF)
+        foreground = JBColor(0x000000, 0xFFFFFF)
         caretColor = foreground
         selectionColor = JBColor(0x3399FF, 0x536DFE)
         selectedTextColor = JBColor.WHITE

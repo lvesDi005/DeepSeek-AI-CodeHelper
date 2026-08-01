@@ -69,12 +69,14 @@ class SessionBar(
             add(createToolbarButton(
                 icon = AllIcons.General.Add,
                 tooltip = I18n.tr("session.new"),
+                tooltipKey = "session.new",
                 onClick = onNewSession
             ))
             add(Box.createHorizontalStrut(2))
             add(createToolbarButton(
                 icon = AllIcons.Actions.GC,
                 tooltip = I18n.tr("session.clear.current"),
+                tooltipKey = "session.clear.current",
                 onClick = onClearCurrent
             ))
         }

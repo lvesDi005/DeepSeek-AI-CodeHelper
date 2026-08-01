@@ -34,11 +34,11 @@ class MessageTable(
     rows: List<List<String>>
 ) : JPanel(GridBagLayout()) {
 
-    private val gridColor = JBColor(0xCCCCCC, 0x3A3A3E)
-    private val headerBg = JBColor(0xE8E8E8, 0x2A2A30)
-    private val cellBg = JBColor(0xFCFCFC, 0x1E1E22)
-    private val headerFg = JBColor(0xE0E0E0, 0xE8E8E8)
-    private val cellFg = JBColor(0x333333, 0xCCCCCC)
+    private val gridColor = PluginTheme.border()
+    private val headerBg = PluginTheme.color(0xE8E8E8, 0x2B2B2B)
+    private val cellBg = PluginTheme.background()
+    private val headerFg = PluginTheme.textHeading()
+    private val cellFg = PluginTheme.textPrimary()
     private val cellPadding = EmptyBorder(7, 10, 7, 10)
 
     private val rowCount: Int

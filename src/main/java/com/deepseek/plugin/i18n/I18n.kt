@@ -8,8 +8,54 @@ package com.deepseek.plugin.i18n
  */
 object I18n {
 
-    /** 当前语言： "zh" 或 "en" */
+    /** clientProperty key：标记组件对应的 i18n key，用于语言切换时刷新 text/tooltip */
+    const val KEY_I18N = "deepseek.i18nKey"
+
+    /**
+     * 设置组件 tooltip 并记录其 i18n key，语言切换后可即时刷新。
+     */
+    fun tooltip(component: javax.swing.JComponent, key: String) {
+        component.toolTipText = tr(key)
+        component.putClientProperty(KEY_I18N, key)
+    }
+
+    /**
+     * 遍历组件树，刷新所有通过 [tooltip] 标记过的悬浮提示文字。
+     * 语言切换时由各面板调用。
+     */
+    fun refreshTooltips(container: java.awt.Container) {
+        fun walk(c: java.awt.Component) {
+            if (c is javax.swing.JComponent) {
+                val key = c.getClientProperty(KEY_I18N) as? String
+                if (key != null) c.toolTipText = tr(key)
+            }
+            if (c is java.awt.Container) {
+                for (i in 0 until c.componentCount) walk(c.getComponent(i))
+            }
+        }
+        walk(container)
+    }
+
+    /**
+     * 当前语言： "zh" 或 "en"。
+     * 切换时通过 MessageBus 发布 [I18nTopics.LANGUAGE_CHANGED]，
+     * 各 UI 面板订阅后即时刷新，无需重开设置面板。
+     */
     var currentLang: String = "zh"
+        set(value) {
+            val changed = field != value
+            field = value
+            if (changed) {
+                try {
+                    com.intellij.openapi.application.ApplicationManager.getApplication()
+                        .messageBus
+                        .syncPublisher(I18nTopics.LANGUAGE_CHANGED)
+                        .languageChanged()
+                } catch (_: Exception) {
+                    // 非 IDE 环境（如单元测试/工具类调用）忽略
+                }
+            }
+        }
 
     /** 根据 [currentLang] 获取 [key] 对应的翻译。找不到则返回 key 本身。 */
     fun tr(key: String, vararg args: Any?): String {
@@ -147,10 +193,15 @@ object I18n {
         "settings.image.parsing" to "图像解析",
         "settings.close" to "关闭设置",
         "settings.theme.title" to "主题设置 / Theme Settings",
+        "settings.theme.group" to "主题 / Theme",
         "settings.theme.follow" to "跟随IDEA",
         "settings.theme.dark" to "Dark 暗黑",
         "settings.theme.light" to "White 纯白",
         "settings.font.size" to "字体大小 / Font Size",
+        "settings.font.group" to "内容字体 / Content Font",
+        "settings.font.comment" to "切换后聊天面板即时刷新",
+        "settings.language.group" to "界面语言 / Interface Language",
+        "settings.language.comment" to "切换后即时生效，无需重开设置",
 
         // ── McpSettingsPanel / MCP Server ──
         "settings.mcp.server" to "MCP Server",
@@ -197,7 +248,7 @@ object I18n {
         // ── ApiConfigPanel ──
         "api.group.title" to "API Configuration (API 设置)",
         "api.provider" to "API Provider:",
-        "api.provider.comment" to "deepseek = DeepSeek API, agnes = Agnes 2.5 Flash, nvidia = NVIDIA NIM, openrouter = OpenRouter",
+        "api.provider.comment" to "deepseek = DeepSeek API, agnes = Agnes 2.5 Flash, nvidia = NVIDIA NIM, openrouter = OpenRouter, zhipu = BigModel",
         "api.deepseek.group" to "DeepSeek",
         "api.deepseek.key" to "API Key:",
         "api.deepseek.model" to "Model:",
@@ -219,6 +270,11 @@ object I18n {
         "api.openrouter.model" to "Model:",
         "api.openrouter.model.comment" to "<a href='https://openrouter.ai/models'>openrouter.ai/models</a>",
         "api.openrouter.base.url" to "Base URL:",
+        "api.zhipu.group" to "BigModel",
+        "api.zhipu.key" to "API Key:",
+        "api.zhipu.model" to "Model:",
+        "api.zhipu.model.comment" to "glm-4 / glm-4-flash / glm-4v",
+        "api.zhipu.base.url" to "Base URL:",
 
         // ── AgentPipelinePanel ──
         "pipeline.group.title" to "Agent Pipeline (Agent 流水线配置)",
@@ -533,14 +589,19 @@ object I18n {
         "settings.image.parsing" to "Image Parsing",
         "settings.close" to "Close",
         "settings.theme.title" to "Theme Settings",
+        "settings.theme.group" to "Theme",
         "settings.theme.follow" to "Follow IDE",
         "settings.theme.dark" to "Dark",
         "settings.theme.light" to "White",
         "settings.font.size" to "Font Size",
+        "settings.font.group" to "Content Font",
+        "settings.font.comment" to "Chat bubbles refresh immediately on change",
+        "settings.language.group" to "Interface Language",
+        "settings.language.comment" to "Takes effect immediately, no need to reopen settings",
 
         "api.group.title" to "API Configuration",
         "api.provider" to "API Provider:",
-        "api.provider.comment" to "deepseek = DeepSeek API, agnes = Agnes 2.5 Flash, nvidia = NVIDIA NIM, openrouter = OpenRouter",
+        "api.provider.comment" to "deepseek = DeepSeek API, agnes = Agnes 2.5 Flash, nvidia = NVIDIA NIM, openrouter = OpenRouter, zhipu = BigModel",
         "api.deepseek.group" to "DeepSeek",
         "api.deepseek.key" to "API Key:",
         "api.deepseek.model" to "Model:",
@@ -562,6 +623,11 @@ object I18n {
         "api.openrouter.model" to "Model:",
         "api.openrouter.model.comment" to "<a href='https://openrouter.ai/models'>openrouter.ai/models</a> — e.g. inclusionai/ling-3.0-flash:free",
         "api.openrouter.base.url" to "Base URL:",
+        "api.zhipu.group" to "BigModel",
+        "api.zhipu.key" to "API Key:",
+        "api.zhipu.model" to "Model:",
+        "api.zhipu.model.comment" to "glm-4 / glm-4-flash / glm-4v",
+        "api.zhipu.base.url" to "Base URL:",
 
         "pipeline.group.title" to "Agent Pipeline Configuration",
         "pipeline.phase0.provider" to "Phase 0 Intent Confirmation Provider:",

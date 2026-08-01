@@ -15,5 +15,8 @@ fun DeepSeekSettings.toSnapshot(): SettingsSnapshot = SettingsSnapshot(
     nvidiaBaseUrl = nvidiaBaseUrl,
     openrouterApiKey = openrouterApiKey,
     openrouterModel = openrouterModel,
-    openrouterBaseUrl = openrouterBaseUrl
+    openrouterBaseUrl = openrouterBaseUrl,
+    zhipuApiKey = zhipuApiKey,
+    zhipuModel = zhipuModel,
+    zhipuBaseUrl = zhipuBaseUrl,
 )

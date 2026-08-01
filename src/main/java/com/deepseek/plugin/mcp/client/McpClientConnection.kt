@@ -91,7 +91,7 @@ class McpClientConnection(
 
         sseThread = Thread({
             try {
-                val url = URL(sseUrl)
+                val url = java.net.URI.create(sseUrl).toURL()
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("Accept", "text/event-stream")
@@ -381,7 +381,7 @@ class McpClientConnection(
         val fullUrl = if (endpoint.startsWith("http")) endpoint
         else "${config.url.trimEnd('/')}$endpoint"
 
-        val url = URL(fullUrl)
+        val url = java.net.URI.create(fullUrl).toURL()
         val conn = url.openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.doOutput = true

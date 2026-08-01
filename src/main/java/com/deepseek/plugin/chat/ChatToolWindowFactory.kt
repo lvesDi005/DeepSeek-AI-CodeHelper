@@ -68,6 +68,10 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * HTML changelog content displayed in the update dialog.
          */
         private val CHANGELOG_HTML = """
+            <h3>v2.7.1</h3>
+            <ul>
+              <li>【新增】智谱配置项</li>
+            </ul>
             <h3>v2.7.0</h3>
             <ul>
               <li>切换Agnes国内可用</li>
@@ -323,6 +327,10 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * English version of the changelog HTML.
          */
         private val CHANGELOG_HTML_EN = """
+            <h3>v2.7.1</h3>
+            <ul>
+              <li>[New] Zhipu configuration options</li>
+            </ul>
             <h3>v2.7.0</h3>
             <ul>
               <li>Switch to Agnes is available in China</li>

@@ -3,6 +3,7 @@ package com.deepseek.plugin.ui
 import com.deepseek.plugin.api.ChatSession
 import com.deepseek.plugin.i18n.I18n
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.JBColor

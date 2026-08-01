@@ -22,4 +22,10 @@ interface LlmProvider {
 
     /** 是否支持 FIM 代码补全 */
     val supportsFim: Boolean get() = false
+
+    /**
+     * 固定的 temperature 值。当非 null 时，覆盖用户在设置中的配置。
+     * 用于某些模型只接受特定 temperature（如 Kimi K3 仅接受 1.0）。
+     */
+    val temperature: Double? get() = null
 }

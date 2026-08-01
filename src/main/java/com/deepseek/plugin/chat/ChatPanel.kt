@@ -2,6 +2,7 @@ package com.deepseek.plugin.chat
 
 
 
+import com.deepseek.plugin.ui.PluginTheme
 import com.deepseek.plugin.api.ChatMessage
 
 import com.deepseek.plugin.api.ChatSession
@@ -21,6 +22,10 @@ import com.deepseek.plugin.api.Usage
 import com.deepseek.plugin.chat.ChatState
 
 import com.deepseek.plugin.i18n.I18n
+import com.deepseek.plugin.i18n.ContentFontChangeListener
+import com.deepseek.plugin.i18n.I18nTopics
+import com.deepseek.plugin.i18n.LanguageChangeListener
+import com.deepseek.plugin.i18n.ThemeChangeListener
 
 import com.deepseek.plugin.context.ProjectContextProvider
 
@@ -51,6 +56,7 @@ import com.deepseek.plugin.ui.ChatInputBar
 import com.deepseek.plugin.ui.ChatToolbar
 
 import com.deepseek.plugin.ui.CodeBlockCard
+import com.deepseek.plugin.ui.MarkdownRenderer
 
 import com.deepseek.plugin.ui.FileAttachmentPreview
 
@@ -430,7 +436,35 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         border = JBUI.Borders.empty()
 
+    }.also { pane ->
+
+        // ── 自动滚动跟踪：用户向上滚动时暂停跟随生成，滚动到底部时恢复 ──
+
+        pane.verticalScrollBar.addAdjustmentListener {
+
+            val vsb = pane.verticalScrollBar
+
+            autoScrollToBottom = vsb.value + vsb.visibleAmount >= vsb.maximum - 50
+
+        }
+
     }
+
+
+
+    /**
+
+     * AI 流式生成时是否自动滚动到底部。
+
+     * 用户向上滚动查看历史时置 false（暂停跟随），
+
+     * 用户滚动到底部或发送新消息时置 true（恢复跟随）。
+
+     */
+
+    @Volatile
+
+    private var autoScrollToBottom = true
 
 
 
@@ -478,6 +512,86 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         messagesScrollPane.repaint()
 
+    }
+
+
+
+    /**
+     * 语言切换即时刷新：更新发送/停止按钮、欢迎面板等静态文案。
+     * 由 [I18nTopics.LANGUAGE_CHANGED] 事件触发。
+     */
+    private fun refreshI18nTexts() {
+        try {
+            sendStopButton.text = if (isStreaming) I18n.tr("chat.stop.enter") else I18n.tr("chat.send.enter")
+            sendStopButton.toolTipText = if (isStreaming) I18n.tr("chat.tooltip.stop") else I18n.tr("chat.tooltip.send")
+            welcomePanel.refreshTexts()
+            refreshTooltips()
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * 语言切换时遍历组件树，刷新所有通过 [I18n.tooltip] 标记过的悬浮提示文字。
+     */
+    private fun refreshTooltips() {
+        I18n.refreshTooltips(this)
+    }
+
+    /**
+     * 字体切换即时刷新：遍历消息面板，更新所有已渲染消息正文的字体大小。
+     * 由 [I18nTopics.CONTENT_FONT_CHANGED] 事件触发。
+     */
+    private fun refreshAllMessageFonts() {
+        val size = DeepSeekSettings.instance.contentFontSize
+        fun walk(c: java.awt.Component) {
+            when (c) {
+                is javax.swing.JTextArea -> if (!c.isEditable && !c.isFocusable) {
+                    c.font = c.font.deriveFont(Font.PLAIN, size.toFloat())
+                }
+                is javax.swing.JEditorPane -> if (c.contentType.startsWith("text/html")) {
+                    // 需重建 StyleSheet（CSS font-size 优先于 pane.font），否则已生成内容不变化
+                    MarkdownRenderer.refreshFont(c, size)
+                }
+            }
+            if (c is java.awt.Container) {
+                for (i in 0 until c.componentCount) walk(c.getComponent(i))
+            }
+        }
+        walk(messagesPanel)
+        messagesPanel.revalidate()
+        messagesPanel.repaint()
+    }
+
+    /**
+     * 插件主题切换即时刷新：重新渲染当前会话消息以应用新配色。
+     * 由 [I18nTopics.THEME_CHANGED] 事件触发。
+     */
+    private fun refreshThemeColors() {
+        try {
+            // 更新消息面板背景（构建时固化，需随主题刷新）
+            val msgBg = PluginTheme.color(0xFFFFFF, 0x2B2B2B)
+            messagesScrollPane.background = msgBg
+            messagesPanel.background = msgBg
+            messagesScrollPane.viewport.background = msgBg
+            messagesScrollPane.viewport.isOpaque = true
+
+            val session = currentSession()
+            messagesPanel.removeAll()
+            userMessages.clear()
+            if (session.messages.isEmpty()) {
+                showWelcome()
+                return
+            }
+            showMessages()
+            ensureMessagesFiller()
+            addMessageLabel("=== ${session.name} ===")
+            val total = session.messages.size
+            visibleStartIndex = maxOf(0, total - VISIBLE_BATCH_SIZE)
+            renderMessageRange(session, visibleStartIndex, total)
+            messagesPanel.revalidate()
+            messagesPanel.repaint()
+        } catch (_: Exception) {
+        }
     }
 
 
@@ -569,6 +683,25 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
 
     init {
+
+        // ── 订阅语言/字体/主题切换事件，实现即时刷新 ──
+        project.messageBus.connect(this).apply {
+            subscribe(I18nTopics.LANGUAGE_CHANGED, object : LanguageChangeListener {
+                override fun languageChanged() {
+                    refreshI18nTexts()
+                }
+            })
+            subscribe(I18nTopics.CONTENT_FONT_CHANGED, object : ContentFontChangeListener {
+                override fun fontChanged() {
+                    refreshAllMessageFonts()
+                }
+            })
+            subscribe(I18nTopics.THEME_CHANGED, object : ThemeChangeListener {
+                override fun themeChanged() {
+                    refreshThemeColors()
+                }
+            })
+        }
 
         // ── load saved sessions ──
 
@@ -680,13 +813,13 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
             isOpaque = true
 
-            background = JBColor(0xFFFFFF, 0x1E1E1E)
+            background = PluginTheme.color(0xFFFFFF, 0x2B2B2B)
 
         }
 
-        messagesScrollPane.background = JBColor(0xFFFFFF, 0x1E1E1E)
+        messagesScrollPane.background = PluginTheme.color(0xFFFFFF, 0x2B2B2B)
 
-        messagesPanel.background = JBColor(0xFFFFFF, 0x1E1E1E)
+        messagesPanel.background = PluginTheme.color(0xFFFFFF, 0x2B2B2B)
 
         messagesPanel.isOpaque = true
 
@@ -808,7 +941,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                     font = font.deriveFont(12f)
 
-                    foreground = JBColor(0x888888, 0xAAAAAA)
+                    foreground = JBColor(0x000000, 0xAAAAAA)
 
                     isOpaque = false
 
@@ -836,7 +969,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 // Add tooltip with dismiss hint
 
-                closeButton.toolTipText = I18n.tr("announcement.dismiss")
+                I18n.tooltip(closeButton, "announcement.dismiss")
 
             }
 
@@ -1140,7 +1273,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         }.apply {
 
-            toolTipText = I18n.tr("chat.settings")
+            I18n.tooltip(this, "chat.settings")
 
             isOpaque = false
 
@@ -1185,7 +1318,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 // ── 输出速度微调器（↑↓ 箭头切换，不弹出列表） ──
                 val speedLabel = JLabel(I18n.tr("chat.output.speed") + ":  ").apply {
                     font = font.deriveFont(11f)
-                    foreground = JBColor(0x666666, 0xAAAAAA)
+                    foreground = JBColor(0x000000, 0xAAAAAA)
                 }
                 val speedLevels = listOf(
                     I18n.tr("chat.output.speed.fastest"),
@@ -1243,7 +1376,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
     private fun createUploadButton(): JComponent {
 
-        return createSmallRoundButton(AllIcons.Actions.Upload, I18n.tr("chat.upload")) {
+        return createSmallRoundButton(AllIcons.Actions.Upload, "chat.upload") {
 
             openFileChooser()
 
@@ -1255,7 +1388,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
     private fun createTranslateButton(): JComponent {
 
-        return createSmallRoundButton(AllIcons.Actions.Preview, I18n.tr("chat.translate")) {
+        return createSmallRoundButton(AllIcons.Actions.Preview, "chat.translate") {
 
             TranslateDialog(this@ChatPanel.project).show()
 
@@ -1267,7 +1400,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
     /** 创建统一的小尺寸圆角图标按钮 */
 
-    private fun createSmallRoundButton(icon: javax.swing.Icon, tooltip: String, action: () -> Unit): JComponent {
+    private fun createSmallRoundButton(icon: javax.swing.Icon, tooltipKey: String, action: () -> Unit): JComponent {
 
         return object : JButton(icon) {
 
@@ -1289,7 +1422,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         }.apply {
 
-            toolTipText = tooltip
+            I18n.tooltip(this, tooltipKey)
 
             isOpaque = false
 
@@ -2248,7 +2381,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 isOpaque = false
 
-                foreground = JBColor(0x1A73E8, 0x64B5F6)
+                foreground = PluginTheme.color(0x1A73E8, 0x64B5F6)
 
                 font = font.deriveFont(Font.PLAIN, 11f)
 
@@ -2427,6 +2560,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         if (text.isEmpty() && !hasAttachments) return
 
         if (isStreaming) return
+
+        // 发送新消息：恢复自动滚动跟随新回复
+        autoScrollToBottom = true
 
 
 
@@ -2620,7 +2756,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
             font = font.deriveFont(Font.ITALIC, 11f)
 
-            foreground = JBColor(0x888888, 0x999999)
+            foreground = PluginTheme.textPrimary()
 
             border = JBUI.Borders.empty(4, 16, 4, 16)
 
@@ -5132,6 +5268,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
     internal fun scrollToBottom() {
 
+        // 用户已向上滚动查看历史：不强制拉回底部
+        if (!autoScrollToBottom) return
+
         // 确保布局更新，使滚动条值准确
         messagesScrollPane.validate()
 
@@ -5193,7 +5332,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
             font = JBUI.Fonts.create("Monospaced", 12)
 
-            foreground = JBColor(0x666666, 0x999999)
+            foreground = PluginTheme.textPrimary()
 
             background = messagesPanel.background
 
@@ -5659,7 +5798,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
             font = JBUI.Fonts.create("Monospaced", 12)
 
-            foreground = JBColor(0x666666, 0x999999)
+            foreground = PluginTheme.textPrimary()
 
             background = messagesPanel.background
 

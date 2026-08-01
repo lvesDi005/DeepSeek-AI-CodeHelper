@@ -59,6 +59,11 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
     var openrouterModel: String = "inclusionai/ling-3.0-flash:free"
     var openrouterBaseUrl: String = "https://openrouter.ai/api/v1"
 
+    // 智谱 AI GLM 配置
+    var zhipuApiKey: String = ""
+    var zhipuModel: String = "glm-4"
+    var zhipuBaseUrl: String = "https://open.bigmodel.cn/api/paas/v4"
+
     // 图片解析配置
     var imageParsingModel: String = "agnes"         // "agnes" | "stepfun" | "nvidia"
     var stepFunApiKey: String = ""                  // 仅 StepFun 需要独立密钥
@@ -74,6 +79,9 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
 
     // 内容展示字号（聊天正文、Markdown、流式输出等）: 12~16
     var contentFontSize: Int = 13
+
+    // 插件独立主题：follow=跟随 IDE / dark=固定深色 / light=固定浅色（不影响 IDE 全局主题）
+    var pluginTheme: String = "follow"
 
     // Agentic Search 配置
     var agenticSearchEnabled: Boolean = true   // 是否启用 Agentic Search（替代 RAG 的代码搜索）

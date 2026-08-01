@@ -87,6 +87,7 @@ class SkillSettingsPanel(
             val closeButton = createToolbarButton(
                 icon = AllIcons.Actions.Close,
                 tooltip = I18n.tr("skill.back"),
+                tooltipKey = "skill.back",
                 onClick = { onClose() }
             )
             titleRow.add(closeButton, BorderLayout.EAST)
@@ -426,6 +427,7 @@ class SkillSettingsPanel(
         val viewButton = createToolbarButton(
             icon = AllIcons.Actions.Preview,
             tooltip = I18n.tr("skill.preview"),
+            tooltipKey = "skill.preview",
             size = 28,
             onClick = { showSkillPreview(skill) }
         )
@@ -434,6 +436,7 @@ class SkillSettingsPanel(
         val deleteButton = createToolbarButton(
             icon = AllIcons.Actions.GC,
             tooltip = I18n.tr("skill.delete"),
+            tooltipKey = "skill.delete",
             size = 28,
             onClick = {
                 val confirm = Messages.showYesNoDialog(

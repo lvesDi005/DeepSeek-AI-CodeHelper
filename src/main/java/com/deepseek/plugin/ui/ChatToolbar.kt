@@ -38,16 +38,19 @@ class ChatToolbar(
         rightPanel.add(createToolbarButton(
             icon = AllIcons.Actions.Find,
             tooltip = I18n.tr("toolbar.history"),
+            tooltipKey = "toolbar.history",
             onClick = onShowHistory
         ))
         rightPanel.add(createToolbarButton(
             icon = AllIcons.Vcs.History,
             tooltip = I18n.tr("toolbar.change.management"),
+            tooltipKey = "toolbar.change.management",
             onClick = onShowChangeManagement
         ))
         rightPanel.add(createToolbarButton(
             icon = AllIcons.General.Settings,
             tooltip = I18n.tr("toolbar.settings"),
+            tooltipKey = "toolbar.settings",
             onClick = onShowSettings
         ))
         add(rightPanel, BorderLayout.EAST)

@@ -31,6 +31,12 @@ class McpServerService {
     init {
         // Schedule startup after IDE is fully initialized
         ApplicationManager.getApplication().invokeLater {
+            // 注册插件主题的 IDE 主题监听（FOLLOW 模式跟随 IDE）
+            try {
+                com.deepseek.plugin.ui.PluginTheme.ensureIdeThemeListener()
+            } catch (e: Exception) {
+                logger.warn("PluginTheme IDE listener init failed", e)
+            }
             onAppStarted()
             try {
                 ExternalMcpManager.getInstance().connectAll()

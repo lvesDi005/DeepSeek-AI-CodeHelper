@@ -64,6 +64,7 @@ class SelectedCodePreview(
             val dismissBtn = createToolbarButton(
                 icon = AllIcons.Actions.Close,
                 tooltip = I18n.tr("selected.code.remove"),
+                tooltipKey = "selected.code.remove",
                 size = 16,
                 onClick = onDismiss
             )
