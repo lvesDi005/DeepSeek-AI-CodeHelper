@@ -2,6 +2,7 @@ package com.deepseek.plugin.ui
 
 import com.deepseek.plugin.i18n.I18n
 import com.deepseek.plugin.settings.DeepSeekSettings
+import com.deepseek.plugin.settings.toSnapshot
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.*
@@ -44,7 +45,7 @@ class ApiConfigPanel : JPanel(BorderLayout()) {
         val form = panel {
             group(I18n.tr("api.group.title")) {
                 row(I18n.tr("api.provider")) {
-                    providerComboBox = comboBox<String>(listOf("deepseek", "agnes", "nvidia", "openrouter", "zhipu"))
+                    providerComboBox = comboBox<String>(listOf("deepseek", "agnes", "nvidia", "openrouter", "zhipu", "anthropic", "codex"))
                         .apply {
                             component.selectedItem = settings.provider
                             component.addActionListener { saveSettings() }

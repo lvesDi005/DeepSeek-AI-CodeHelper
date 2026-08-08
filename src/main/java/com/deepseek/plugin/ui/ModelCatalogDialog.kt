@@ -42,6 +42,15 @@ class ModelCatalogDialog : DialogWrapper(true) {
         ModelEntry("zhipu", "BigModel", "glm-4", "GLM-4 通用模型，适合日常对话与代码"),
         ModelEntry("zhipu", "BigModel", "glm-4-flash", "GLM-4-Flash 轻量快速版"),
         ModelEntry("zhipu", "BigModel", "glm-4v", "GLM-4V 多模态视觉版"),
+        // Claude (Anthropic)
+        ModelEntry("anthropic", "Claude (Anthropic)", "claude-sonnet-4-5", "Claude Sonnet 4.5 均衡性能，适合编码与对话"),
+        ModelEntry("anthropic", "Claude (Anthropic)", "claude-opus-4-5", "Claude Opus 4.5 最强推理，适合复杂任务"),
+        ModelEntry("anthropic", "Claude (Anthropic)", "claude-3-5-haiku-20241022", "Haiku 轻量快速，低成本"),
+        // Codex (OpenAI)
+        ModelEntry("codex", "Codex (OpenAI)", "gpt-5.2-codex", "Codex 默认模型，适合编码与 Agent 任务"),
+        ModelEntry("codex", "Codex (OpenAI)", "gpt-5.1-codex", "Codex 迭代版本，推理更强"),
+        ModelEntry("codex", "Codex (OpenAI)", "gpt-5-codex", "Codex 标准版"),
+        ModelEntry("codex", "Codex (OpenAI)", "gpt-4o", "通用多模态模型"),
         ModelEntry("openrouter", "OpenRouter", "poolside/laguna-xs-2.1:free", "Poolside Laguna XS 免费版，适合代码生成")
     )
 

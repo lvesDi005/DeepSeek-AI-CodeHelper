@@ -5,6 +5,8 @@ import com.deepseek.plugin.api.TriggerMode
 import com.deepseek.plugin.settings.DeepSeekSettings
 import com.deepseek.plugin.settings.toSnapshot
 import com.google.gson.Gson
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
@@ -19,6 +21,9 @@ class DeepSeekApiClient {
     companion object {
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
         private val gson = Gson()
+
+        /** Anthropic Messages API 版本头 */
+        private const val ANTHROPIC_API_VERSION = "2023-06-01"
 
         /** 最大重试次数 */
         private const val MAX_RETRIES = 2
@@ -112,7 +117,8 @@ class DeepSeekApiClient {
             model = prov.model(settings.toSnapshot()),
             temperature = temp,
             maxTokens = settings.maxTokens,
-            messages = messages
+            messages = messages,
+            protocol = prov.protocol
         )
     }
 
@@ -125,11 +131,16 @@ class DeepSeekApiClient {
         model: String,
         temperature: Double = 0.7,
         maxTokens: Int = 4096,
-        messages: List<ChatMessage>
+        messages: List<ChatMessage>,
+        protocol: String = "openai"
     ): Result<String> {
         // H3: 请求限流检查
         if (!HttpClientProvider.chatRateLimiter.tryAcquire()) {
             return Result.failure(RateLimitException())
+        }
+        // Anthropic 原生 Messages API 协议（cc-switch 等第三方 Anthropic 兼容中转）
+        if (protocol == "anthropic") {
+            return anthropicChatSync(baseUrl, apiKey, model, temperature, maxTokens, messages)
         }
         return retryWithBackoff {
             val request = ChatRequest(
@@ -195,6 +206,7 @@ class DeepSeekApiClient {
             temperature = temp,
             maxTokens = settings.maxTokens,
             messages = messages,
+            protocol = prov.protocol,
             onToken = onToken,
             onComplete = onComplete,
             onError = onError,
@@ -218,6 +230,7 @@ class DeepSeekApiClient {
         temperature: Double = 0.7,
         maxTokens: Int = 4096,
         messages: List<ChatMessage>,
+        protocol: String = "openai",
         onToken: (String) -> Unit,
         onComplete: (fullResponse: String, usage: Usage?) -> Unit,
         onError: (Throwable) -> Unit,
@@ -230,6 +243,21 @@ class DeepSeekApiClient {
                 override fun cancel() {}
                 override fun request() = Request.Builder().url("$baseUrl/chat/completions").build()
             }
+        }
+        // Anthropic 原生 Messages API 协议（cc-switch 等第三方 Anthropic 兼容中转）
+        if (protocol == "anthropic") {
+            return anthropicChatStream(
+                baseUrl = baseUrl,
+                apiKey = apiKey,
+                model = model,
+                temperature = temperature,
+                maxTokens = maxTokens,
+                messages = messages,
+                onToken = onToken,
+                onComplete = onComplete,
+                onError = onError,
+                onReasoningToken = onReasoningToken
+            )
         }
         val request = ChatRequest(
             model = model,
@@ -534,6 +562,184 @@ class DeepSeekApiClient {
         } catch (e: IOException) {
             Result.failure(e)
         }
+    }
+
+    // ============ Anthropic 原生 Messages API（cc-switch 等 Anthropic 兼容中转） ============
+
+    /** Anthropic Messages API 端点 URL：{base}/v1/messages（baseUrl 可能已含 /v1 后缀） */
+    private fun anthropicMessagesUrl(baseUrl: String): String {
+        val base = baseUrl.trimEnd('/').removeSuffix("/v1")
+        return "$base/v1/messages"
+    }
+
+    /** 构造 Anthropic Messages API 请求体（system 拆为顶层字段，role 仅 user/assistant） */
+    private fun buildAnthropicBody(
+        model: String,
+        messages: List<ChatMessage>,
+        temperature: Double,
+        maxTokens: Int,
+        stream: Boolean
+    ): String {
+        val system = messages.filter { it.role == "system" }.joinToString("\n") { it.content }
+        val msgs = JsonArray().apply {
+            messages.filter { it.role != "system" }.forEach {
+                add(JsonObject().apply {
+                    addProperty("role", it.role)
+                    addProperty("content", it.content)
+                })
+            }
+        }
+        val obj = JsonObject().apply {
+            addProperty("model", mapAnthropicModel(model))
+            addProperty("max_tokens", maxTokens)
+            if (system.isNotBlank()) addProperty("system", system)
+            // Anthropic 不接受 temperature=0，且范围 0~1
+            if (temperature in 0.01..1.0) addProperty("temperature", temperature)
+            addProperty("stream", stream)
+            add("messages", msgs)
+        }
+        return obj.toString()
+    }
+
+    /** 按 cc-switch / Claude Code 约定映射模型名（ANTHROPIC_DEFAULT_*_MODEL → 实际模型） */
+    private fun mapAnthropicModel(model: String): String {
+        val lower = model.lowercase()
+        val key = when {
+            lower.contains("sonnet") -> "sonnet"
+            lower.contains("haiku") -> "haiku"
+            lower.contains("opus") -> "opus"
+            else -> null
+        }
+        return key?.let { readClaudeModelMapping()[it] } ?: model
+    }
+
+    /** Anthropic 原生 Messages API 同步调用 */
+    private fun anthropicChatSync(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        temperature: Double,
+        maxTokens: Int,
+        messages: List<ChatMessage>
+    ): Result<String> {
+        val body = buildAnthropicBody(model, messages, temperature, maxTokens, stream = false)
+        val httpRequest = Request.Builder()
+            .url(anthropicMessagesUrl(baseUrl))
+            .header("x-api-key", apiKey)
+            .header("anthropic-version", ANTHROPIC_API_VERSION)
+            .header("Content-Type", "application/json")
+            .post(body.toRequestBody(JSON_MEDIA))
+            .build()
+
+        return retryWithBackoff {
+            try {
+                syncClient.newCall(httpRequest).execute().use { response ->
+                    val responseBody = response.body?.string() ?: ""
+                    if (!response.isSuccessful) {
+                        val errMsg = tryParseError(responseBody, response.code)
+                        val ex = if (response.code == 429) {
+                            RateLimitException()
+                        } else {
+                            ApiException("API error ${response.code}: $errMsg", httpCode = response.code)
+                        }
+                        Result.failure(ex)
+                    } else {
+                        val obj = gson.fromJson(responseBody, JsonObject::class.java)
+                        val content = obj.getAsJsonArray("content")
+                            ?.mapNotNull { it.asJsonObject.get("text")?.asString }
+                            ?.joinToString("") ?: ""
+                        Result.success(content)
+                    }
+                }
+            } catch (e: IOException) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    /** Anthropic 原生 Messages API 流式调用（SSE：content_block_delta → delta.text / delta.thinking） */
+    private fun anthropicChatStream(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        temperature: Double,
+        maxTokens: Int,
+        messages: List<ChatMessage>,
+        onToken: (String) -> Unit,
+        onComplete: (fullResponse: String, usage: Usage?) -> Unit,
+        onError: (Throwable) -> Unit,
+        onReasoningToken: ((String) -> Unit)?
+    ): EventSource {
+        val body = buildAnthropicBody(model, messages, temperature, maxTokens, stream = true)
+        val httpRequest = Request.Builder()
+            .url(anthropicMessagesUrl(baseUrl))
+            .header("x-api-key", apiKey)
+            .header("anthropic-version", ANTHROPIC_API_VERSION)
+            .header("Content-Type", "application/json")
+            .post(body.toRequestBody(JSON_MEDIA))
+            .build()
+
+        val factory = EventSources.createFactory(streamClient)
+        val fullResponse = StringBuilder()
+        var lastUsage: Usage? = null
+        var completed = false
+
+        return factory.newEventSource(httpRequest, object : EventSourceListener() {
+            override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
+                try {
+                    val obj = gson.fromJson(data, JsonObject::class.java) ?: return
+                    when (obj.get("type")?.asString) {
+                        "content_block_delta" -> {
+                            val delta = obj.getAsJsonObject("delta")
+                            when (delta.get("type")?.asString) {
+                                "text_delta" -> {
+                                    val text = delta.get("text")?.asString ?: ""
+                                    if (text.isNotEmpty()) {
+                                        fullResponse.append(text)
+                                        onToken(text)
+                                    }
+                                }
+                                "thinking_delta" -> {
+                                    val thinking = delta.get("thinking")?.asString ?: ""
+                                    if (thinking.isNotEmpty()) onReasoningToken?.invoke(thinking)
+                                }
+                            }
+                        }
+                        "message_delta" -> {
+                            val u = obj.getAsJsonObject("usage")
+                            val input = u?.get("input_tokens")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
+                            val output = u?.get("output_tokens")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
+                            lastUsage = Usage(input, output, input + output)
+                        }
+                        "message_stop" -> {
+                            if (!completed) {
+                                completed = true
+                                onComplete(fullResponse.toString(), lastUsage)
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+
+            override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+                if (completed) return
+                completed = true
+                val bodyStr = response?.body?.string() ?: ""
+                val errMsg = if (response != null) {
+                    "API error ${response.code}: ${tryParseError(bodyStr, response.code)}"
+                } else {
+                    t?.message ?: "Unknown error"
+                }
+                onError(ApiException(errMsg, httpCode = response?.code))
+            }
+
+            override fun onClosed(eventSource: EventSource) {
+                if (!completed) {
+                    completed = true
+                    onComplete(fullResponse.toString(), lastUsage)
+                }
+            }
+        })
     }
 
     private fun tryParseError(body: String, code: Int): String {

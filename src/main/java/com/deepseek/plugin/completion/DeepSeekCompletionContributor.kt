@@ -1,6 +1,7 @@
 package com.deepseek.plugin.completion
 
 import com.deepseek.plugin.api.DeepSeekApiClient
+import com.deepseek.plugin.api.LlmProviderRegistry
 import com.deepseek.plugin.api.TriggerMode
 import com.deepseek.plugin.settings.DeepSeekSettings
 import com.intellij.codeInsight.completion.*
@@ -99,6 +100,12 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
         val caretOffset = parameters.offset
         val cursorLine = editor.document.getLineNumber(caretOffset)
         val cursorColumn = caretOffset - editor.document.getLineStartOffset(cursorLine)
+
+        // --- 4.5 FIM 能力检查：不支持 FIM 的 Provider（如 Anthropic）直接跳过，避免请求不存在的 /completions 端点 ---
+        if (!LlmProviderRegistry.get(settings.provider).supportsFim) {
+            statusService.onIdle()
+            return
+        }
 
         // --- 5. 缓存查询 (跳过重复 API 调用) ---
         if (settings.completionCacheEnabled) {

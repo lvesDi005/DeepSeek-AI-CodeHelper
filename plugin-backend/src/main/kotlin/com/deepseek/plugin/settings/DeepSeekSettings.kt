@@ -64,6 +64,16 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
     var zhipuModel: String = "glm-4"
     var zhipuBaseUrl: String = "https://open.bigmodel.cn/api/paas/v4"
 
+    // Claude (Anthropic) 配置 — 走 Anthropic OpenAI 兼容端点
+    var anthropicApiKey: String = ""
+    var anthropicModel: String = "claude-sonnet-4-5"
+    var anthropicBaseUrl: String = "https://api.anthropic.com/v1"
+
+    // Codex (OpenAI) 配置 — 复用本地 ~/.codex 登录态
+    var codexApiKey: String = ""
+    var codexModel: String = ""
+    var codexBaseUrl: String = "https://api.openai.com/v1"
+
     // 图片解析配置
     var imageParsingModel: String = "agnes"         // "agnes" | "stepfun" | "nvidia"
     var stepFunApiKey: String = ""                  // 仅 StepFun 需要独立密钥

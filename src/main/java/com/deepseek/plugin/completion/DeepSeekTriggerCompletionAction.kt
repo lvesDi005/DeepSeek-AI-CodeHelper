@@ -1,7 +1,9 @@
 package com.deepseek.plugin.completion
 
 import com.deepseek.plugin.api.DeepSeekApiClient
+import com.deepseek.plugin.api.LlmProviderRegistry
 import com.deepseek.plugin.api.TriggerMode
+import com.deepseek.plugin.i18n.I18n
 import com.deepseek.plugin.settings.DeepSeekSettings
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -73,6 +75,17 @@ class DeepSeekTriggerCompletionAction : AnAction(), DumbAware {
         GhostTextManager.dismissGhostText(editor)
 
         LOG.info("Manual trigger | lang=$language | prefixLen=${prefix.length} | suffixLen=${suffix.length}")
+
+        // Anthropic 等不支持 FIM 的 Provider：直接提示并退出
+        if (!LlmProviderRegistry.get(settings.provider).supportsFim) {
+            statusService.onIdle()
+            com.intellij.openapi.ui.Messages.showInfoMessage(
+                e.project ?: return,
+                I18n.tr("completion.fim.unsupported.message"),
+                I18n.tr("completion.fim.unsupported.title")
+            )
+            return
+        }
 
         // 异步调用 FIM API（MANUAL 模式）
         client.completionFim(
