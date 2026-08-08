@@ -3786,7 +3786,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 maxTokens = 512,
 
-                messages = listOf(ChatMessage("user", analysisPrompt))
+                messages = listOf(ChatMessage("user", analysisPrompt)),
+
+                protocol = p0Provider.protocol
 
             )
 
@@ -4275,7 +4277,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 startCodePhase(p2Config, p2Model, fullResponse, projectStructure,
 
-                    relatedContext, sourceRootsHint, skillsContent, finalText)
+                    relatedContext, sourceRootsHint, skillsContent, finalText,
+
+                    protocol = p2Provider.protocol)
 
             }
 
@@ -4290,6 +4294,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             model = p1Model, temperature = 0.7, maxTokens = 4096,
 
             messages = listOf(ChatMessage("system", planSystemPrompt), ChatMessage("user", finalText)),
+
+            protocol = p1Provider.protocol,
 
             onToken = onToken, onComplete = onComplete, onError = onError,
 
@@ -4329,7 +4335,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         finalText: String,
 
-        directFromPhase0: Boolean = false
+        directFromPhase0: Boolean = false,
+
+        protocol: String = "openai"
 
     ) {
 
@@ -4479,7 +4487,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                         addMessageLabel(phaseTransitionLabel(p3Model, "reviewing"))
 
-                        startReviewPhase(p3Config, p3Model, planResponse, fullResponse)
+                        startReviewPhase(p3Config, p3Model, planResponse, fullResponse,
+
+                            protocol = p3Provider.protocol)
 
                     } else {
 
@@ -4504,6 +4514,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             model = p2Model, temperature = 0.7, maxTokens = 8192,
 
             messages = listOf(ChatMessage("system", systemPrompt), ChatMessage("user", "请根据上面的规划生成代码。")),
+
+            protocol = protocol,
 
             onToken = onToken, onComplete = onComplete, onError = onError,
 
@@ -4533,7 +4545,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         planResponse: String,
 
-        codeResponse: String
+        codeResponse: String,
+
+        protocol: String = "openai"
 
     ) {
 
@@ -4622,6 +4636,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             model = reviewModel, temperature = 0.3, maxTokens = 2048,
 
             messages = listOf(ChatMessage("system", systemPrompt), ChatMessage("user", "请审查上述代码修改。")),
+
+            protocol = protocol,
 
             onToken = onToken, onComplete = onComplete, onError = onError,
 

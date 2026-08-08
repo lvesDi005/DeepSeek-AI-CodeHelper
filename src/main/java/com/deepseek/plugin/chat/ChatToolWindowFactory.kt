@@ -68,6 +68,18 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * HTML changelog content displayed in the update dialog.
          */
         private val CHANGELOG_HTML = """
+            <h3>v2.7.2</h3>
+            <ul>
+              <li>【新增】Claude (Anthropic) Provider — 新增 Anthropic/Claude 支持，走 OpenAI 兼容端点，可在聊天、Agent、右键功能中直接使用 Claude 模型</li>
+              <li>【新增】自动读取本地 Claude 配置 — API Key 解析链：设置面板 → ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN 环境变量（AUTH_TOKEN 对应 Claude 订阅 OAuth 登录态）→ 显式授权读取 ~/.claude/settings.json</li>
+              <li>【新增】设置面板新增 Claude 配置组 — 模型下拉框（claude-sonnet-4-5 / claude-opus-4-5 等）、Base URL 配置（支持 ANTHROPIC_BASE_URL 环境变量）、实时显示当前 Key 来源</li>
+              <li>【安全】OAuth 凭据保护 — ~/.claude 的 OAuth token 仅发送给 Anthropic 官方端点，防止泄露给第三方 Base URL</li>
+              <li>【优化】代码补全保护 — 不支持 FIM 的 Provider（Anthropic 等）自动跳过补全请求，Alt+P 手动补全给出明确提示</li>
+              <li>【新增】Codex (OpenAI) Provider — 复用本地 Codex CLI 登录态（~/.codex/auth.json 的 OPENAI_API_KEY / CODEX_API_KEY），支持 OPENAI_API_KEY / CODEX_API_KEY / OPENAI_BASE_URL 环境变量，模型与代理 Base URL 自动读取 ~/.codex/config.toml（含 cc-switch 的 model_providers 配置）</li>
+              <li>【修复】Claude / Codex 403 错误 — 移除运行时自动读取本地凭据（OAuth token 无法用于 API 端点），避免未授权的凭据被发送导致 403</li>
+              <li>【修复】Claude 对接 cc-switch 中转 — 新增 Anthropic 原生 Messages API 协议（POST /v1/messages + x-api-key + anthropic-version），支持 ANTHROPIC_BASE_URL 指向的 Anthropic 兼容端点（如 https://api.deepseek.com/anthropic），并支持 ANTHROPIC_DEFAULT_SONNET/HAIKU/OPUS_MODEL 模型映射</li>
+              <li>【优化】Claude / Codex 独立配置页 — 设置中新增「Claude / Codex」页面：Claude 提供「使用本地 settings.json」按钮，Codex 提供「使用本地配置信息」按钮，显式授权读取 ~/.claude/settings.json、~/.codex/config.toml + auth.json 后写入设置</li>
+            </ul>
             <h3>v2.7.1</h3>
             <ul>
               <li>【新增】智谱配置项</li>
@@ -327,6 +339,18 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * English version of the changelog HTML.
          */
         private val CHANGELOG_HTML_EN = """
+            <h3>v2.7.2</h3>
+            <ul>
+              <li>[New] Claude (Anthropic) Provider — Added Anthropic/Claude support via the OpenAI-compatible endpoint; use Claude models in Chat, Agent, and right-click features</li>
+              <li>[New] Auto-read local Claude config — API key resolution: Settings panel → ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN env vars (AUTH_TOKEN = Claude subscription OAuth login) → explicitly authorized read of ~/.claude/settings.json</li>
+              <li>[New] Claude config group in Settings — Model dropdown (claude-sonnet-4-5 / claude-opus-4-5, etc.), Base URL field (ANTHROPIC_BASE_URL env var supported), real-time key source indicator</li>
+              <li>[Security] OAuth credential protection — OAuth tokens from ~/.claude are sent only to Anthropic official endpoints, never to third-party Base URLs</li>
+              <li>[Improved] Completion guard — Providers without FIM support (e.g. Anthropic) skip completion requests; Alt+P manual completion shows a clear message</li>
+              <li>[New] Codex (OpenAI) Provider — Reuses your local Codex CLI login (~/.codex/auth.json OPENAI_API_KEY / CODEX_API_KEY), supports OPENAI_API_KEY / CODEX_API_KEY / OPENAI_BASE_URL env vars, model & proxy Base URL auto-read from ~/.codex/config.toml (incl. cc-switch model_providers config)</li>
+              <li>[Fixed] Claude / Codex 403 errors — Removed automatic local-credential loading at runtime (OAuth tokens cannot be used with the API endpoints), preventing unauthorized credentials from being sent and causing 403</li>
+              <li>[Fixed] Claude with cc-switch proxies — Added native Anthropic Messages API protocol (POST /v1/messages + x-api-key + anthropic-version), supporting ANTHROPIC_BASE_URL pointing to Anthropic-compatible endpoints (e.g. https://api.deepseek.com/anthropic), plus ANTHROPIC_DEFAULT_SONNET/HAIKU/OPUS_MODEL model mapping</li>
+              <li>[Improved] Dedicated Claude / Codex config page — New "Claude / Codex" settings page: Claude has a "Use local settings.json" button, Codex has a "Use local config" button, explicitly authorizing reads of ~/.claude/settings.json, ~/.codex/config.toml + auth.json before writing them into settings</li>
+            </ul>
             <h3>v2.7.1</h3>
             <ul>
               <li>[New] Zhipu configuration options</li>

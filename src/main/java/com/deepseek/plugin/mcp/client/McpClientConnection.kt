@@ -174,7 +174,7 @@ class McpClientConnection(
         add("capabilities", JsonObject())
         add("clientInfo", JsonObject().apply {
             addProperty("name", "DeepSeek-CodeHelper")
-            addProperty("version", "2.7.0")
+            addProperty("version", "2.7.2")
         })
     }
 

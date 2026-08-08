@@ -19,4 +19,10 @@ fun DeepSeekSettings.toSnapshot(): SettingsSnapshot = SettingsSnapshot(
     zhipuApiKey = zhipuApiKey,
     zhipuModel = zhipuModel,
     zhipuBaseUrl = zhipuBaseUrl,
+    anthropicApiKey = anthropicApiKey,
+    anthropicModel = anthropicModel,
+    anthropicBaseUrl = anthropicBaseUrl,
+    codexApiKey = codexApiKey,
+    codexModel = codexModel,
+    codexBaseUrl = codexBaseUrl,
 )

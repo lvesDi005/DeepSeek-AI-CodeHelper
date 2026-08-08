@@ -15,6 +15,8 @@ object LlmProviderRegistry {
         register(NvidiaProvider())
         register(OpenRouterProvider())
         register(ZhipuProvider())
+        register(AnthropicProvider())
+        register(CodexProvider())
     }
 
     fun register(provider: LlmProvider) {
@@ -82,4 +84,59 @@ class ZhipuProvider : LlmProvider {
     override fun apiKey(settings: SettingsSnapshot): String = settings.zhipuApiKey
     override fun model(settings: SettingsSnapshot): String = settings.zhipuModel.ifBlank { "glm-4" }
 }
+
+/**
+ * Claude (Anthropic) — 走 Anthropic 官方 OpenAI 兼容端点（/v1/chat/completions，Bearer 鉴权）。
+ *
+ * API key 解析链见 [SettingsSnapshot.resolveAnthropicApiKey]（设置面板 → ANTHROPIC_API_KEY 环境变量
+ * → ~/.claude/settings.json → ~/.claude/.credentials.json OAuth token，后者仅限官方端点）。
+ * baseUrl 优先取环境变量 ANTHROPIC_BASE_URL（企业代理/中转场景）。
+ */
+class AnthropicProvider : LlmProvider {
+    override val id = "anthropic"
+    override val displayName = "Claude (Anthropic)"
+    override val supportsFim = false
+    override val protocol = "anthropic"
+
+    override fun baseUrl(settings: SettingsSnapshot): String {
+        val envBase = System.getenv("ANTHROPIC_BASE_URL")?.trim()?.trimEnd('/')
+        if (!envBase.isNullOrEmpty()) return envBase
+        return settings.anthropicBaseUrl.trimEnd('/').ifBlank { "https://api.anthropic.com/v1" }
+    }
+
+    override fun apiKey(settings: SettingsSnapshot): String = settings.resolveAnthropicApiKey()
+
+    override fun model(settings: SettingsSnapshot): String =
+        settings.anthropicModel.ifBlank { "claude-sonnet-4-5" }
+}
+
+/** Claude API key 当前生效来源（委托 [SettingsSnapshot.anthropicKeySource]） */
+fun detectAnthropicKeySource(settings: SettingsSnapshot): String = settings.anthropicKeySource()
+
+/**
+ * Codex (OpenAI) — 复用本地 Codex CLI 登录态，走 OpenAI 兼容 chat/completions 端点。
+ *
+ * API key 解析链见 [SettingsSnapshot.resolveCodexApiKey]（设置面板 → OPENAI_API_KEY 环境变量
+ * → ~/.codex/auth.json 的 OPENAI_API_KEY）。baseUrl 优先取 OPENAI_BASE_URL 环境变量；
+ * model 未设置时自动读取 ~/.codex/config.toml 的 model 配置。
+ */
+class CodexProvider : LlmProvider {
+    override val id = "codex"
+    override val displayName = "Codex (OpenAI)"
+    override val supportsFim = false
+
+    override fun baseUrl(settings: SettingsSnapshot): String {
+        val envBase = System.getenv("OPENAI_BASE_URL")?.trim()?.trimEnd('/')
+        if (!envBase.isNullOrEmpty()) return envBase
+        return settings.codexBaseUrl.trimEnd('/').ifBlank { "https://api.openai.com/v1" }
+    }
+
+    override fun apiKey(settings: SettingsSnapshot): String = settings.resolveCodexApiKey()
+
+    override fun model(settings: SettingsSnapshot): String =
+        settings.codexModel.ifBlank { readCodexConfigModel() ?: "gpt-5.2-codex" }
+}
+
+/** Codex API key 当前生效来源（委托 [SettingsSnapshot.codexKeySource]） */
+fun detectCodexKeySource(settings: SettingsSnapshot): String = settings.codexKeySource()
 

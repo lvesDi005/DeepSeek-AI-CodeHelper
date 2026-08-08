@@ -106,6 +106,7 @@ class UnifiedSettingsPanel(
 
         // Real settings panels for each section
         contentPanel.add(ApiConfigPanel(), "apiConfig")
+        contentPanel.add(ClaudeCodexConfigPanel(), "claudeCodex")
         contentPanel.add(AgentPipelinePanel(), "agentPipeline")
         contentPanel.add(CodeCompletionPanel(), "codeCompletion")
         contentPanel.add(CodeSearchPanel(), "codeSearch")
@@ -142,6 +143,7 @@ class UnifiedSettingsPanel(
             NavItem("themeSettings", AllIcons.Actions.Checked, I18n.tr("settings.theme"), "settings.theme"),
             NavItem("skillSettings", AllIcons.General.Settings, I18n.tr("settings.skills"), "settings.skills"),
             NavItem("apiConfig", AllIcons.General.ExternalTools, I18n.tr("settings.api.config"), "settings.api.config"),
+            NavItem("claudeCodex", AllIcons.Actions.Profile, I18n.tr("settings.claude.codex"), "settings.claude.codex"),
             NavItem("agentPipeline", AllIcons.Actions.Execute, I18n.tr("settings.agent.pipeline"), "settings.agent.pipeline"),
             NavItem("codeCompletion", AllIcons.Actions.IntentionBulb, I18n.tr("settings.code.completion"), "settings.code.completion"),
             NavItem("codeSearch", AllIcons.Actions.Find, I18n.tr("settings.code.search"), "settings.code.search"),
