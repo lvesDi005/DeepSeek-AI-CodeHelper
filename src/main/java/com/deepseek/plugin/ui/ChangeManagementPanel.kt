@@ -406,9 +406,13 @@ class ChangeManagementPanel(
         )
         if (confirmed != Messages.YES) return
 
+        var rollbackOk = false
         WriteCommandAction.runWriteCommandAction(project) {
-            val success = changeStore.rollbackFile(change)
-            if (success) {
+            rollbackOk = changeStore.rollbackFile(change)
+        }
+        // 弹窗必须在 write action 之外（EDT invokeLater），否则触发 "AWT events are not allowed inside write action"
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+            if (rollbackOk) {
                 Messages.showInfoMessage(project, I18n.tr("change.result.success", fileName, 1, 1), I18n.tr("change.rollback"))
             } else {
                 Messages.showErrorDialog(project, I18n.tr("change.result.failed", 1, 1), I18n.tr("change.rollback"))
