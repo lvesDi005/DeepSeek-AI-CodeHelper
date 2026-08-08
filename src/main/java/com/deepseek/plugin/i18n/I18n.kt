@@ -336,6 +336,18 @@ object I18n {
         "cc.codex.use.not.found" to "~/.codex/auth.json 中未找到 OPENAI_API_KEY 或 CODEX_API_KEY，请先用 API Key 登录 codex CLI 后重试，或手动填写",
         "cc.codex.use.oauth.only" to "检测到 Codex 为 OAuth 登录（ChatGPT 账号），但 OAuth 凭据无法用于 OpenAI API，请使用 API Key 登录 codex 或设置 OPENAI_API_KEY",
 
+        // ── CLI Agent（第四模式）──
+        "cli.mode.group" to "CLI Agent (Claude/Codex)",
+        "cli.mode.permission.label" to "CLI Agent 权限模式:",
+        "cli.mode.permission.acceptEdits" to "仅文件编辑（推荐）",
+        "cli.mode.permission.bypass" to "跳过全部权限（危险）",
+        "cli.mode.permission.plan" to "仅计划（不修改文件）",
+        "cli.mode.permission.comment" to "Claude/Codex CLI 修改代码时的权限策略；「跳过全部权限」会允许 CLI 执行任意命令",
+        "cli.mode.requires.provider" to "请先在设置中将 API Provider 切换为 Claude (Anthropic) 或 Codex，再使用此模式",
+        "cli.mode.not.found" to "未找到 %s CLI，请先安装：npm install -g @anthropic-ai/claude-code（Claude）或 npm install -g @openai/codex（Codex）",
+        "cli.mode.change.title" to "%s CLI 执行变更",
+        "cli.mode.change.recorded" to "已记录 %s 个文件变更，可在「变更管理」面板查看/回滚",
+
         // ── AgentPipelinePanel ──
         "pipeline.group.title" to "Agent Pipeline (Agent 流水线配置)",
         "pipeline.phase0.provider" to "Phase 0 意图确认 Provider:",
@@ -748,6 +760,18 @@ object I18n {
         "cc.codex.use.success" to "Config loaded from ~/.codex and applied",
         "cc.codex.use.not.found" to "No OPENAI_API_KEY or CODEX_API_KEY found in ~/.codex/auth.json. Log in to the codex CLI with an API key first, or fill in manually",
         "cc.codex.use.oauth.only" to "Codex is logged in via OAuth (ChatGPT account), but OAuth tokens cannot be used with the OpenAI API — log in with an API key or set OPENAI_API_KEY",
+
+        // ── CLI Agent (mode 4) ──
+        "cli.mode.group" to "CLI Agent (Claude/Codex)",
+        "cli.mode.permission.label" to "CLI Agent permission mode:",
+        "cli.mode.permission.acceptEdits" to "Accept file edits (recommended)",
+        "cli.mode.permission.bypass" to "Skip all permissions (dangerous)",
+        "cli.mode.permission.plan" to "Plan only (no file changes)",
+        "cli.mode.permission.comment" to "Permission policy for Claude/Codex CLI when modifying code; \"Skip all permissions\" lets the CLI run arbitrary commands",
+        "cli.mode.requires.provider" to "Switch the API Provider to Claude (Anthropic) or Codex in Settings to use this mode",
+        "cli.mode.not.found" to "%s CLI not found. Install it first: npm install -g @anthropic-ai/claude-code (Claude) or npm install -g @openai/codex (Codex)",
+        "cli.mode.change.title" to "%s CLI changes",
+        "cli.mode.change.recorded" to "Recorded %s file change(s) — view/roll back in the Change Management panel",
 
         "pipeline.group.title" to "Agent Pipeline Configuration",
         "pipeline.phase0.provider" to "Phase 0 Intent Confirmation Provider:",

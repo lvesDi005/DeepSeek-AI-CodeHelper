@@ -21,6 +21,10 @@ import com.deepseek.plugin.api.Usage
 
 import com.deepseek.plugin.chat.ChatState
 
+import com.deepseek.plugin.cli.CliAgentProcess
+
+import com.deepseek.plugin.cli.CliChangeTracker
+
 import com.deepseek.plugin.i18n.I18n
 import com.deepseek.plugin.i18n.ContentFontChangeListener
 import com.deepseek.plugin.i18n.I18nTopics
@@ -120,6 +124,8 @@ import com.intellij.util.ui.JBUI
 
 import kotlin.math.ceil
 
+import okhttp3.Request
+
 import okhttp3.sse.EventSource
 
 import java.awt.BasicStroke
@@ -168,7 +174,7 @@ import javax.swing.Timer
 
 enum class ChatMode {
 
-    Q_A, Q_A_SCAN, AGENT
+    Q_A, Q_A_SCAN, AGENT, CLI_AGENT
 
 }
 
@@ -245,6 +251,14 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     private var sessionCounter = 1
 
     private var currentMode = ChatMode.Q_A_SCAN
+
+    /** 模式下拉引用（第四模式「Claude/Codex」动态文案用） */
+
+    private var modeDropdown: JComboBox<String>? = null
+
+    /** 下拉文案刷新期间抑制 ActionEvent，避免误切模式 */
+
+    private var suppressingModeDropdown = false
 
 
 
@@ -837,6 +851,10 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         }
 
+        val modeDropdownValue = createModeDropdown()
+
+        modeDropdown = modeDropdownValue as JComboBox<String>
+
         val chatInputBar = ChatInputBar(
 
             inputScrollPane = inputScrollPane,
@@ -845,7 +863,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
             fileAttachmentPanel = fileAttachmentPanel,
 
-            modeSelector = createModeDropdown(),
+            modeSelector = modeDropdownValue,
 
             settingsButton = createSettingsButton(),
 
@@ -2477,7 +2495,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
             I18n.tr("chat.mode.qa.scan"),
 
-            I18n.tr("chat.mode.agent")
+            I18n.tr("chat.mode.agent"),
+
+            cliModeLabel()
 
         )).apply {
 
@@ -2493,15 +2513,21 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 ChatMode.AGENT -> 2
 
+                ChatMode.CLI_AGENT -> 3
+
             }
 
             addActionListener {
+
+                if (suppressingModeDropdown) return@addActionListener
 
                 val newMode = when (selectedIndex) {
 
                     1 -> ChatMode.Q_A_SCAN
 
                     2 -> ChatMode.AGENT
+
+                    3 -> ChatMode.CLI_AGENT
 
                     else -> ChatMode.Q_A
 
@@ -2533,6 +2559,169 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
     }
 
+    // ════════════════════════════════════════════════════════════════
+    //  第四模式：Claude/Codex 原生 CLI Agent
+    // ════════════════════════════════════════════════════════════════
+
+    /** 第四模式下拉文案：跟随当前 Provider 动态显示 Claude Code / Codex */
+    private fun cliModeLabel(): String = when (DeepSeekSettings.instance.provider) {
+        "anthropic" -> "Claude Code"
+        "codex" -> "Codex"
+        else -> "Claude/Codex"
+    }
+
+    /** Provider 变化后刷新下拉第 4 项文案（remove/insert + 防抖标志恢复选中，避免 selectedIndex 漂移触发误切模式） */
+    private fun updateCliModeLabel() {
+        val combo = modeDropdown ?: return
+        suppressingModeDropdown = true
+        try {
+            val sel = combo.selectedIndex
+            if (combo.itemCount > 3) {
+                combo.removeItemAt(3)
+                combo.insertItemAt(cliModeLabel(), 3)
+            }
+            if (sel in 0..3 && combo.selectedIndex != sel) combo.selectedIndex = sel
+        } finally {
+            suppressingModeDropdown = false
+        }
+    }
+
+    /** CLI 模式无 SSE 的占位 EventSource（取消由 process.destroy 处理） */
+    private fun emptyCliEventSource(): EventSource = object : EventSource {
+        override fun cancel() {}
+        override fun request(): Request = Request.Builder().url("http://localhost/").build()
+    }
+
+    /**
+     * 第四模式：驱动本地 Claude Code / Codex CLI 处理用户问题。
+     * Provider=anthropic → claude CLI；Provider=codex → codex CLI。
+     * CLI 直接以 agent 身份执行（改代码/跑命令/调工具），凭据用本地登录态。
+     */
+    private fun sendCliAgentMessage(text: String) {
+        val settings = DeepSeekSettings.instance
+        val cliType = when (settings.provider) {
+            "anthropic" -> "claude"
+            "codex" -> "codex"
+            else -> {
+                addMessageLabel(I18n.tr("cli.mode.requires.provider"))
+                return
+            }
+        }
+        if (CliAgentProcess.findExecutable(cliType) == null) {
+            addMessageLabel(I18n.tr("cli.mode.not.found", cliType))
+            return
+        }
+
+        inputArea.text = ""
+        renderUserMessage(text)
+        messageHistory.add(ChatMessage("user", text))
+
+        // 流式 assistant 气泡（必须 Role.STREAMING，streamTextArea 才非空）
+        val bubble = MessageBubble(project, MessageBubble.Role.STREAMING)
+        val textArea = createStreamingArea(bubble)
+
+        // CLI 执行前快照（用于变更管理）
+        val projectDir = java.io.File(project.basePath ?: System.getProperty("user.home"))
+        val snapshotBefore = CliChangeTracker.snapshot(projectDir)
+
+        var finalized = false
+        val finalizeLock = Any()
+
+        fun finalizeCliStreaming(content: String, reasoning: String?) {
+            synchronized(finalizeLock) {
+                if (finalized) return
+                finalized = true
+            }
+            chatState.set(ChatState.Idle)
+            stopThinkingAnimation()
+
+            // ① 变更对比 → 变更管理（核心功能：优先执行，UI 渲染失败不影响记录）
+            val changedCount = try {
+                CliChangeTracker.recordChanges(
+                    project, snapshotBefore, CliChangeTracker.snapshot(projectDir),
+                    I18n.tr("cli.mode.change.title", cliType)
+                )
+            } catch (e: Exception) {
+                System.err.println("[CLI Agent] recordChanges failed: ${e.message}")
+                0
+            }
+            System.err.println("[CLI Agent] finalize: changedCount=$changedCount")
+
+            // ② UI 收尾（渲染异常不阻断，已记录变更）
+            try {
+                val parsed = parseThinkingResponse(content)
+                val displayContent = parsed.second
+                val finalReasoning = if (settings.thinkingEnabled) (parsed.third ?: reasoning) else null
+                messageHistory.add(ChatMessage("assistant", displayContent, reasoning = finalReasoning))
+                renderAssistantMessage(displayContent, reasoning = finalReasoning)
+                saveSessions()
+                if (changedCount > 0) {
+                    addMessageLabel(I18n.tr("cli.mode.change.recorded", changedCount))
+                }
+                removeStreamingArea(ChatState.Streaming(emptyCliEventSource(), bubble = bubble))
+                sendStopButton.text = I18n.tr("chat.send.enter")
+                sendStopButton.toolTipText = I18n.tr("chat.tooltip.send")
+                scrollToBottom()
+            } catch (e: Exception) {
+                System.err.println("[CLI Agent] finalize UI error: ${e.message}")
+            }
+        }
+
+        val agent = CliAgentProcess(
+            cliType = cliType,
+            projectDir = projectDir,
+            permissionMode = settings.cliAgentPermissionMode,
+            prompt = text,
+            onText = { chunk ->
+                ApplicationManager.getApplication().invokeLater {
+                    if (thinkingTimer?.isRunning == true) {
+                        thinkingTimer?.stop()
+                        thinkingTimer = null
+                        textArea.text = ""
+                    }
+                    textArea.append(chunk)
+                    revalidateAndScroll()
+                }
+            },
+            onThinking = { },
+            onComplete = { finalText ->
+                ApplicationManager.getApplication().invokeLater {
+                    finalizeCliStreaming(finalText, null)
+                }
+            },
+            onError = { msg ->
+                ApplicationManager.getApplication().invokeLater {
+                    synchronized(finalizeLock) {
+                        if (finalized) return@invokeLater
+                        finalized = true
+                    }
+                    chatState.set(ChatState.Idle)
+                    addMessageLabel(I18n.tr("chat.error.prefix") + " " + msg)
+                    removeStreamingArea(ChatState.Streaming(emptyCliEventSource(), bubble = bubble))
+                    sendStopButton.text = I18n.tr("chat.send.enter")
+                    sendStopButton.toolTipText = I18n.tr("chat.tooltip.send")
+                }
+            }
+        )
+
+        // 先建占位 state，进程创建后再补充 process 引用（供停止按钮销毁）
+        chatState.set(
+            ChatState.Streaming(
+                eventSource = emptyCliEventSource(),
+                process = null,
+                buffer = StringBuilder(),
+                reasoningBuffer = StringBuilder(),
+                bubble = bubble
+            )
+        )
+        agent.start()
+        chatState.getAndUpdate { s ->
+            if (s is ChatState.Streaming && s.process == null && agent.currentProcess != null) {
+                s.copy(process = agent.currentProcess)
+            } else s
+        }
+    }
+
 
 
     // ==================================================================
@@ -2560,6 +2749,10 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         if (text.isEmpty() && !hasAttachments) return
 
         if (isStreaming) return
+
+        // 刷新第四模式下拉文案（跟随 Provider 动态显示 Claude Code / Codex）
+
+        updateCliModeLabel()
 
         // 发送新消息：恢复自动滚动跟随新回复
         autoScrollToBottom = true
@@ -2601,6 +2794,16 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         if (currentMode == ChatMode.AGENT) {
 
             sendAgentMessage(text)
+
+            return
+
+        }
+
+
+
+        if (currentMode == ChatMode.CLI_AGENT) {
+
+            sendCliAgentMessage(text)
 
             return
 
@@ -4786,6 +4989,28 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             oldState.thinkingTimer?.stop()
 
             oldState.eventSource.cancel()
+
+            // CLI Agent 模式：销毁子进程（先温和 destroy，3s 后强杀）
+
+            oldState.process?.let { p ->
+
+                p.destroy()
+
+                Thread({
+
+                    try {
+
+                        if (!p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)) p.destroyForcibly()
+
+                    } catch (_: Exception) {
+
+                        p.destroyForcibly()
+
+                    }
+
+                }, "cli-agent-stop").apply { isDaemon = true; start() }
+
+            }
 
             // 读取已累积的流式内容，渲染为完整的 ASSISTANT 气泡
             val partialContent = oldState.buffer.toString()

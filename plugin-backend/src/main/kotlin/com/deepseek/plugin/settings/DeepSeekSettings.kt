@@ -74,6 +74,9 @@ class DeepSeekSettings : PersistentStateComponent<DeepSeekSettings> {
     var codexModel: String = ""
     var codexBaseUrl: String = "https://api.openai.com/v1"
 
+    // Claude/Codex CLI Agent 权限模式: "acceptEdits"(默认,仅文件编辑) | "bypass"(跳过全部权限) | "plan"(仅计划)
+    var cliAgentPermissionMode: String = "acceptEdits"
+
     // 图片解析配置
     var imageParsingModel: String = "agnes"         // "agnes" | "stepfun" | "nvidia"
     var stepFunApiKey: String = ""                  // 仅 StepFun 需要独立密钥

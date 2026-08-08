@@ -118,6 +118,27 @@ class ClaudeCodexConfigPanel : JPanel(BorderLayout()) {
                     comment("https://api.openai.com/v1")
                 }
             }
+            group(I18n.tr("cli.mode.group")) {
+                val permissionOptions = listOf("acceptEdits", "bypass", "plan")
+                val permissionLabels = listOf(
+                    I18n.tr("cli.mode.permission.acceptEdits"),
+                    I18n.tr("cli.mode.permission.bypass"),
+                    I18n.tr("cli.mode.permission.plan")
+                )
+                row(I18n.tr("cli.mode.permission.label")) {
+                    comboBox(permissionLabels).apply {
+                        component.selectedIndex =
+                            permissionOptions.indexOf(settings.cliAgentPermissionMode).coerceAtLeast(0)
+                        component.addActionListener {
+                            val idx = component.selectedIndex
+                            if (idx in permissionOptions.indices) {
+                                settings.cliAgentPermissionMode = permissionOptions[idx]
+                            }
+                        }
+                    }
+                    comment(I18n.tr("cli.mode.permission.comment"))
+                }
+            }
         }
 
         add(form, BorderLayout.CENTER)
