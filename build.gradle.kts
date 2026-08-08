@@ -13,7 +13,7 @@ plugins {
 
 allprojects {
     group = "com.deepseek.plugin"
-    version = "2.7.2"
+    version = "2.7.3"
 }
 
 subprojects {
@@ -62,6 +62,10 @@ intellijPlatform {
         }
         changeNotes = """
             <h1>中文/Chinese</h1>
+            <h3>v2.7.3</h3>
+            <ul>
+              <li>【新增】第四种模式「Claude/Codex」— 驱动本地 Claude Code / Codex CLI 的原生 Agent 能力（问答、修改代码、执行命令、调用工具），凭据复用本地登录态；模式下拉框跟随 Provider 动态显示 Claude Code / Codex；支持权限策略（仅文件编辑 / 跳过全部权限 / 仅计划）；执行前后文件快照对比，变更自动记录到「变更管理」可回滚</li>
+            </ul>
             <h3>v2.7.2</h3>
             <ul>
               <li>【新增】Claude (Anthropic) Provider — 新增 Anthropic/Claude 支持，走 OpenAI 兼容端点，可在聊天、Agent、右键功能中直接使用 Claude 模型</li>
@@ -324,6 +328,10 @@ intellijPlatform {
               <li>API Key 配置页面</li>
             </ul>
             <h1>English</h1>
+            <h3>v2.7.3</h3>
+            <ul>
+              <li>[New] Mode 4 "Claude/Codex" — Drives the local Claude Code / Codex CLI as a native agent (Q&A, code editing, running commands, calling tools), reusing your local login; the mode dropdown label follows the Provider (Claude Code / Codex); permission policy (accept file edits / skip all permissions / plan only); snapshot diff before/after execution is recorded into Change Management for rollback</li>
+            </ul>
             <h3>v2.7.2</h3>
             <ul>
               <li>[New] Claude (Anthropic) Provider — Added Anthropic/Claude support via the OpenAI-compatible endpoint; use Claude models in Chat, Agent, and right-click features</li>
@@ -631,7 +639,7 @@ tasks {
     withType<JavaCompile> {
         sourceCompatibility = "17"
         targetCompatibility = "17"
-    }
+    } 
     withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
         kotlinOptions.jvmTarget = "17"
     }

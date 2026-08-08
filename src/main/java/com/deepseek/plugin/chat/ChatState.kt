@@ -23,6 +23,8 @@ sealed class ChatState {
     /** 流式响应进行中 */
     data class Streaming(
         val eventSource: EventSource,
+        /** CLI Agent 模式（Claude/Codex）持有的进程句柄，用于停止时销毁；HTTP 流为 null */
+        val process: Process? = null,
         val buffer: StringBuilder = StringBuilder(),
         val reasoningBuffer: StringBuilder = StringBuilder(),
         val bubble: MessageBubble,
