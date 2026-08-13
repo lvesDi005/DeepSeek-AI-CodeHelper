@@ -28,6 +28,8 @@ interface LlmProvider {
      *  - "openai"（默认）：POST {baseUrl}/chat/completions，Authorization: Bearer，OpenAI 格式 SSE
      *  - "anthropic"：POST {baseUrl}/v1/messages，x-api-key + anthropic-version，Anthropic 原生 SSE
      *    （用于对接 cc-switch 等第三方中转的 Anthropic 兼容端点，如 https://api.deepseek.com/anthropic）
+     *  - "codex-responses"：POST {baseUrl}/responses，Authorization: Bearer，OpenAI Responses API 原生 SSE
+     *    （用于 Codex CLI gpt-5.x-codex 等仅支持 Responses API 的模型，以及 cc-switch 直连模式）
      */
     val protocol: String get() = "openai"
 

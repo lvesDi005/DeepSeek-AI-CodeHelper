@@ -68,6 +68,10 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * HTML changelog content displayed in the update dialog.
          */
         private val CHANGELOG_HTML = """
+            <h3>v2.7.4</h3>
+            <ul>
+              <li>【新增】Codex 原生 Responses API 协议 — 新增 <code>codex-responses</code> 协议，Codex (OpenAI) 供应商现在直接调用 OpenAI Responses API（<code>POST /v1/responses</code>），兼容 cc-switch「供应商原生 Responses 直连」配置；system 消息自动转为 <code>instructions</code> 字段，流式 SSE 监听 <code>response.output_text.delta</code> 逐 token 回调；支持 gpt-5.2-codex、gpt-5.1-codex 等仅限 Responses API 的新型模型</li>
+            </ul>
             <h3>v2.7.3</h3>
             <ul>
               <li>【新增】第四种模式「Claude/Codex」— 驱动本地 Claude Code / Codex CLI 的原生 Agent 能力（问答、修改代码、执行命令、调用工具），凭据复用本地登录态；模式下拉框跟随 Provider 动态显示 Claude Code / Codex；支持权限策略（仅文件编辑 / 跳过全部权限 / 仅计划）；执行前后文件快照对比，变更自动记录到「变更管理」可回滚</li>
@@ -343,6 +347,10 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * English version of the changelog HTML.
          */
         private val CHANGELOG_HTML_EN = """
+            <h3>v2.7.4</h3>
+            <ul>
+              <li>[New] Native Responses API protocol for Codex — Added <code>codex-responses</code> protocol; the Codex (OpenAI) provider now calls the OpenAI Responses API directly (<code>POST /v1/responses</code>), compatible with cc-switch's "vendor-native Responses direct" configuration; system messages are automatically mapped to the <code>instructions</code> field, streaming SSE listens to <code>response.output_text.delta</code> for per-token callbacks; supports gpt-5.2-codex, gpt-5.1-codex, and other Responses-API-only models</li>
+            </ul>
             <h3>v2.7.3</h3>
             <ul>
               <li>[New] Mode 4 "Claude/Codex" — Drives the local Claude Code / Codex CLI as a native agent (Q&A, code editing, running commands, calling tools), reusing your local login; the mode dropdown label follows the Provider (Claude Code / Codex); permission policy (accept file edits / skip all permissions / plan only); snapshot diff before/after execution is recorded into Change Management for rollback</li>
