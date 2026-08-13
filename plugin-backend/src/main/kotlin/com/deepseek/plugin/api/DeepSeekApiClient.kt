@@ -142,6 +142,10 @@ class DeepSeekApiClient {
         if (protocol == "anthropic") {
             return anthropicChatSync(baseUrl, apiKey, model, temperature, maxTokens, messages)
         }
+        // OpenAI Responses API 协议（Codex CLI 直连模式，cc-switch 供应商原生 Responses）
+        if (protocol == "codex-responses") {
+            return codexResponsesChatSync(baseUrl, apiKey, model, temperature, maxTokens, messages)
+        }
         return retryWithBackoff {
             val request = ChatRequest(
                 model = model,
@@ -257,6 +261,20 @@ class DeepSeekApiClient {
                 onComplete = onComplete,
                 onError = onError,
                 onReasoningToken = onReasoningToken
+            )
+        }
+        // OpenAI Responses API 协议（Codex CLI 直连模式，cc-switch 供应商原生 Responses）
+        if (protocol == "codex-responses") {
+            return codexResponsesChatStream(
+                baseUrl = baseUrl,
+                apiKey = apiKey,
+                model = model,
+                temperature = temperature,
+                maxTokens = maxTokens,
+                messages = messages,
+                onToken = onToken,
+                onComplete = onComplete,
+                onError = onError
             )
         }
         val request = ChatRequest(
@@ -715,6 +733,184 @@ class DeepSeekApiClient {
                             if (!completed) {
                                 completed = true
                                 onComplete(fullResponse.toString(), lastUsage)
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+
+            override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+                if (completed) return
+                completed = true
+                val bodyStr = response?.body?.string() ?: ""
+                val errMsg = if (response != null) {
+                    "API error ${response.code}: ${tryParseError(bodyStr, response.code)}"
+                } else {
+                    t?.message ?: "Unknown error"
+                }
+                onError(ApiException(errMsg, httpCode = response?.code))
+            }
+
+            override fun onClosed(eventSource: EventSource) {
+                if (!completed) {
+                    completed = true
+                    onComplete(fullResponse.toString(), lastUsage)
+                }
+            }
+        })
+    }
+
+    // ============ OpenAI Responses API（Codex CLI 直连模式） ============
+
+    /**
+     * 构造 /v1/responses 端点 URL。
+     * baseUrl 可能含或不含 /v1 后缀，统一处理：
+     *   "https://api.openai.com/v1"   → "https://api.openai.com/v1/responses"
+     *   "https://api.openai.com"      → "https://api.openai.com/v1/responses"
+     */
+    private fun codexResponsesUrl(baseUrl: String): String {
+        val base = baseUrl.trimEnd('/')
+        return if (base.endsWith("/v1")) "$base/responses" else "$base/v1/responses"
+    }
+
+    /** 构造 Responses API 请求体：system → instructions，其余 messages → input[] */
+    private fun buildCodexResponsesBody(
+        model: String,
+        messages: List<ChatMessage>,
+        temperature: Double,
+        maxTokens: Int,
+        stream: Boolean
+    ): String {
+        val system = messages.filter { it.role == "system" }.joinToString("\n") { it.content }
+        val input = JsonArray().apply {
+            messages.filter { it.role != "system" }.forEach { msg ->
+                add(JsonObject().apply {
+                    addProperty("role", msg.role)
+                    addProperty("content", msg.content)
+                })
+            }
+        }
+        return JsonObject().apply {
+            addProperty("model", model)
+            if (system.isNotBlank()) addProperty("instructions", system)
+            add("input", input)
+            addProperty("max_output_tokens", maxTokens)
+            // Responses API temperature 范围 0~2，0 可接受，直接透传
+            addProperty("temperature", temperature)
+            addProperty("stream", stream)
+        }.toString()
+    }
+
+    /** 从非流式 Responses API 响应中提取 output_text 文本 */
+    private fun parseCodexResponsesText(body: String): String {
+        return try {
+            gson.fromJson(body, JsonObject::class.java)
+                .getAsJsonArray("output")
+                ?.flatMap { item ->
+                    item.asJsonObject.getAsJsonArray("content")
+                        ?.mapNotNull { part ->
+                            val p = part.asJsonObject
+                            if (p.get("type")?.asString == "output_text") p.get("text")?.asString else null
+                        } ?: emptyList()
+                }?.joinToString("") ?: ""
+        } catch (_: Exception) { "" }
+    }
+
+    /** Responses API 同步调用 */
+    private fun codexResponsesChatSync(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        temperature: Double,
+        maxTokens: Int,
+        messages: List<ChatMessage>
+    ): Result<String> {
+        val body = buildCodexResponsesBody(model, messages, temperature, maxTokens, stream = false)
+        val httpRequest = Request.Builder()
+            .url(codexResponsesUrl(baseUrl))
+            .header("Authorization", "Bearer $apiKey")
+            .header("Content-Type", "application/json")
+            .post(body.toRequestBody(JSON_MEDIA))
+            .build()
+
+        return retryWithBackoff {
+            try {
+                syncClient.newCall(httpRequest).execute().use { response ->
+                    val responseBody = response.body?.string() ?: ""
+                    if (!response.isSuccessful) {
+                        val errMsg = tryParseError(responseBody, response.code)
+                        val ex = if (response.code == 429) RateLimitException()
+                        else ApiException("API error ${response.code}: $errMsg", httpCode = response.code)
+                        Result.failure(ex)
+                    } else {
+                        Result.success(parseCodexResponsesText(responseBody))
+                    }
+                }
+            } catch (e: IOException) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * Responses API 流式调用（SSE 事件类型）：
+     *  - response.output_text.delta → delta 字段，逐 token 回调
+     *  - response.completed         → response.usage，触发 onComplete
+     *  - error                      → 触发 onError
+     */
+    private fun codexResponsesChatStream(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        temperature: Double,
+        maxTokens: Int,
+        messages: List<ChatMessage>,
+        onToken: (String) -> Unit,
+        onComplete: (fullResponse: String, usage: Usage?) -> Unit,
+        onError: (Throwable) -> Unit
+    ): EventSource {
+        val body = buildCodexResponsesBody(model, messages, temperature, maxTokens, stream = true)
+        val httpRequest = Request.Builder()
+            .url(codexResponsesUrl(baseUrl))
+            .header("Authorization", "Bearer $apiKey")
+            .header("Content-Type", "application/json")
+            .post(body.toRequestBody(JSON_MEDIA))
+            .build()
+
+        val factory = EventSources.createFactory(streamClient)
+        val fullResponse = StringBuilder()
+        var lastUsage: Usage? = null
+        var completed = false
+
+        return factory.newEventSource(httpRequest, object : EventSourceListener() {
+            override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
+                try {
+                    val obj = gson.fromJson(data, JsonObject::class.java) ?: return
+                    when (obj.get("type")?.asString) {
+                        "response.output_text.delta" -> {
+                            val delta = obj.get("delta")?.asString ?: ""
+                            if (delta.isNotEmpty()) {
+                                fullResponse.append(delta)
+                                onToken(delta)
+                            }
+                        }
+                        "response.completed" -> {
+                            val u = obj.getAsJsonObject("response")?.getAsJsonObject("usage")
+                            if (u != null) {
+                                val input = u.get("input_tokens")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
+                                val output = u.get("output_tokens")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
+                                lastUsage = Usage(input, output, input + output)
+                            }
+                            if (!completed) {
+                                completed = true
+                                onComplete(fullResponse.toString(), lastUsage)
+                            }
+                        }
+                        "error" -> {
+                            if (!completed) {
+                                completed = true
+                                val msg = obj.get("message")?.asString ?: "Codex Responses API error"
+                                onError(ApiException(msg))
                             }
                         }
                     }

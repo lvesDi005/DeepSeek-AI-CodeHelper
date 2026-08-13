@@ -124,6 +124,7 @@ class CodexProvider : LlmProvider {
     override val id = "codex"
     override val displayName = "Codex (OpenAI)"
     override val supportsFim = false
+    override val protocol = "codex-responses"
 
     override fun baseUrl(settings: SettingsSnapshot): String {
         val envBase = System.getenv("OPENAI_BASE_URL")?.trim()?.trimEnd('/')
