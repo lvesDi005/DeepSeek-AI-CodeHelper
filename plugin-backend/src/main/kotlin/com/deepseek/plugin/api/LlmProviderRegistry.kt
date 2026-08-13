@@ -129,7 +129,13 @@ class CodexProvider : LlmProvider {
     override fun baseUrl(settings: SettingsSnapshot): String {
         val envBase = System.getenv("OPENAI_BASE_URL")?.trim()?.trimEnd('/')
         if (!envBase.isNullOrEmpty()) return envBase
-        return settings.codexBaseUrl.trimEnd('/').ifBlank { "https://api.openai.com/v1" }
+        val configured = settings.codexBaseUrl.trimEnd('/')
+        // Keep Q&A on the same cc-switch/local proxy selected by Codex CLI when
+        // the plugin setting is still at its default value.
+        if (configured.isBlank() || configured == "https://api.openai.com/v1") {
+            readCodexConfigBaseUrl()?.trimEnd('/')?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        return configured.ifBlank { "https://api.openai.com/v1" }
     }
 
     override fun apiKey(settings: SettingsSnapshot): String = settings.resolveCodexApiKey()
