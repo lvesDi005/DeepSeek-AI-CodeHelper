@@ -182,7 +182,9 @@ fun SettingsSnapshot.codexKeySource(): String = when {
     else -> "none"
 }
 
-private fun codexDir(): File = File(System.getProperty("user.home"), ".codex")
+private fun codexDir(): File =
+    System.getenv("CODEX_HOME")?.trim()?.takeIf { it.isNotEmpty() }?.let(::File)
+        ?: File(System.getProperty("user.home"), ".codex")
 
 /**
  * 读取 ~/.codex/auth.json 的 API key（供「使用本地配置信息」按钮调用）。
@@ -237,10 +239,24 @@ fun readCodexConfigBaseUrl(): String? {
         val text = f.readText()
         val providerName = Regex("""(?m)^\s*model_provider\s*=\s*["']([^"']+)["']""").find(text)
             ?.groupValues?.get(1) ?: return null
-        val section = Regex("""(?ms)\[model_providers\.${Regex.escape(providerName)}]\s*\n(.*?)(?=\n\[|$)""")
-            .find(text)?.groupValues?.get(1) ?: return null
-        Regex("""(?m)^\s*base_url\s*=\s*["']([^"']+)["']""").find(section)
-            ?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
+        val sectionHeader = Regex("""^\s*\[model_providers\.${Regex.escape(providerName)}\]\s*$""")
+        val baseUrl = Regex("""^\s*base_url\s*=\s*["']([^"']+)["']\s*(?:#.*)?$""")
+        var inProviderSection = false
+        for (line in text.lineSequence()) {
+            if (line.trimStart().startsWith("[") && !sectionHeader.matches(line.trim())) {
+                if (inProviderSection) break
+                continue
+            }
+            if (sectionHeader.matches(line.trim())) {
+                inProviderSection = true
+                continue
+            }
+            if (inProviderSection) {
+                baseUrl.find(line.trim())?.groupValues?.get(1)?.trim()
+                    ?.takeIf { it.isNotEmpty() }?.let { return it }
+            }
+        }
+        null
     } catch (e: Exception) {
         null
     }

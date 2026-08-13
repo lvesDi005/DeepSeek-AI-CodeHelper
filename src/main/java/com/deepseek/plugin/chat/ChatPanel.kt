@@ -2722,6 +2722,14 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         }
     }
 
+    /** Check the key resolved by the selected chat provider (including Codex env/config sources). */
+    private fun hasChatApiKey(settings: DeepSeekSettings): Boolean =
+        runCatching {
+            LlmProviderRegistry.get(settings.provider)
+                .apiKey(settings.toSnapshot())
+                .isNotBlank()
+        }.getOrDefault(false)
+
 
 
     // ==================================================================
@@ -2813,7 +2821,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         val settings = DeepSeekSettings.instance
 
-        if (settings.apiKey.isBlank() && settings.agnesApiKey.isBlank() && settings.nvidiaApiKey.isBlank()) {
+        if (!hasChatApiKey(settings)) {
 
             addMessageLabel(I18n.tr("chat.api.key.required"))
 
@@ -2881,7 +2889,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         val settings = DeepSeekSettings.instance
 
-        if (settings.apiKey.isBlank() && settings.agnesApiKey.isBlank() && settings.nvidiaApiKey.isBlank()) {
+        if (!hasChatApiKey(settings)) {
 
             addMessageLabel(I18n.tr("chat.api.key.required"))
 
