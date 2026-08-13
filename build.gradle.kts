@@ -65,7 +65,6 @@ intellijPlatform {
             <h3>v2.7.4</h3>
             <ul>
               <li>【新增】Codex 原生 Responses API 协议 — 新增 <code>codex-responses</code> 协议，Codex (OpenAI) 供应商现在直接调用 OpenAI Responses API（<code>POST /v1/responses</code>），兼容 cc-switch「供应商原生 Responses 直连」配置；system 消息自动转为 <code>instructions</code> 字段，流式 SSE 监听 <code>response.output_text.delta</code> 逐 token 回调；支持 gpt-5.2-codex、gpt-5.1-codex 等仅限 Responses API 的新型模型</li>
-              <li>cc switch</li>
             </ul>
             <h3>v2.7.3</h3>
             <ul>
@@ -336,7 +335,6 @@ intellijPlatform {
             <h3>v2.7.4</h3>
             <ul>
               <li>[New] Native Responses API protocol for Codex — Added <code>codex-responses</code> protocol; the Codex (OpenAI) provider now calls the OpenAI Responses API directly (<code>POST /v1/responses</code>), compatible with cc-switch's "vendor-native Responses direct" configuration; system messages are automatically mapped to the <code>instructions</code> field, streaming SSE listens to <code>response.output_text.delta</code> for per-token callbacks; supports gpt-5.2-codex, gpt-5.1-codex, and other Responses-API-only models</li>
-              <li>cc switch</li>
             </ul>
             <h3>v2.7.3</h3>
             <ul>
