@@ -30,6 +30,8 @@ class CliAgentProcess(
     private val projectDir: File,
     private val permissionMode: String,
     private val prompt: String,
+    private val allowedDirectories: List<File> = emptyList(),
+    private val imageFiles: List<File> = emptyList(),
     private val onText: (String) -> Unit,
     private val onThinking: ((String) -> Unit)? = null,
     private val onComplete: (String) -> Unit,
@@ -199,23 +201,40 @@ class CliAgentProcess(
     //  参数构造
     // ═══════════════════════════════════════════════════════════
 
-    private fun buildArgs(): List<String> {
+    internal fun buildArgs(): List<String> {
+        val readableDirectories = allowedDirectories
+            .filter { it.isDirectory }
+            .map { it.absoluteFile.normalize() }
+            .distinct()
+        val readableImages = imageFiles
+            .filter { it.isFile }
+            .map { it.absoluteFile.normalize() }
+            .distinct()
         return when (cliType) {
-            "claude" -> listOf(
-                "-p",
-                "--input-format", "text",
-                "--output-format", "stream-json",
-                "--verbose",
-                *permissionArgs()
-            )
-            "codex" -> listOf(
-                "exec", "--json",
-                // The IDE project root is not necessarily registered as a trusted
-                // Codex workspace; the plugin already supplies the selected sandbox.
-                "--skip-git-repo-check",
-                *permissionArgs(),
-                "-"
-            )
+            "claude" -> buildList {
+                addAll(listOf("-p", "--input-format", "text", "--output-format", "stream-json", "--verbose"))
+                if (readableDirectories.isNotEmpty()) {
+                    add("--add-dir")
+                    readableDirectories.forEach { add(it.path) }
+                }
+                addAll(permissionArgs())
+            }
+            "codex" -> buildList {
+                addAll(listOf("exec", "--json"))
+                addAll(permissionArgs())
+                readableDirectories.forEach { directory ->
+                    add("--add-dir")
+                    add(directory.path)
+                }
+                readableImages.forEach { image ->
+                    add("--image")
+                    add(image.path)
+                }
+                // --image is variadic. A following option prevents it from consuming
+                // the final '-' stdin marker as another image path.
+                add("--skip-git-repo-check")
+                add("-")
+            }
             else -> listOf(prompt)
         }
     }

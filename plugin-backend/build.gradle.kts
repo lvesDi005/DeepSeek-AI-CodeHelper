@@ -22,6 +22,10 @@ dependencies {
     api("com.squareup.okhttp3:okhttp:4.12.0")
     api("com.squareup.okhttp3:okhttp-sse:4.12.0")
     api("com.google.code.gson:gson:2.11.0")
+    implementation("org.apache.pdfbox:pdfbox:3.0.5")
+    implementation("org.apache.poi:poi-ooxml:5.4.1")
+
+    testImplementation(kotlin("test-junit5"))
 }
 
 java {
@@ -44,4 +48,8 @@ tasks.withType<JavaCompile> {
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
     kotlinOptions.jvmTarget = "17"
+}
+
+tasks.test {
+    useJUnitPlatform()
 }

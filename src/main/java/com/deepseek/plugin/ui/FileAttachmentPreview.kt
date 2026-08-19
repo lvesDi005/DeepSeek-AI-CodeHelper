@@ -119,7 +119,15 @@ class FileAttachmentPreview(
         nameLabel.toolTipText = file.name
         infoPanel.add(nameLabel)
 
-        val sizeLabel = JLabel(file.sizeDisplay)
+        val statusText = when (file.status) {
+            com.deepseek.plugin.api.AttachmentStatus.PENDING -> I18n.tr("attachment.status.pending")
+            com.deepseek.plugin.api.AttachmentStatus.PROCESSING -> I18n.tr("attachment.status.processing")
+            com.deepseek.plugin.api.AttachmentStatus.READY -> I18n.tr("attachment.status.ready")
+            com.deepseek.plugin.api.AttachmentStatus.PARTIAL -> I18n.tr("attachment.status.partial")
+            com.deepseek.plugin.api.AttachmentStatus.FAILED -> I18n.tr("attachment.status.failed")
+        }
+        val sizeLabel = JLabel("$statusText · ${file.sizeDisplay}")
+        sizeLabel.toolTipText = file.statusMessage ?: "${file.kind.name.lowercase()} · $statusText"
         sizeLabel.font = sizeLabel.font.deriveFont(Font.PLAIN, 10f)
         sizeLabel.foreground = JBColor(0x000000, 0xBBBBBB)
         infoPanel.add(sizeLabel)
