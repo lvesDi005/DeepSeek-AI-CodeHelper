@@ -118,7 +118,8 @@ class DeepSeekApiClient {
             temperature = temp,
             maxTokens = settings.maxTokens,
             messages = messages,
-            protocol = prov.protocol
+            protocol = prov.protocol,
+            reasoningEffort = settings.codexReasoningEffort.takeIf { prov.id == "codex" }
         )
     }
 
@@ -132,7 +133,8 @@ class DeepSeekApiClient {
         temperature: Double = 0.7,
         maxTokens: Int = 4096,
         messages: List<ChatMessage>,
-        protocol: String = "openai"
+        protocol: String = "openai",
+        reasoningEffort: String? = null
     ): Result<String> {
         // H3: 请求限流检查
         if (!HttpClientProvider.chatRateLimiter.tryAcquire()) {
@@ -144,7 +146,7 @@ class DeepSeekApiClient {
         }
         // OpenAI Responses API 协议（Codex CLI 直连模式，cc-switch 供应商原生 Responses）
         if (protocol == "codex-responses") {
-            return codexResponsesChatSync(baseUrl, apiKey, model, temperature, maxTokens, messages)
+            return codexResponsesChatSync(baseUrl, apiKey, model, temperature, maxTokens, messages, reasoningEffort)
         }
         return retryWithBackoff {
             val request = ChatRequest(
@@ -178,7 +180,8 @@ class DeepSeekApiClient {
                     } else {
                         val chatResponse = gson.fromJson(responseBody, ChatResponse::class.java)
                         val content = chatResponse.choices.firstOrNull()?.message?.content ?: ""
-                        Result.success(content)
+                        if (content.isBlank()) Result.failure(ApiException("Chat API returned an empty response"))
+                        else Result.success(content)
                     }
                 }
             } catch (e: IOException) {
@@ -211,6 +214,7 @@ class DeepSeekApiClient {
             maxTokens = settings.maxTokens,
             messages = messages,
             protocol = prov.protocol,
+            reasoningEffort = settings.codexReasoningEffort.takeIf { prov.id == "codex" },
             onToken = onToken,
             onComplete = onComplete,
             onError = onError,
@@ -235,6 +239,7 @@ class DeepSeekApiClient {
         maxTokens: Int = 4096,
         messages: List<ChatMessage>,
         protocol: String = "openai",
+        reasoningEffort: String? = null,
         onToken: (String) -> Unit,
         onComplete: (fullResponse: String, usage: Usage?) -> Unit,
         onError: (Throwable) -> Unit,
@@ -272,6 +277,7 @@ class DeepSeekApiClient {
                 temperature = temperature,
                 maxTokens = maxTokens,
                 messages = messages,
+                reasoningEffort = reasoningEffort,
                 onToken = onToken,
                 onComplete = onComplete,
                 onError = onError
@@ -591,7 +597,7 @@ class DeepSeekApiClient {
     }
 
     /** 构造 Anthropic Messages API 请求体（system 拆为顶层字段，role 仅 user/assistant） */
-    private fun buildAnthropicBody(
+    internal fun buildAnthropicBody(
         model: String,
         messages: List<ChatMessage>,
         temperature: Double,
@@ -600,10 +606,14 @@ class DeepSeekApiClient {
     ): String {
         val system = messages.filter { it.role == "system" }.joinToString("\n") { it.content }
         val msgs = JsonArray().apply {
-            messages.filter { it.role != "system" }.forEach {
+            messages.filter { it.role != "system" }.forEach { message ->
                 add(JsonObject().apply {
-                    addProperty("role", it.role)
-                    addProperty("content", it.content)
+                    addProperty("role", message.role)
+                    if (message.parts.isNullOrEmpty()) {
+                        addProperty("content", message.content)
+                    } else {
+                        add("content", buildAnthropicContent(message))
+                    }
                 })
             }
         }
@@ -617,6 +627,47 @@ class DeepSeekApiClient {
             add("messages", msgs)
         }
         return obj.toString()
+    }
+
+    private fun buildAnthropicContent(message: ChatMessage): JsonArray = JsonArray().apply {
+        if (message.content.isNotBlank()) {
+            add(JsonObject().apply {
+                addProperty("type", "text")
+                addProperty("text", message.content)
+            })
+        }
+        message.parts.orEmpty().forEach { part ->
+            when (part.type) {
+                ChatContentType.TEXT -> part.text?.takeIf { it.isNotBlank() }?.let { text ->
+                    add(JsonObject().apply {
+                        addProperty("type", "text")
+                        addProperty("text", text)
+                    })
+                }
+                ChatContentType.IMAGE -> parseDataUri(part.dataUri)?.let { (mediaType, data) ->
+                    add(JsonObject().apply {
+                        addProperty("type", "image")
+                        add("source", JsonObject().apply {
+                            addProperty("type", "base64")
+                            addProperty("media_type", part.mediaType ?: mediaType)
+                            addProperty("data", data)
+                        })
+                    })
+                }
+            }
+        }
+    }
+
+    private fun parseDataUri(dataUri: String?): Pair<String, String>? {
+        if (dataUri.isNullOrBlank() || !dataUri.startsWith("data:")) return null
+        val comma = dataUri.indexOf(',')
+        if (comma <= 5) return null
+        val metadata = dataUri.substring(5, comma)
+        if (!metadata.endsWith(";base64")) return null
+        val mediaType = metadata.removeSuffix(";base64")
+        val data = dataUri.substring(comma + 1)
+        if (mediaType.isBlank() || data.isBlank()) return null
+        return mediaType to data
     }
 
     /** 按 cc-switch / Claude Code 约定映射模型名（ANTHROPIC_DEFAULT_*_MODEL → 实际模型） */
@@ -707,6 +758,11 @@ class DeepSeekApiClient {
                 try {
                     val obj = gson.fromJson(data, JsonObject::class.java) ?: return
                     when (obj.get("type")?.asString) {
+                        "message_start" -> {
+                            val u = obj.getAsJsonObject("message")?.getAsJsonObject("usage")
+                            val input = u?.get("input_tokens")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
+                            if (input > 0) lastUsage = Usage(input, 0, input)
+                        }
                         "content_block_delta" -> {
                             val delta = obj.getAsJsonObject("delta")
                             when (delta.get("type")?.asString) {
@@ -725,18 +781,34 @@ class DeepSeekApiClient {
                         }
                         "message_delta" -> {
                             val u = obj.getAsJsonObject("usage")
-                            val input = u?.get("input_tokens")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
+                            val input = lastUsage?.promptTokens
+                                ?: u?.get("input_tokens")?.takeIf { it.isJsonPrimitive }?.asInt
+                                ?: 0
                             val output = u?.get("output_tokens")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
                             lastUsage = Usage(input, output, input + output)
                         }
                         "message_stop" -> {
                             if (!completed) {
                                 completed = true
-                                onComplete(fullResponse.toString(), lastUsage)
+                                if (fullResponse.isBlank()) onError(ApiException("Anthropic returned an empty response"))
+                                else onComplete(fullResponse.toString(), lastUsage)
+                            }
+                        }
+                        "error" -> {
+                            if (!completed) {
+                                completed = true
+                                val error = obj.getAsJsonObject("error")
+                                onError(ApiException(error?.get("message")?.asString ?: "Anthropic stream error"))
                             }
                         }
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    if (!completed) {
+                        completed = true
+                        eventSource.cancel()
+                        onError(ApiException("Invalid Anthropic stream event: ${e.message}"))
+                    }
+                }
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
@@ -754,7 +826,7 @@ class DeepSeekApiClient {
             override fun onClosed(eventSource: EventSource) {
                 if (!completed) {
                     completed = true
-                    onComplete(fullResponse.toString(), lastUsage)
+                    onError(ApiException("Anthropic stream closed before message_stop"))
                 }
             }
         })
@@ -774,19 +846,21 @@ class DeepSeekApiClient {
     }
 
     /** 构造 Responses API 请求体：system → instructions，其余 messages → input[] */
-    private fun buildCodexResponsesBody(
+    internal fun buildCodexResponsesBody(
         model: String,
         messages: List<ChatMessage>,
         temperature: Double,
         maxTokens: Int,
-        stream: Boolean
+        stream: Boolean,
+        reasoningEffort: String? = null
     ): String {
         val system = messages.filter { it.role == "system" }.joinToString("\n") { it.content }
         val input = JsonArray().apply {
             messages.filter { it.role != "system" }.forEach { msg ->
                 add(JsonObject().apply {
                     addProperty("role", msg.role)
-                    addProperty("content", msg.content)
+                    if (msg.parts.isNullOrEmpty()) addProperty("content", msg.content)
+                    else add("content", buildCodexContent(msg))
                 })
             }
         }
@@ -795,10 +869,37 @@ class DeepSeekApiClient {
             if (system.isNotBlank()) addProperty("instructions", system)
             add("input", input)
             addProperty("max_output_tokens", maxTokens)
-            // Responses API temperature 范围 0~2，0 可接受，直接透传
-            addProperty("temperature", temperature)
+            reasoningEffort?.takeIf { it in setOf("low", "medium", "high") }?.let { effort ->
+                add("reasoning", JsonObject().apply { addProperty("effort", effort) })
+            }
+            // Codex reasoning models and compatible proxies may reject temperature.
             addProperty("stream", stream)
         }.toString()
+    }
+
+    private fun buildCodexContent(message: ChatMessage): JsonArray = JsonArray().apply {
+        if (message.content.isNotBlank()) {
+            add(JsonObject().apply {
+                addProperty("type", if (message.role == "assistant") "output_text" else "input_text")
+                addProperty("text", message.content)
+            })
+        }
+        message.parts.orEmpty().forEach { part ->
+            when (part.type) {
+                ChatContentType.TEXT -> part.text?.takeIf { it.isNotBlank() }?.let { text ->
+                    add(JsonObject().apply {
+                        addProperty("type", if (message.role == "assistant") "output_text" else "input_text")
+                        addProperty("text", text)
+                    })
+                }
+                ChatContentType.IMAGE -> part.dataUri?.takeIf { it.startsWith("data:") }?.let { imageUrl ->
+                    add(JsonObject().apply {
+                        addProperty("type", "input_image")
+                        addProperty("image_url", imageUrl)
+                    })
+                }
+            }
+        }
     }
 
     /** 从非流式 Responses API 响应中提取 output_text 文本 */
@@ -823,9 +924,10 @@ class DeepSeekApiClient {
         model: String,
         temperature: Double,
         maxTokens: Int,
-        messages: List<ChatMessage>
+        messages: List<ChatMessage>,
+        reasoningEffort: String?
     ): Result<String> {
-        val body = buildCodexResponsesBody(model, messages, temperature, maxTokens, stream = false)
+        val body = buildCodexResponsesBody(model, messages, temperature, maxTokens, stream = false, reasoningEffort)
         val httpRequest = Request.Builder()
             .url(codexResponsesUrl(baseUrl))
             .header("Authorization", "Bearer $apiKey")
@@ -843,7 +945,9 @@ class DeepSeekApiClient {
                         else ApiException("API error ${response.code}: $errMsg", httpCode = response.code)
                         Result.failure(ex)
                     } else {
-                        Result.success(parseCodexResponsesText(responseBody))
+                        val content = parseCodexResponsesText(responseBody)
+                        if (content.isBlank()) Result.failure(ApiException("Codex Responses API returned an empty response"))
+                        else Result.success(content)
                     }
                 }
             } catch (e: IOException) {
@@ -865,11 +969,12 @@ class DeepSeekApiClient {
         temperature: Double,
         maxTokens: Int,
         messages: List<ChatMessage>,
+        reasoningEffort: String?,
         onToken: (String) -> Unit,
         onComplete: (fullResponse: String, usage: Usage?) -> Unit,
         onError: (Throwable) -> Unit
     ): EventSource {
-        val body = buildCodexResponsesBody(model, messages, temperature, maxTokens, stream = true)
+        val body = buildCodexResponsesBody(model, messages, temperature, maxTokens, stream = true, reasoningEffort)
         val httpRequest = Request.Builder()
             .url(codexResponsesUrl(baseUrl))
             .header("Authorization", "Bearer $apiKey")
@@ -903,18 +1008,28 @@ class DeepSeekApiClient {
                             }
                             if (!completed) {
                                 completed = true
-                                onComplete(fullResponse.toString(), lastUsage)
+                                if (fullResponse.isBlank()) onError(ApiException("Codex Responses API returned an empty response"))
+                                else onComplete(fullResponse.toString(), lastUsage)
                             }
                         }
-                        "error" -> {
+                        "error", "response.failed", "response.incomplete" -> {
                             if (!completed) {
                                 completed = true
-                                val msg = obj.get("message")?.asString ?: "Codex Responses API error"
+                                val responseError = obj.getAsJsonObject("response")?.getAsJsonObject("error")
+                                val msg = obj.get("message")?.takeIf { it.isJsonPrimitive }?.asString
+                                    ?: responseError?.get("message")?.asString
+                                    ?: "Codex Responses API stream failed"
                                 onError(ApiException(msg))
                             }
                         }
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    if (!completed) {
+                        completed = true
+                        eventSource.cancel()
+                        onError(ApiException("Invalid Codex Responses stream event: ${e.message}"))
+                    }
+                }
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
@@ -932,7 +1047,7 @@ class DeepSeekApiClient {
             override fun onClosed(eventSource: EventSource) {
                 if (!completed) {
                     completed = true
-                    onComplete(fullResponse.toString(), lastUsage)
+                    onError(ApiException("Codex Responses stream closed before response.completed"))
                 }
             }
         })

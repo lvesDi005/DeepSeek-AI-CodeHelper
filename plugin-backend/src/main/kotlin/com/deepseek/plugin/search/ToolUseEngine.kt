@@ -151,6 +151,7 @@ class ToolUseEngine(
     ): ExecuteResult {
         val messages = mutableListOf<ChatMessage>()
         val allToolCalls = mutableListOf<ToolCall>()
+        val collectedToolContext = mutableListOf<String>()
 
         val fullSystemPrompt = buildString {
             systemPrompt?.let { appendLine(it).appendLine() }
@@ -183,6 +184,7 @@ class ToolUseEngine(
             allToolCalls.add(toolCall)
 
             val toolResult = executeTool(toolCall)
+            collectedToolContext += formatToolResult(toolCall, toolResult)
 
             val textPart = content.replace(TOOL_CALL_REGEX, "").trim()
             if (textPart.isNotEmpty()) {
@@ -198,7 +200,7 @@ class ToolUseEngine(
 
         return ExecuteResult(
             answer = answer,
-            searchContext = "",
+            searchContext = collectedToolContext.joinToString("\n\n---\n\n"),
             toolCalls = allToolCalls,
             rounds = allToolCalls.size
         )

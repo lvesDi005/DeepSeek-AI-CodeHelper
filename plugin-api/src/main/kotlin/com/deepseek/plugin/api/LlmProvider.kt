@@ -23,6 +23,9 @@ interface LlmProvider {
     /** 是否支持 FIM 代码补全 */
     val supportsFim: Boolean get() = false
 
+    /** Capabilities used by Q&A routing instead of protocol-name checks. */
+    val capabilities: LlmCapabilities get() = LlmCapabilities()
+
     /**
      * 聊天请求协议：
      *  - "openai"（默认）：POST {baseUrl}/chat/completions，Authorization: Bearer，OpenAI 格式 SSE
@@ -39,3 +42,13 @@ interface LlmProvider {
      */
     val temperature: Double? get() = null
 }
+
+data class LlmCapabilities(
+    val nativeImages: Boolean = false,
+    val nativeReasoning: Boolean = false,
+    val readOnlyTools: Boolean = false,
+    val conversationContinuation: Boolean = false,
+    val promptCaching: Boolean = false,
+    /** Conservative input budget used until a model-specific catalog overrides it. */
+    val maxContextTokens: Int = 32_000
+)

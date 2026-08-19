@@ -33,6 +33,7 @@ dependencies {
     implementation(project(":plugin-api"))
     implementation(project(":plugin-backend"))
     testImplementation(kotlin("test-junit5"))
+    testImplementation("junit:junit:4.13.2")
 
     intellijPlatform {
         create("IU", "2024.3")
@@ -74,6 +75,9 @@ intellijPlatform {
               <li>【新增】Claude Code / Codex CLI 原生附件支持 — 文档、图片及解析结果会按各 CLI 的原生参数和输入方式安全传递，充分利用 Claude 与 Codex 的文件和视觉能力</li>
               <li>【修复】统一 Q&amp;A、Q&amp;A 全文扫描、Agent 与 Claude/Codex 模式的附件路由，避免已上传文档未进入模型上下文</li>
               <li>【优化】新增附件大小与数量限制、格式校验、后台解析、任务取消和临时文件清理，并补充文档解析测试与附件改造验收矩阵</li>
+              <li>【优化】Claude/Codex Q&amp;A 上下文治理 — 普通问答不再隐式扫描项目，附件、源码与扫描结果仅用于当前请求；按 Provider 上下文窗口裁剪历史并保留最近完整对话</li>
+              <li>【增强】Claude/Codex 原生问答能力 — Claude 支持原生图片消息，Codex 支持原生图片与推理强度；全文扫描仅开放本地只读检索工具，并增强流式错误、取消、重试与部分回答保留</li>
+              <li>【修复】回答完成后底部 Token 统计可能显示不全 — 区分用户滚动与布局变化，稳定完成后的底部定位并清理流式占位间距；Token 用量随会话持久化，切换会话后仍可恢复</li>
             </ul>
             <h3>v2.7.4</h3>
             <ul>
@@ -353,6 +357,9 @@ intellijPlatform {
               <li>[New] Native attachments for Claude Code / Codex CLI — Documents, images, and extracted content are passed safely through each CLI's native arguments and input flow, making full use of Claude and Codex file and vision capabilities</li>
               <li>[Fixed] Unified attachment routing across Q&amp;A, Q&amp;A Full Scan, Agent, and Claude/Codex modes so uploaded documents consistently reach model context</li>
               <li>[Improved] Added attachment count and size limits, format validation, background parsing, cancellation, temporary-file cleanup, document parsing tests, and an attachment-refactor acceptance matrix</li>
+              <li>[Improved] Claude/Codex Q&amp;A context management — Normal Q&amp;A no longer scans the project implicitly; attachments, source, and scan results are request-local; history is trimmed to each provider's context window while preserving recent complete turns</li>
+              <li>[Enhanced] Native Claude/Codex Q&amp;A — Claude supports native image messages, Codex supports native images and reasoning effort, Full Scan exposes only local read-only search tools, and streaming now handles cancellation, retries, partial answers, and protocol errors more reliably</li>
+              <li>[Fixed] Token usage could be partially clipped after an answer completed — User scrolling is now separated from layout changes, final bottom positioning is stabilized, streaming spacer rows are cleaned up, and usage persists across session redraws</li>
             </ul>
             <h3>v2.7.4</h3>
             <ul>

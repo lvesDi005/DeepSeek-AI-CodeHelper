@@ -44,10 +44,9 @@ $env:GRADLE_USER_HOME = (Resolve-Path '.gradle').Path
 ## Current Evidence
 
 - `git diff --check`: passed; only repository line-ending warnings were reported.
-- Manual Kotlin 2.1 compilation of `Attachments.kt`: passed.
-- Manual Kotlin 2.1 compilation of `CliAgentProcess.kt`: passed with two pre-existing Gson deprecation warnings.
-- Gradle configuration starts successfully with the workspace cache.
-- Full Gradle dependency resolution is not yet verified because the managed network approval reviewer repeatedly returned HTTP 503 before process launch.
+- `./gradlew.bat test --stacktrace`: passed on 2026-08-19 using the Gradle user cache and Maven dependency resolution.
+- Automated result: 17 tests, 0 failures, 0 errors, 0 skipped. This includes 8 document extraction tests and 2 Claude/Codex CLI attachment tests.
+- Main and backend Kotlin compilation completed as part of the test build. The only compiler warning was an existing unchecked Swing combo-box cast in `ChatPanel.kt`.
 
 ## Manual Acceptance Scenarios
 
@@ -60,4 +59,4 @@ $env:GRADLE_USER_HOME = (Resolve-Path '.gradle').Path
 
 ## Acceptance Status
 
-Implementation is complete. Automated acceptance remains pending until Gradle can download PDFBox and Apache POI and run the declared test suites.
+Implementation and automated acceptance are complete. Live Claude/Codex provider calls and the UI lifecycle scenarios above remain manual acceptance items.

@@ -97,6 +97,13 @@ class AnthropicProvider : LlmProvider {
     override val displayName = "Claude (Anthropic)"
     override val supportsFim = false
     override val protocol = "anthropic"
+    override val capabilities = LlmCapabilities(
+        nativeImages = true,
+        nativeReasoning = true,
+        readOnlyTools = true,
+        promptCaching = true,
+        maxContextTokens = 64_000
+    )
 
     override fun baseUrl(settings: SettingsSnapshot): String {
         val envBase = System.getenv("ANTHROPIC_BASE_URL")?.trim()?.trimEnd('/')
@@ -125,6 +132,14 @@ class CodexProvider : LlmProvider {
     override val displayName = "Codex (OpenAI)"
     override val supportsFim = false
     override val protocol = "codex-responses"
+    override val capabilities = LlmCapabilities(
+        nativeImages = true,
+        nativeReasoning = true,
+        readOnlyTools = true,
+        conversationContinuation = true,
+        promptCaching = true,
+        maxContextTokens = 64_000
+    )
 
     override fun baseUrl(settings: SettingsSnapshot): String {
         val envBase = System.getenv("OPENAI_BASE_URL")?.trim()?.trimEnd('/')

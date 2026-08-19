@@ -38,7 +38,7 @@ class SearchCoordinator(
      * @param userMessage 用户原始问题
      * @return SearchResult 包含格式化上下文，无结果时 contextText 为空字符串
      */
-    fun search(userMessage: String): SearchResult {
+    fun search(userMessage: String, useReadOnlyToolLoop: Boolean = false): SearchResult {
         val settings = com.deepseek.plugin.settings.DeepSeekSettings.instance
         val isCode = isCodeQuery(userMessage)
 
@@ -49,7 +49,7 @@ class SearchCoordinator(
             // 代码查询 → Agentic Search（单轮 grep 搜索）
             val result = toolUseEngine.execute(
                 userMessage = userMessage,
-                singleRound = true
+                singleRound = !useReadOnlyToolLoop
             )
             codeCtx = result.searchContext
             docCtx = ""
