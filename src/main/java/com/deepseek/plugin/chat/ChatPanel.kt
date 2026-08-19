@@ -5632,24 +5632,27 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
 
     internal fun scrollToBottom() {
-
         // 用户已向上滚动查看历史：不强制拉回底部
         if (!autoScrollController.followsBottom) return
 
-        fun settleAtBottom(remainingPasses: Int) {
+        fun settleAtBottom(remainingPasses: Int, lastMaximum: Int = -1) {
             SwingUtilities.invokeLater {
                 if (!autoScrollController.followsBottom) return@invokeLater
                 messagesPanel.revalidate()
                 messagesScrollPane.validate()
                 val vsb = messagesScrollPane.verticalScrollBar
                 vsb.value = (vsb.maximum - vsb.visibleAmount).coerceAtLeast(vsb.minimum)
-                // Wrapped labels can change preferred height after their first width-aware layout.
-                if (remainingPasses > 0) settleAtBottom(remainingPasses - 1)
+                // Markdown JEditorPane performs asynchronous HTML layout: its height can
+                // keep changing for several EDT passes. Keep settling until the maximum
+                // stabilizes (or the retry budget is exhausted) so the final answer
+                // is never left partially below the viewport.
+                if (vsb.maximum != lastMaximum && remainingPasses > 0) {
+                    settleAtBottom(remainingPasses - 1, vsb.maximum)
+                }
             }
         }
 
-        settleAtBottom(1)
-
+        settleAtBottom(5)
     }
 
 
@@ -5883,7 +5886,14 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
 
 
-        if (scrollAfter) revalidateAndScroll()
+        if (scrollAfter) {
+            // The final bubble renders Markdown through JEditorPane, whose HTML layout
+            // completes asynchronously. Force an extra layout pass before scrolling
+            // so the viewport lands on the bottom of the *real* answer height.
+            bubble.revalidate()
+            messagesPanel.revalidate()
+            scrollToBottom()
+        }
 
     }
 
