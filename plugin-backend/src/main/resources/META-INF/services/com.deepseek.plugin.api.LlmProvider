@@ -1,0 +1,7 @@
+com.deepseek.plugin.api.DeepSeekProvider
+com.deepseek.plugin.api.AgnesProvider
+com.deepseek.plugin.api.NvidiaProvider
+com.deepseek.plugin.api.OpenRouterProvider
+com.deepseek.plugin.api.ZhipuProvider
+com.deepseek.plugin.api.AnthropicProvider
+com.deepseek.plugin.api.CodexProvider

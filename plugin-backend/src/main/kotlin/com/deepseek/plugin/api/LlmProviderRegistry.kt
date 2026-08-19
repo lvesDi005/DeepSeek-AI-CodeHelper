@@ -1,5 +1,9 @@
 package com.deepseek.plugin.api
 
+import com.deepseek.plugin.settings.readCodexConfigBaseUrl
+import java.util.ServiceLoader
+import com.deepseek.plugin.settings.readCodexConfigModel
+
 /**
  * 供应商注册表 — 管理所有 LLM 供应商实例。
  *
@@ -7,9 +11,27 @@ package com.deepseek.plugin.api
  *   `LlmProviderRegistry.register(XxxProvider())`
  */
 object LlmProviderRegistry {
+    private val lock = Any()
     private val providers = mutableMapOf<String, LlmProvider>()
+    private var discovered = false
 
-    init {
+    private fun discover() {
+        if (discovered) return
+        synchronized(lock) {
+            if (discovered) return
+            runCatching {
+                ServiceLoader.load(LlmProvider::class.java, LlmProvider::class.java.classLoader)
+                    .forEach { register(it) }
+            }
+            // Safety net for environments where ServiceLoader cannot see the plugin classloader.
+            if (providers.isEmpty()) {
+                registerBuiltins()
+            }
+            discovered = true
+        }
+    }
+
+    private fun registerBuiltins() {
         register(DeepSeekProvider())
         register(AgnesProvider())
         register(NvidiaProvider())
@@ -20,16 +42,28 @@ object LlmProviderRegistry {
     }
 
     fun register(provider: LlmProvider) {
-        providers[provider.id] = provider
+        synchronized(lock) {
+            providers[provider.id] = provider
+        }
     }
 
-    fun get(id: String): LlmProvider =
-        providers[id] ?: providers["deepseek"]
-            ?: throw IllegalStateException("No default provider registered")
+    fun get(id: String): LlmProvider {
+        discover()
+        return synchronized(lock) {
+            providers[id] ?: providers["deepseek"]
+                ?: throw IllegalStateException("No default provider registered")
+        }
+    }
 
-    fun allProviders(): Collection<LlmProvider> = providers.values
+    fun allProviders(): Collection<LlmProvider> {
+        discover()
+        return synchronized(lock) { providers.values.toList() }
+    }
 
-    fun hasProvider(id: String): Boolean = id in providers
+    fun hasProvider(id: String): Boolean {
+        discover()
+        return synchronized(lock) { id in providers }
+    }
 }
 
 // ============== 实现 ==============
