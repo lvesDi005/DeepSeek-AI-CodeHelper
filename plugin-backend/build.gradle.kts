@@ -26,6 +26,7 @@ dependencies {
     implementation("org.apache.poi:poi-ooxml:5.4.1")
 
     testImplementation(kotlin("test-junit5"))
+    testImplementation("junit:junit:4.13.2")
 }
 
 java {

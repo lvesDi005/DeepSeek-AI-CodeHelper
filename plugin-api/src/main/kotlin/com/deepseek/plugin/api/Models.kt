@@ -19,7 +19,28 @@ data class ChatMessage(
     val role: String,  // "system", "user", "assistant"
     val content: String,
     /** 模型的深度思考过程（reasoning_content），仅在 role="assistant" 时有值 */
-    val reasoning: String? = null
+    val reasoning: String? = null,
+    /**
+     * Optional structured content used by provider-native multimodal APIs.
+     * [content] remains the persisted/display fallback for backward compatibility.
+     */
+    val parts: List<ChatContentPart>? = null,
+    /** Token usage for this assistant response; nullable for old sessions and unsupported providers. */
+    val usage: Usage? = null
+)
+
+enum class ChatContentType {
+    TEXT,
+    IMAGE
+}
+
+data class ChatContentPart(
+    val type: ChatContentType,
+    val text: String? = null,
+    /** Complete data URI, for example data:image/png;base64,... */
+    val dataUri: String? = null,
+    val mediaType: String? = null,
+    val name: String? = null
 )
 
 // ── 多模态消息（支持 text + image_url 混合 content）──

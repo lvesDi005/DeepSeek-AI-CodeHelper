@@ -33,6 +33,7 @@ class ClaudeCodexConfigPanel : JPanel(BorderLayout()) {
     private var codexApiKeyField: JBPasswordField? = null
     private var codexModelComboBox: com.intellij.openapi.ui.ComboBox<String>? = null
     private var codexBaseUrlField: JBTextField? = null
+    private var codexReasoningEffortComboBox: com.intellij.openapi.ui.ComboBox<String>? = null
 
     init {
         isOpaque = false
@@ -117,6 +118,13 @@ class ClaudeCodexConfigPanel : JPanel(BorderLayout()) {
                     }).component as JBTextField
                     comment("https://api.openai.com/v1")
                 }
+                row(I18n.tr("cc.codex.reasoning.effort")) {
+                    codexReasoningEffortComboBox = comboBox(listOf("low", "medium", "high")).apply {
+                        component.selectedItem = settings.codexReasoningEffort
+                        component.addActionListener { saveSettings() }
+                    }.component
+                    comment(I18n.tr("cc.codex.reasoning.effort.comment"))
+                }
             }
             group(I18n.tr("cli.mode.group")) {
                 val permissionOptions = listOf("acceptEdits", "bypass", "plan")
@@ -199,5 +207,6 @@ class ClaudeCodexConfigPanel : JPanel(BorderLayout()) {
         settings.codexApiKey = codexApiKeyField?.password?.let { String(it) } ?: ""
         settings.codexModel = codexModelComboBox?.selectedItem as? String ?: ""
         settings.codexBaseUrl = codexBaseUrlField?.text ?: "https://api.openai.com/v1"
+        settings.codexReasoningEffort = codexReasoningEffortComboBox?.selectedItem as? String ?: "medium"
     }
 }

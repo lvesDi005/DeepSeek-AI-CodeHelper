@@ -112,6 +112,9 @@ object I18n {
         "chat.supplement" to "\uD83D\uDCDD 请补充说明您的需求",
         "chat.api.error" to "\u26A0\uFE0F API 错误",
         "chat.api.key.required" to "[ERROR] 请在 Settings...配置 API Key.",
+        "chat.api.key.required.anthropic" to "Claude API 问答需要 Anthropic API Key；本地 Claude 登录态请使用 Claude Code 模式。",
+        "chat.api.key.required.codex" to "Codex API 问答需要 OPENAI_API_KEY；ChatGPT OAuth 登录态请使用 Codex 本地模式。",
+        "chat.context.truncated" to "本轮上下文已按模型 Token 预算裁剪。",
         "chat.api.key.missing.prefix" to "请先在设置中配置 ",
         "chat.api.key.missing.suffix" to " 的 API Key",
         "chat.warning.prefix" to "⚠️ ",
@@ -350,6 +353,8 @@ object I18n {
         "cc.codex.use.success" to "已从 ~/.codex 读取配置并填入设置",
         "cc.codex.use.not.found" to "~/.codex/auth.json 中未找到 OPENAI_API_KEY 或 CODEX_API_KEY，请先用 API Key 登录 codex CLI 后重试，或手动填写",
         "cc.codex.use.oauth.only" to "检测到 Codex 为 OAuth 登录（ChatGPT 账号），但 OAuth 凭据无法用于 OpenAI API，请使用 API Key 登录 codex 或设置 OPENAI_API_KEY",
+        "cc.codex.reasoning.effort" to "Q&A 推理强度:",
+        "cc.codex.reasoning.effort.comment" to "仅用于 Codex Responses API；复杂问题可选择 high",
 
         // ── CLI Agent（第四模式）──
         "cli.mode.group" to "CLI Agent (Claude/Codex)",
@@ -602,6 +607,9 @@ object I18n {
         "chat.info.skip.review" to "\u23ED Skipping review phase",
         "chat.api.error" to "\u26A0\uFE0F API Error",
         "chat.api.key.required" to "[ERROR] Please configure your API Key in Settings...",
+        "chat.api.key.required.anthropic" to "Claude API Q&A requires an Anthropic API key. Use Claude Code mode for your local Claude login.",
+        "chat.api.key.required.codex" to "Codex API Q&A requires OPENAI_API_KEY. Use local Codex mode for a ChatGPT OAuth login.",
+        "chat.context.truncated" to "This turn's context was trimmed to fit the model token budget.",
         "chat.api.key.missing.prefix" to "Please configure ",
         "chat.api.key.missing.suffix" to " API Key in Settings",
         "chat.warning.prefix" to "⚠️ ",
@@ -790,6 +798,8 @@ object I18n {
         "cc.codex.use.success" to "Config loaded from ~/.codex and applied",
         "cc.codex.use.not.found" to "No OPENAI_API_KEY or CODEX_API_KEY found in ~/.codex/auth.json. Log in to the codex CLI with an API key first, or fill in manually",
         "cc.codex.use.oauth.only" to "Codex is logged in via OAuth (ChatGPT account), but OAuth tokens cannot be used with the OpenAI API — log in with an API key or set OPENAI_API_KEY",
+        "cc.codex.reasoning.effort" to "Q&A reasoning effort:",
+        "cc.codex.reasoning.effort.comment" to "Codex Responses API only; choose high for complex questions",
 
         // ── CLI Agent (mode 4) ──
         "cli.mode.group" to "CLI Agent (Claude/Codex)",
