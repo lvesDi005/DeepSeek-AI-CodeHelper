@@ -69,7 +69,7 @@ object MarkdownRenderer {
                 if (width <= 0) return base
                 val ui = getUI() as? BasicTextUI ?: return base
                 val root = ui.getRootView(this) ?: return base
-                root.setSize(width, Int.MAX_VALUE / 2)
+                root.setSize(width.toFloat(), (Int.MAX_VALUE / 2).toFloat())
                 val required = root.getPreferredSpan(View.Y_AXIS).toInt()
                 return Dimension(base.width, required + insets.top + insets.bottom)
             }
