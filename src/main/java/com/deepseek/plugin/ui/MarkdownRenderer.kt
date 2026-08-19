@@ -7,6 +7,9 @@ import org.intellij.markdown.flavours.commonmark.CommonMarkFlavourDescriptor
 import org.intellij.markdown.html.HtmlGenerator
 import org.intellij.markdown.parser.MarkdownParser
 import javax.swing.JEditorPane
+import java.awt.Dimension
+import javax.swing.plaf.basic.BasicTextUI
+import javax.swing.text.View
 import javax.swing.event.HyperlinkEvent
 import javax.swing.text.html.HTMLEditorKit
 import javax.swing.text.html.StyleSheet
@@ -55,7 +58,22 @@ object MarkdownRenderer {
         // 预处理：将代码术语自动包裹 backtick，使其在正文中更突出
         val highlighted = highlightInlineCode(markdownText)
         val html = toHtml(highlighted)
-        val pane = JEditorPane("text/html", html).apply {
+        val pane = object : JEditorPane("text/html", html) {
+            override fun getPreferredSize(): Dimension {
+                // The base implementation reports the unwrapped natural width and
+                // a single-line height. When GridBagLayout constrains the bubble to
+                // the viewport width, text wraps but the reported height stays
+                // one line, collapsing the bubble and clipping the answer.
+                // Recompute height from the HTML root view at the current width.
+                val base = super.getPreferredSize()
+                if (width <= 0) return base
+                val ui = getUI() as? BasicTextUI ?: return base
+                val root = ui.getRootView(this) ?: return base
+                root.setSize(width.toFloat(), (Int.MAX_VALUE / 2).toFloat())
+                val required = root.getPreferredSpan(View.Y_AXIS).toInt()
+                return Dimension(base.width, required + insets.top + insets.bottom)
+            }
+        }.apply {
             isEditable = false
             isOpaque = bgColor != null
             // 显式设置前景色：确保 refreshFont 等读取 pane.foreground 时用插件主题色，
