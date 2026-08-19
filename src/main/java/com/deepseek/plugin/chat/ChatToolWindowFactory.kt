@@ -68,6 +68,14 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * HTML changelog content displayed in the update dialog.
          */
         private val CHANGELOG_HTML = """
+            <h3>v2.7.5</h3>
+            <ul>
+              <li>【新增】统一文档解析能力 — 支持 PDF、DOCX、XLSX、PPTX 与文本类附件，自动识别文件格式并提取结构化文本内容</li>
+              <li>【新增】扫描版 PDF 解析 — 无可提取文本的 PDF 页面会渲染为图片，交由具备视觉能力的模型继续理解</li>
+              <li>【新增】Claude Code / Codex CLI 原生附件支持 — 文档、图片及解析结果会按各 CLI 的原生参数和输入方式安全传递，充分利用 Claude 与 Codex 的文件和视觉能力</li>
+              <li>【修复】统一 Q&amp;A、Q&amp;A 全文扫描、Agent 与 Claude/Codex 模式的附件路由，避免已上传文档未进入模型上下文</li>
+              <li>【优化】新增附件大小与数量限制、格式校验、后台解析、任务取消和临时文件清理，并补充文档解析测试与附件改造验收矩阵</li>
+            </ul>
             <h3>v2.7.4</h3>
             <ul>
               <li>【新增】Codex 原生 Responses API 协议 — 新增 <code>codex-responses</code> 协议，Codex (OpenAI) 供应商现在直接调用 OpenAI Responses API（<code>POST /v1/responses</code>），兼容 cc-switch「供应商原生 Responses 直连」配置；system 消息自动转为 <code>instructions</code> 字段，流式 SSE 监听 <code>response.output_text.delta</code> 逐 token 回调；支持 gpt-5.2-codex、gpt-5.1-codex 等仅限 Responses API 的新型模型</li>
@@ -348,6 +356,14 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * English version of the changelog HTML.
          */
         private val CHANGELOG_HTML_EN = """
+            <h3>v2.7.5</h3>
+            <ul>
+              <li>[New] Unified document parsing — Supports PDF, DOCX, XLSX, PPTX, and text attachments, with automatic format detection and structured text extraction</li>
+              <li>[New] Scanned PDF support — PDF pages without extractable text are rendered as images for continued analysis by vision-capable models</li>
+              <li>[New] Native attachments for Claude Code / Codex CLI — Documents, images, and extracted content are passed safely through each CLI's native arguments and input flow, making full use of Claude and Codex file and vision capabilities</li>
+              <li>[Fixed] Unified attachment routing across Q&amp;A, Q&amp;A Full Scan, Agent, and Claude/Codex modes so uploaded documents consistently reach model context</li>
+              <li>[Improved] Added attachment count and size limits, format validation, background parsing, cancellation, temporary-file cleanup, document parsing tests, and an attachment-refactor acceptance matrix</li>
+            </ul>
             <h3>v2.7.4</h3>
             <ul>
               <li>[New] Native Responses API protocol for Codex — Added <code>codex-responses</code> protocol; the Codex (OpenAI) provider now calls the OpenAI Responses API directly (<code>POST /v1/responses</code>), compatible with cc-switch's "vendor-native Responses direct" configuration; system messages are automatically mapped to the <code>instructions</code> field, streaming SSE listens to <code>response.output_text.delta</code> for per-token callbacks; supports gpt-5.2-codex, gpt-5.1-codex, and other Responses-API-only models</li>

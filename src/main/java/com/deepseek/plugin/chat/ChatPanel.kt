@@ -23,6 +23,8 @@ import com.deepseek.plugin.chat.ChatState
 
 import com.deepseek.plugin.cli.CliAgentProcess
 
+import com.deepseek.plugin.cli.CliAttachmentBundle
+
 import com.deepseek.plugin.cli.CliChangeTracker
 
 import com.deepseek.plugin.i18n.I18n
@@ -384,6 +386,18 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
     private val attachedFiles = mutableListOf<AttachedFile>()
 
+    @Volatile
+    private var isPreparingAttachments = false
+
+    @Volatile
+    private var attachmentPreparationGeneration = 0L
+
+    @Volatile
+    private var attachmentPreparationTask: java.util.concurrent.Future<*>? = null
+
+    @Volatile
+    private var activeCliAttachmentBundle: CliAttachmentBundle? = null
+
     private val fileAttachmentPanel = JPanel(BorderLayout()).apply {
 
         isVisible = false
@@ -396,7 +410,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
     /** 用于 EDT 上判断是否正在流式 — 由 chatState 驱动 */
 
-    private val isStreaming: Boolean get() = chatState.get() is ChatState.Streaming
+    private val isStreaming: Boolean
+        get() = chatState.get() is ChatState.Streaming || isPreparingAttachments
 
 
 
@@ -1476,13 +1491,13 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
             fileFilter = javax.swing.filechooser.FileNameExtensionFilter(
 
-                "支持的格式 (*.java, *.kt, *.xml, *.json, *.yml, *.properties, *.txt, *.md, *.sql, *.gradle, *.ts, *.js, *.css, *.html, *.png, *.jpg, *.jpeg, *.gif, *.bmp, *.webp)",
+                I18n.tr("attachment.filter"),
 
                 "java", "kt", "kts", "xml", "json", "yaml", "yml", "properties",
 
                 "txt", "md", "sql", "gradle", "ts", "js", "css", "html", "py", "go", "rs", "rb",
 
-                "png", "jpg", "jpeg", "gif", "bmp", "webp"
+                "png", "jpg", "jpeg", "gif", "bmp", "webp", "pdf", "docx", "xlsx", "pptx"
 
             )
 
@@ -1514,6 +1529,26 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         if (attachedFiles.any { it.absolutePath == file.absolutePath }) return
 
+        if (!file.isFile) {
+            addMessageLabel(I18n.tr("attachment.not.file", file.name))
+            return
+        }
+
+        if (file.length() > 25L * 1024 * 1024) {
+            addMessageLabel(I18n.tr("attachment.too.large", file.name))
+            return
+        }
+
+        if (attachedFiles.sumOf { it.size } + file.length() > 50L * 1024 * 1024) {
+            addMessageLabel(I18n.tr("attachment.total.too.large"))
+            return
+        }
+
+        if (attachedFiles.size >= 10) {
+            addMessageLabel(I18n.tr("attachment.too.many"))
+            return
+        }
+
 
 
         val attached = AttachedFile(
@@ -1525,6 +1560,13 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             size = file.length()
 
         )
+
+        if (attached.kind == com.deepseek.plugin.api.AttachmentKind.UNSUPPORTED) {
+            val legacyOffice = file.extension.lowercase() in setOf("doc", "xls", "ppt")
+            val key = if (legacyOffice) "attachment.legacy.office" else "attachment.unsupported"
+            addMessageLabel(I18n.tr(key, file.name))
+            return
+        }
 
         attachedFiles.add(attached)
 
@@ -1616,6 +1658,15 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
     }
 
+    private fun collectImageAttachments(): List<AttachedFile> = buildList {
+        addAll(attachedFiles.filter { it.isImage })
+        attachedFiles.forEach { source ->
+            source.renderedImageFiles.forEachIndexed { index, image ->
+                add(AttachedFile("${source.name}-page-${index + 1}.png", image.absolutePath, image.length()))
+            }
+        }
+    }
+
 
 
     /**
@@ -1636,27 +1687,40 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         val sb = StringBuilder()
 
+        val maxContextChars = 200_000
+
 
 
         // Only process text files; image files are handled separately
 
-        val textFiles = attachedFiles.filter { !isImageFile(it.name) }
+        val textFiles = attachedFiles.filter { !it.isImage }
 
 
 
         for (file in textFiles) {
 
+            if (sb.length >= maxContextChars) {
+                sb.appendLine("[其余附件因上下文总长度限制未内联，请缩小附件范围后重试。]")
+                break
+            }
+
             val content = file.readContent()
 
             if (content != null) {
 
-                val ext = file.name.substringAfterLast('.', "")
+                sb.appendLine("以下为附件 `${file.name}`（${file.kind}）解析后的内容：")
 
-                sb.appendLine("以下为文件 `${file.name}` 的内容：")
+                file.statusMessage?.let { sb.appendLine("> 注意：$it") }
 
-                sb.appendLine("```$ext")
+                sb.appendLine("```text")
 
-                sb.appendLine(content)
+                val remaining = (maxContextChars - sb.length).coerceAtLeast(0)
+                val included = content.take(remaining)
+                sb.appendLine(included)
+
+                if (included.length < content.length) {
+                    sb.appendLine("[附件内容已按上下文总长度限制截断]")
+                }
 
                 sb.appendLine("```")
 
@@ -1664,7 +1728,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
             } else {
 
-                sb.appendLine("[无法读取文件 `${file.name}`]")
+                sb.appendLine("[无法读取附件 `${file.name}`：${file.statusMessage ?: "未知错误"}]")
 
             }
 
@@ -1708,7 +1772,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         projectDir: java.io.File?,
 
-        refContext: List<String>
+        refContext: List<String>,
+
+        temporarySources: List<AttachedFile> = emptyList()
 
     ) {
 
@@ -1749,6 +1815,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             attachedFiles.clear()
 
             refreshFileAttachmentPanel()
+
+            temporarySources.forEach { it.cleanupTemporaryFiles() }
 
             return
 
@@ -1858,6 +1926,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 }
 
+                temporarySources.forEach { it.cleanupTemporaryFiles() }
+
 
 
                 // Switch back to EDT to start AI streaming
@@ -1900,7 +1970,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 val enrichedText = if (imageContext.isNotBlank()) {
 
-                    "$textFileContext\n$imageContext\n$text"
+                    "$finalText\n\n$imageContext"
 
                 } else {
 
@@ -2182,6 +2252,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         catch (e: Exception) {
 
             System.err.println("[ChatPanel] Image parsing failed unexpectedly: ${e.message}")
+
+            temporarySources.forEach { it.cleanupTemporaryFiles() }
 
             ApplicationManager.getApplication().invokeLater {
 
@@ -2598,27 +2670,89 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
      * CLI 直接以 agent 身份执行（改代码/跑命令/调工具），凭据用本地登录态。
      */
     private fun sendCliAgentMessage(text: String) {
+        val files = attachedFiles.toList()
+        val selectionText = selectedContext?.let { context ->
+            buildString {
+                appendLine("## Selected code: ${context.fileName}:${context.startLine}-${context.endLine}")
+                appendLine("```")
+                appendLine(context.snippet)
+                appendLine("```")
+            }
+        }.orEmpty()
+        val displayText = buildString {
+            append(text)
+            if (files.isNotEmpty()) {
+                appendLine()
+                appendLine()
+                appendLine(I18n.tr("attachment.label", files.joinToString { it.name }))
+            }
+        }
+
+        inputArea.text = ""
+        attachedFiles.clear()
+        refreshFileAttachmentPanel()
+        setSelectedContext(null)
+        val generation = beginAttachmentPreparation()
+
+        attachmentPreparationTask = ApplicationManager.getApplication().executeOnPooledThread {
+            val bundle = try {
+                CliAttachmentBundle.prepare(files.map { it.descriptor })
+            } catch (e: Exception) {
+                ApplicationManager.getApplication().invokeLater {
+                    if (!finishAttachmentPreparation(generation) || project.isDisposed) return@invokeLater
+                    addMessageLabel(I18n.tr("chat.error.prefix") + " " + (e.message ?: I18n.tr("attachment.prepare.failed")))
+                }
+                return@executeOnPooledThread
+            }
+            val cliPrompt = buildString {
+                append(bundle.promptSection())
+                append(selectionText)
+                if (selectionText.isNotBlank()) appendLine()
+                append(text)
+            }
+            ApplicationManager.getApplication().invokeLater {
+                if (!finishAttachmentPreparation(generation) || project.isDisposed) {
+                    bundle.close()
+                    return@invokeLater
+                }
+                launchCliAgentMessage(cliPrompt, displayText, bundle)
+            }
+        }
+    }
+
+    private fun launchCliAgentMessage(
+        text: String,
+        displayText: String,
+        attachmentBundle: CliAttachmentBundle
+    ) {
+        activeCliAttachmentBundle = attachmentBundle
         val settings = DeepSeekSettings.instance
         val cliType = when (settings.provider) {
             "anthropic" -> "claude"
             "codex" -> "codex"
             else -> {
+                attachmentBundle.close()
+                activeCliAttachmentBundle = null
                 addMessageLabel(I18n.tr("cli.mode.requires.provider"))
                 return
             }
         }
         if (CliAgentProcess.findExecutable(cliType) == null) {
+            attachmentBundle.close()
+            activeCliAttachmentBundle = null
             addMessageLabel(I18n.tr("cli.mode.not.found", cliType))
             return
         }
 
         inputArea.text = ""
-        renderUserMessage(text)
-        messageHistory.add(ChatMessage("user", text))
+        renderUserMessage(displayText)
+        messageHistory.add(ChatMessage("user", displayText))
 
         // 流式 assistant 气泡（必须 Role.STREAMING，streamTextArea 才非空）
         val bubble = MessageBubble(project, MessageBubble.Role.STREAMING)
         val textArea = createStreamingArea(bubble)
+        sendStopButton.text = I18n.tr("chat.stop.enter")
+        sendStopButton.toolTipText = I18n.tr("chat.tooltip.stop")
 
         // CLI 执行前快照（用于变更管理）
         val projectDir = java.io.File(project.basePath ?: System.getProperty("user.home"))
@@ -2632,6 +2766,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                 if (finalized) return
                 finalized = true
             }
+            attachmentBundle.close()
+            activeCliAttachmentBundle = null
             chatState.set(ChatState.Idle)
             stopThinkingAnimation()
 
@@ -2672,6 +2808,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             projectDir = projectDir,
             permissionMode = settings.cliAgentPermissionMode,
             prompt = text,
+            allowedDirectories = listOf(attachmentBundle.rootDirectory),
+            imageFiles = if (cliType == "codex") attachmentBundle.imageFiles else emptyList(),
             onText = { chunk ->
                 ApplicationManager.getApplication().invokeLater {
                     if (thinkingTimer?.isRunning == true) {
@@ -2680,6 +2818,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                         textArea.text = ""
                     }
                     textArea.append(chunk)
+                    val state = chatState.get()
+                    if (state is ChatState.Streaming && state.bubble === bubble) state.buffer.append(chunk)
                     revalidateAndScroll()
                 }
             },
@@ -2695,6 +2835,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                         if (finalized) return@invokeLater
                         finalized = true
                     }
+                    attachmentBundle.close()
+                    activeCliAttachmentBundle = null
                     chatState.set(ChatState.Idle)
                     addMessageLabel(I18n.tr("chat.error.prefix") + " " + msg)
                     removeStreamingArea(ChatState.Streaming(emptyCliEventSource(), bubble = bubble))
@@ -2746,6 +2888,47 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
     }
 
+    private fun beginAttachmentPreparation(): Long {
+        val generation = ++attachmentPreparationGeneration
+        isPreparingAttachments = true
+        inputArea.isEnabled = false
+        sendStopButton.isEnabled = true
+        sendStopButton.text = I18n.tr("chat.stop.enter")
+        sendStopButton.toolTipText = I18n.tr("chat.tooltip.stop")
+        return generation
+    }
+
+    private fun finishAttachmentPreparation(generation: Long): Boolean {
+        if (generation != attachmentPreparationGeneration || !isPreparingAttachments) return false
+        isPreparingAttachments = false
+        attachmentPreparationTask = null
+        inputArea.isEnabled = true
+        sendStopButton.isEnabled = true
+        sendStopButton.text = I18n.tr("chat.send.enter")
+        sendStopButton.toolTipText = I18n.tr("chat.tooltip.send")
+        return true
+    }
+
+    private fun prepareAttachmentsInBackground(): Boolean {
+        if (currentMode == ChatMode.CLI_AGENT) return false
+        val pending = attachedFiles.filter {
+            !it.isImage && it.content == null &&
+                it.status != com.deepseek.plugin.api.AttachmentStatus.FAILED
+        }
+        if (pending.isEmpty()) return false
+
+        val generation = beginAttachmentPreparation()
+        attachmentPreparationTask = ApplicationManager.getApplication().executeOnPooledThread {
+            pending.forEach { it.readContent() }
+            ApplicationManager.getApplication().invokeLater {
+                if (!finishAttachmentPreparation(generation) || project.isDisposed) return@invokeLater
+                refreshFileAttachmentPanel()
+                sendMessage()
+            }
+        }
+        return true
+    }
+
 
 
     private fun sendMessage() {
@@ -2756,7 +2939,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         if (text.isEmpty() && !hasAttachments) return
 
-        if (isStreaming) return
+        if (isStreaming || isPreparingAttachments) return
 
         // 刷新第四模式下拉文案（跟随 Provider 动态显示 Claude Code / Codex）
 
@@ -2786,6 +2969,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             return
 
         }
+
+        if (prepareAttachmentsInBackground()) return
 
 
 
@@ -2837,7 +3022,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
         // 有图片 → 异步图片解析流程
 
-        val imageFiles = attachedFiles.filter { isImageFile(it.name) }
+        val imageFiles = collectImageAttachments()
 
         if (imageFiles.isNotEmpty()) {
 
@@ -2847,7 +3032,14 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
             val refContext = buildRefContext(projectDir, text)
 
-            sendMessageWithImages(text, fileContext, imageFiles, projectDir, refContext)
+            sendMessageWithImages(
+                text,
+                fileContext,
+                imageFiles,
+                projectDir,
+                refContext,
+                attachedFiles.toList()
+            )
 
             return
 
@@ -2855,13 +3047,23 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
 
 
-        // 无图片 → 直接回答，无需项目检索
-
+        // No images: include selected code and every extracted text/document attachment.
+        val fileContext = buildTextFileContext()
+        val finalText = buildString {
+            if (fileContext.isNotBlank()) append(fileContext)
+            selectedContext?.let { context ->
+                appendLine("[${context.fileName}:${context.startLine}-${context.endLine}]")
+                appendLine("```")
+                appendLine(context.snippet)
+                appendLine("```")
+                appendLine()
+            }
+            append(text)
+        }
         attachedFiles.clear()
-
         refreshFileAttachmentPanel()
-
-        respondDirectly(text)
+        setSelectedContext(null)
+        respondDirectly(finalText)
 
         return
 
@@ -2902,10 +3104,12 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         inputArea.text = ""
 
         // 提取图片附件（全文扫描也要解析图片）
-        val imageFiles = attachedFiles.filter { isImageFile(it.name) }
+        val temporarySources = attachedFiles.toList()
+        val originalImageFiles = attachedFiles.filter { it.isImage }
+        val imageFiles = collectImageAttachments()
         val imagePaths = imageFiles.map { it.absolutePath }
         // 先从 attachedFiles 中移除图片（文本文件仍保留到 fileContext）
-        attachedFiles.removeAll(imageFiles)
+        attachedFiles.removeAll(originalImageFiles)
 
         // 1. 构建初始文本（包含编辑器选中代码 + 已上传文件上下文）
 
@@ -2940,6 +3144,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             append(userText)
 
         }
+
+        attachedFiles.clear()
+        refreshFileAttachmentPanel()
 
         setSelectedContext(null)
 
@@ -3007,6 +3214,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
                     }
                     "\n\n" + results.joinToString("\n\n---\n\n")
                 } else ""
+
+                temporarySources.forEach { it.cleanupTemporaryFiles() }
 
                 val searchResult = searchCoordinator.search(userText)
 
@@ -3137,6 +3346,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
 
             } catch (e: Exception) {
+
+                temporarySources.forEach { it.cleanupTemporaryFiles() }
 
                 ApplicationManager.getApplication().invokeLater {
 
@@ -3664,6 +3875,63 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
 
     private fun sendAgentMessage(userText: String) {
+        val imageFiles = collectImageAttachments()
+        if (imageFiles.isEmpty()) {
+            launchAgentMessage(userText)
+            return
+        }
+
+        val temporarySources = attachedFiles.toList()
+        val fileContext = buildTextFileContext()
+        val selectionContext = selectedContext?.let { context ->
+            buildString {
+                appendLine("[${context.fileName}:${context.startLine}-${context.endLine}]")
+                appendLine("```")
+                appendLine(context.snippet)
+                appendLine("```")
+            }
+        }.orEmpty()
+        val imagePaths = imageFiles.map { it.absolutePath }
+
+        inputArea.text = ""
+        attachedFiles.clear()
+        refreshFileAttachmentPanel()
+        setSelectedContext(null)
+        val generation = beginAttachmentPreparation()
+
+        attachmentPreparationTask = ApplicationManager.getApplication().executeOnPooledThread {
+            val preparation = runCatching {
+                val imageContext = imagePaths.joinToString("\n\n") { path ->
+                    val fileName = java.nio.file.Paths.get(path).fileName.toString()
+                    val description = stepFunClient.parseImage(path)
+                        .getOrElse { error -> "[图片解析失败: ${error.message}]" }
+                    "以下为图片 `$fileName` 的解析结果：\n> $description"
+                }
+                buildString {
+                    append(fileContext)
+                    append(selectionContext)
+                    if (selectionContext.isNotBlank()) appendLine()
+                    if (imageContext.isNotBlank()) {
+                        appendLine(imageContext)
+                        appendLine()
+                    }
+                    append(userText)
+                }
+            }
+            temporarySources.forEach { it.cleanupTemporaryFiles() }
+            ApplicationManager.getApplication().invokeLater {
+                if (!finishAttachmentPreparation(generation) || project.isDisposed) return@invokeLater
+                preparation.fold(
+                    onSuccess = { launchAgentMessage(it) },
+                    onFailure = { error ->
+                        addMessageLabel(I18n.tr("chat.error.prefix") + " " + (error.message ?: I18n.tr("attachment.prepare.failed")))
+                    }
+                )
+            }
+        }
+    }
+
+    private fun launchAgentMessage(userText: String) {
 
         pipelineTotalTokens = 0
 
@@ -3708,6 +3976,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
             append(userText)
 
         }
+
+        attachedFiles.clear()
+        refreshFileAttachmentPanel()
 
         setSelectedContext(null)
 
@@ -4985,6 +5256,17 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     }
 
     private fun stopStreaming() {
+
+        if (isPreparingAttachments) {
+            attachmentPreparationGeneration++
+            attachmentPreparationTask?.cancel(true)
+            attachmentPreparationTask = null
+            isPreparingAttachments = false
+            inputArea.isEnabled = true
+        }
+
+        activeCliAttachmentBundle?.close()
+        activeCliAttachmentBundle = null
 
         stopThinkingAnimation()
 
