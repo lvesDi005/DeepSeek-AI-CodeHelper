@@ -3,6 +3,7 @@ package com.deepseek.plugin.api
 import com.deepseek.plugin.api.SettingsSnapshot
 import com.deepseek.plugin.api.TriggerMode
 import com.deepseek.plugin.settings.DeepSeekSettings
+import com.deepseek.plugin.settings.readClaudeModelMapping
 import com.deepseek.plugin.settings.toSnapshot
 import com.google.gson.Gson
 import com.google.gson.JsonArray

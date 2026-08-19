@@ -1,11 +1,11 @@
 package com.deepseek.plugin.ui
 
-import com.deepseek.plugin.api.readClaudeSettingsBaseUrl
-import com.deepseek.plugin.api.readClaudeSettingsEnvKey
-import com.deepseek.plugin.api.readCodexAuthApiKey
-import com.deepseek.plugin.api.readCodexAuthHasOAuthOnly
-import com.deepseek.plugin.api.readCodexConfigBaseUrl
-import com.deepseek.plugin.api.readCodexConfigModel
+import com.deepseek.plugin.settings.readClaudeSettingsBaseUrl
+import com.deepseek.plugin.settings.readClaudeSettingsEnvKey
+import com.deepseek.plugin.settings.readCodexAuthApiKey
+import com.deepseek.plugin.settings.readCodexAuthHasOAuthOnly
+import com.deepseek.plugin.settings.readCodexConfigBaseUrl
+import com.deepseek.plugin.settings.readCodexConfigModel
 import com.deepseek.plugin.i18n.I18n
 import com.deepseek.plugin.settings.DeepSeekSettings
 import com.intellij.openapi.ui.Messages

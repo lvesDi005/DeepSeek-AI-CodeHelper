@@ -47,6 +47,7 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
     }
 
     private val client = DeepSeekApiClient()
+    private val pipeline: CompletionPipeline = DefaultCompletionPipeline()
 
     // 防止短时间内重复请求
     @Volatile private var lastRequestTime: Long = 0
@@ -57,7 +58,7 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
         result: CompletionResultSet
     ) {
         // --- 0. PreChecker 预检查链 ---
-        if (!CompletionPreChecker.canProceed(parameters)) return
+        if (!pipeline.canProceed(parameters)) return
 
         val settings = DeepSeekSettings.instance
         if (parameters.isExtendedCompletion) return
@@ -109,7 +110,7 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
 
         // --- 5. 缓存查询 (跳过重复 API 调用) ---
         if (settings.completionCacheEnabled) {
-            val cached = CompletionCache.getInstance().get(filePath, cursorLine, cursorColumn, lastLine)
+            val cached = pipeline.getCached(filePath, cursorLine, cursorColumn, lastLine)
             if (cached != null) {
                 LOG.debug("Cache HIT: returning cached suggestion")
                 statusService.onReady()
@@ -159,13 +160,13 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
                     }
                 },
                 onComplete = { fullRaw ->
-                    val suggestion = CompletionPostProcessor.process(fullRaw, lastLine, suffix)
+                    val suggestion = pipeline.postProcess(fullRaw, lastLine, suffix)
                     if (suggestion.isBlank()) {
                         statusService.onIdle()
                         return@completionFimStream
                     }
                     if (settings.completionCacheEnabled) {
-                        CompletionCache.getInstance().put(filePath, cursorLine, cursorColumn, lastLine, suggestion)
+                        pipeline.putCached(filePath, cursorLine, cursorColumn, lastLine, suggestion)
                     }
                     ApplicationManager.getApplication().invokeLater {
                         try {
@@ -232,14 +233,14 @@ class DeepSeekCompletionProvider : CompletionProvider<CompletionParameters>() {
                     return@completionFim
                 }
 
-                val suggestion = CompletionPostProcessor.process(suggestionRaw, lastLine, suffix)
+                val suggestion = pipeline.postProcess(suggestionRaw, lastLine, suffix)
                 if (suggestion.isBlank()) {
                     statusService.onIdle()
                     return@completionFim
                 }
 
                 if (settings.completionCacheEnabled) {
-                    CompletionCache.getInstance().put(filePath, cursorLine, cursorColumn, lastLine, suggestion)
+                    pipeline.putCached(filePath, cursorLine, cursorColumn, lastLine, suggestion)
                 }
 
                 ApplicationManager.getApplication().invokeLater {

@@ -35,6 +35,7 @@ import com.deepseek.plugin.i18n.I18nTopics
 import com.deepseek.plugin.i18n.LanguageChangeListener
 import com.deepseek.plugin.i18n.ThemeChangeListener
 
+import com.deepseek.plugin.context.ChatContextComposer
 import com.deepseek.plugin.context.ProjectContextProvider
 
 import com.deepseek.plugin.context.RagRetriever
@@ -43,7 +44,7 @@ import com.deepseek.plugin.context.SearchCoordinator
 
 import com.deepseek.plugin.search.AgenticSearch
 
-import com.deepseek.plugin.access.ChainedFileAccess
+import com.deepseek.plugin.di.AppModule
 import com.deepseek.plugin.access.FileAccessService
 
 import com.deepseek.plugin.search.ToolUseEngine
@@ -214,23 +215,25 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
 
 
-    internal val client = DeepSeekApiClient()
+    private val module = AppModule.get(project)
 
-    private val stepFunClient = StepFunApiClient()
+    internal val client: DeepSeekApiClient = module.apiClient
 
-    private val contextProvider = ProjectContextProvider(project)
+    private val stepFunClient: StepFunApiClient = module.stepFunClient
 
-    private val ragRetriever = RagRetriever(project)
+    private val contextProvider = module.contextProvider
+
+    private val ragRetriever = module.ragRetriever
 
     // Q&A retrieval is deliberately restricted to local read-only grep/glob/read tools.
-    private val searchCoordinator = SearchCoordinator(project)
+    private val searchCoordinator = module.searchCoordinator
 
-    private val agenticSearch = AgenticSearch(project)
+    private val agenticSearch = module.agenticSearch
 
     /** Unified file access for scanning/searching, with automatic fallback. */
-    private val fileAccess: FileAccessService = ChainedFileAccess()
+    private val fileAccess: FileAccessService = module.fileAccess
 
-    private val sessionStore = SessionStore(project.basePath)
+    private val sessionStore = module.sessionStore
 
     private val sessions = mutableListOf<ChatSession>()
 
@@ -3544,15 +3547,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
 
 
-    private fun isSourceExt(ext: String?): Boolean {
-
-        return ext in listOf("java", "kt", "kts", "xml", "json", "yaml", "yml",
-
-            "properties", "txt", "md", "sql", "gradle", "ts", "js", "css", "html",
-
-            "py", "go", "rs", "rb", "php", "vue", "svelte", "swift", "ktm")
-
-    }
+    private fun isSourceExt(ext: String?): Boolean = ChatContextComposer.isSourceExt(ext)
 
 
 
@@ -3562,29 +3557,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
      */
 
-    private fun buildRefContext(projectDir: java.io.File?, text: String): List<String> {
+    private fun buildRefContext(projectDir: java.io.File?, text: String): List<String> =
+        ChatContextComposer.buildRefContext(projectDir, text)
 
-        val refPattern = Regex("@([\\w.\\-/]+)")
-
-        return refPattern.findAll(text).map { it.groupValues[1] }.toList().mapNotNull { refName ->
-
-            projectDir?.let { dir ->
-
-                val file = dir.resolve(refName)
-
-                if (file.isFile && file.exists()) {
-
-                    val content = file.readText().take(3000)
-
-                    "## @$refName\n```\n$content\n```"
-
-                } else null
-
-            }
-
-        }
-
-    }
 
 
 
@@ -5567,59 +5542,8 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
      */
 
-    private fun isCodeQuery(query: String): Boolean {
+    private fun isCodeQuery(query: String): Boolean = ChatContextComposer.isCodeQuery(query)
 
-        // 包含 CamelCase 类名/函数名
-
-        val camelCasePattern = Regex("""\b[A-Z][a-zA-Z0-9]{2,}\b""")
-
-        if (camelCasePattern.containsMatchIn(query)) return true
-
-
-
-        // 包含代码关键词
-
-        val codeKeywords = listOf(
-
-            "class", "function", "method", "interface", "enum", "annotation",
-
-            "import", "package", "extends", "implements", "override",
-
-            "controller", "service", "mapper", "repository", "entity",
-
-            "dto", "vo", "po", "bo", "config", "handler", "util",
-
-            "getter", "setter", "constructor", "bean", "component",
-
-            "api", "rest", "endpoint", "route", "mapping",
-
-            "数据库", "表", "字段", "接口", "实现", "继承",
-
-            "get", "set", "find", "search", "query", "update", "save", "delete", "create"
-
-        )
-
-        val queryLower = query.lowercase()
-
-        for (kw in codeKeywords) {
-
-            if (queryLower.contains(kw)) return true
-
-        }
-
-
-
-        // 包含以 ., #, :: 连接的可能代码路径
-
-        val codePathPattern = Regex("""[\w.]+\.\w+""")
-
-        if (codePathPattern.containsMatchIn(query)) return true
-
-
-
-        return false
-
-    }
 
 
 
@@ -5631,81 +5555,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
      */
 
-    private fun buildCodeSearchContext(query: String): String {
+    private fun buildCodeSearchContext(query: String): String =
+        ChatContextComposer.buildCodeSearchContext(query, agenticSearch)
 
-        // 提取搜索关键词
-
-        val keywords = extractSearchKeywords(query)
-
-        if (keywords.isEmpty()) return ""
-
-
-
-        val sb = StringBuilder()
-
-        val seen = mutableSetOf<String>()
-
-
-
-        for (kw in keywords.take(MAX_SEARCH_KEYWORDS)) {
-
-            if (kw in seen) continue
-
-            seen.add(kw)
-
-
-
-            val result = agenticSearch.grep(kw)
-
-            if (result.matches.isEmpty()) continue
-
-
-
-            sb.appendLine("### 搜索: `$kw`（共 ${result.totalMatches} 条匹配）")
-
-            sb.appendLine()
-
-
-
-            // 按文件分组展示
-
-            val byFile = result.matches.groupBy { it.filePath }
-
-            val entries = byFile.entries.take(5)
-
-            for (entry in entries) {
-
-                val filePath = entry.key
-
-                val matches = entry.value
-
-                sb.appendLine("📄 `$filePath`:")
-
-                for (matchItem in matches.take(5)) {
-
-                    val lineSnippet = matchItem.lineText.take(150)
-
-                    sb.appendLine("  L${matchItem.lineNumber}: ${lineSnippet}")
-
-                }
-
-                if (matches.size > 5) {
-
-                    sb.appendLine("  ... (还有 ${matches.size - 5} 条)")
-
-                }
-
-                sb.appendLine()
-
-            }
-
-        }
-
-
-
-        return sb.toString()
-
-    }
 
 
 
@@ -5715,51 +5567,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
      */
 
-    private fun extractSearchKeywords(query: String): List<String> {
+    private fun extractSearchKeywords(query: String): List<String> =
+        ChatContextComposer.extractSearchKeywords(query)
 
-        val keywords = mutableSetOf<String>()
-
-
-
-        // CamelCase 类/函数名
-
-        val camelCasePattern = Regex("""\b[A-Z][a-zA-Z0-9]{2,}\b""")
-
-        keywords.addAll(camelCasePattern.findAll(query).map { it.value })
-
-
-
-        // 引号中的内容
-
-        val quotePattern = Regex("""[""']([^""']{2,})[""']""")
-
-        keywords.addAll(quotePattern.findAll(query).map { it.groupValues[1] })
-
-
-
-        // 点符号路径 get.user.by.id → getUserById 等
-
-        val dotPattern = Regex("""\b([a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+)\b""")
-
-        for (match in dotPattern.findAll(query)) {
-
-            keywords.add(match.value.replace(".", ""))
-
-        }
-
-
-
-        // 小写方法名（已知前缀）
-
-        val methodPattern = Regex("""\b(get|set|find|search|query|update|save|delete|create|remove|add|is|has)[A-Z][a-zA-Z0-9]+\b""")
-
-        keywords.addAll(methodPattern.findAll(query).map { it.value })
-
-
-
-        return keywords.toList().filter { it.length >= 2 }
-
-    }
 
 
 
@@ -5771,69 +5581,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
      */
 
-    internal fun buildRelatedFileContext(userText: String): String {
+    internal fun buildRelatedFileContext(userText: String): String =
+        ChatContextComposer.buildRelatedFileContext(userText, project.basePath ?: "", agenticSearch)
 
-        val keywords = extractSearchKeywords(userText)
-
-        if (keywords.isEmpty()) return ""
-
-
-
-        val seen = mutableSetOf<String>()
-
-        val sb = StringBuilder()
-
-        val projectBase = project.basePath ?: return ""
-
-
-
-        for (kw in keywords.take(MAX_SEARCH_KEYWORDS)) {
-
-            if (kw in seen) continue
-
-            seen.add(kw)
-
-
-
-            val result = agenticSearch.grep(kw)
-
-            if (result.matches.isEmpty()) continue
-
-
-
-            val byFile = result.matches.groupBy { it.filePath }
-
-            for ((filePath, matches) in byFile.entries.take(MAX_FILES_PER_KEYWORD)) {
-
-                if (sb.count { it == '\n' } > MAX_CONTEXT_LINES) return sb.toString()
-
-                val file = java.io.File(filePath)
-
-                if (!file.exists() || !file.isFile) continue
-
-                val content = try {
-
-                    file.readText(Charsets.UTF_8)
-
-                } catch (_: Exception) { continue }
-
-                if (content.length > MAX_FILE_SIZE) continue
-
-                val relativePath = file.toRelativeString(java.io.File(projectBase))
-
-                sb.appendLine("--- $relativePath ---")
-
-                sb.appendLine(content.trim())
-
-                sb.appendLine()
-
-            }
-
-        }
-
-        return sb.toString()
-
-    }
 
 
 
@@ -5867,37 +5617,9 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
      */
 
-    private fun truncateCodeBlocks(text: String, maxLines: Int = 20): String {
+    private fun truncateCodeBlocks(text: String, maxLines: Int = 20): String =
+        ChatContextComposer.truncateCodeBlocks(text, maxLines)
 
-        val codeBlockRegex = Regex("""```(\w*)\s*\n?([\s\S]*?)```""")
-
-        return codeBlockRegex.replace(text) { match ->
-
-            val lang = match.groupValues[1]
-
-            val code = match.groupValues[2]
-
-            val lines = code.lines()
-
-
-
-            if (lines.size > maxLines) {
-
-                val truncated = lines.take(maxLines).joinToString("\n")
-
-                "```$lang\n$truncated\n......\n```"
-
-            } else {
-
-                // 不超过 maxLines 行，原样保留
-
-                match.value
-
-            }
-
-        }
-
-    }
 
 
 
@@ -6691,4 +6413,3 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
     }
 
 }
-
