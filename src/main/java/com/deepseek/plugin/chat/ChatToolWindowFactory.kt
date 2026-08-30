@@ -68,6 +68,10 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * HTML changelog content displayed in the update dialog.
          */
         private val CHANGELOG_HTML = """
+            <h3>v2.7.6</h3>
+            <ul>
+              <li>【修复】界面截断</li>
+            </ul>
             <h3>v2.7.5</h3>
             <ul>
               <li>【新增】统一文档解析能力 — 支持 PDF、DOCX、XLSX、PPTX 与文本类附件，自动识别文件格式并提取结构化文本内容</li>
@@ -359,6 +363,10 @@ class ChatToolWindowFactory : ToolWindowFactory {
          * English version of the changelog HTML.
          */
         private val CHANGELOG_HTML_EN = """
+            <h3>v2.7.6</h3>
+            <ul>
+              <li>【Fixed】UI cutoff</li>
+            </ul>
             <h3>v2.7.5</h3>
             <ul>
               <li>[New] Unified document parsing — Supports PDF, DOCX, XLSX, PPTX, and text attachments, with automatic format detection and structured text extraction</li>

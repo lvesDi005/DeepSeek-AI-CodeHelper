@@ -517,7 +517,7 @@ class MessageBubble(
             foreground = PluginTheme.textHeading()
         }
         val thinkingLabel = JLabel(I18n.tr("bubble.thinking")).apply {
-            font = font.deriveFont(Font.ITALIC, 10f)
+            font = font.deriveFont(Font.ITALIC, 13f)
             foreground = PluginTheme.textPrimary()
         }
 

@@ -159,6 +159,10 @@ import java.awt.GridBagConstraints
 
 import java.awt.GridBagLayout
 
+import java.awt.event.ComponentAdapter
+
+import java.awt.event.ComponentEvent
+
 import java.awt.event.MouseAdapter
 
 import java.awt.event.MouseEvent
@@ -464,18 +468,31 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
     }.also { pane ->
 
-        // ── 自动滚动跟踪：用户向上滚动时暂停跟随生成，滚动到底部时恢复 ──
+        // ── 自动滚动跟踪：用户滚动离开底部时暂停跟随，回到底部时恢复 ──
+        // 意图捕获统一走 JViewport 的 ChangeListener：滚轮/触控板/拖动/键盘最终都会改变视口位置并触发它；
+        // 程序化的自动滚动（settleOnce）通过 programmaticScrollInProgress 标记排除，不会误判为用户输入。
 
         val updateUserScrollIntent = {
-            val vsb = pane.verticalScrollBar
-            autoScrollController.onUserViewportChanged(vsb.value, vsb.visibleAmount, vsb.maximum)
+            val vp = pane.viewport
+            autoScrollController.onUserViewportChanged(vp.viewPosition.y, vp.extentSize.height, vp.viewSize.height)
         }
-        pane.addMouseWheelListener { SwingUtilities.invokeLater(updateUserScrollIntent) }
-        pane.verticalScrollBar.addAdjustmentListener {
-            if (pane.verticalScrollBar.valueIsAdjusting) updateUserScrollIntent()
+        pane.viewport.addChangeListener {
+            if (!programmaticScrollInProgress) updateUserScrollIntent()
         }
         pane.verticalScrollBar.addMouseListener(object : MouseAdapter() {
-            override fun mouseReleased(e: MouseEvent?) = updateUserScrollIntent()
+            override fun mouseReleased(e: MouseEvent?) {
+                updateUserScrollIntent()
+                // 用户松手后若已回到底部附近：立即恢复跟随并重新定位，避免后续内容滞留在视口下方
+                if (autoScrollController.followsBottom) scrollToBottom()
+            }
+        })
+
+        // ── 窗口尺寸变化时：跟随状态下重新布局并复位到底部，避免滚动范围滞后 ──
+
+        pane.addComponentListener(object : ComponentAdapter() {
+            override fun componentResized(e: ComponentEvent?) {
+                if (autoScrollController.followsBottom) scrollToBottom()
+            }
         })
 
     }
@@ -2083,8 +2100,6 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                             currentSession().totalTokens += it.totalTokens
 
-                            addTokenUsageLabel(it, scrollAfter = false)
-
                         }
 
                         saveSessions()
@@ -2464,7 +2479,6 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 "assistant" -> {
                     renderAssistantMessage(msg.content, reasoning = msg.reasoning)
-                    msg.usage?.let(::addTokenUsageLabel)
                 }
 
             }
@@ -3774,7 +3788,6 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 usage?.let {
                     currentSession().totalTokens += it.totalTokens
-                    addTokenUsageLabel(it, scrollAfter = false)
                 }
 
                 saveSessions()
@@ -5631,28 +5644,61 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
 
 
+    /** 待执行的滚动定位任务标记 — 合并多次 scrollToBottom 调用，避免流式期间 EDT 堆积。 */
+    // 以下三个 settle 状态字段只能在 EDT 上读写（scrollToBottom/settleOnce 及所有调用方均在 EDT）。
+    private var settlePending = false
+
+    /** settleOnce 正在程序化写入滚动位置 — 视口 ChangeListener 据此排除自身滚动，避免误判为用户输入。 */
+    private var programmaticScrollInProgress = false
+
+    /** 滚动定位剩余追平次数 — 限制异步 HTML 布局后的嵌套重排上限。 */
+    private var settleBudget = 0
+
+    /** 上一次定位时的滚动条 maximum，用于判断高度是否仍在变化。 */
+    private var settleLastMaximum = -1
+
     internal fun scrollToBottom() {
         // 用户已向上滚动查看历史：不强制拉回底部
         if (!autoScrollController.followsBottom) return
 
-        fun settleAtBottom(remainingPasses: Int, lastMaximum: Int = -1) {
-            SwingUtilities.invokeLater {
-                if (!autoScrollController.followsBottom) return@invokeLater
-                messagesPanel.revalidate()
-                messagesScrollPane.validate()
-                val vsb = messagesScrollPane.verticalScrollBar
-                vsb.value = (vsb.maximum - vsb.visibleAmount).coerceAtLeast(vsb.minimum)
-                // Markdown JEditorPane performs asynchronous HTML layout: its height can
-                // keep changing for several EDT passes. Keep settling until the maximum
-                // stabilizes (or the retry budget is exhausted) so the final answer
-                // is never left partially below the viewport.
-                if (vsb.maximum != lastMaximum && remainingPasses > 0) {
-                    settleAtBottom(remainingPasses - 1, vsb.maximum)
-                }
-            }
+        if (settlePending) {
+            // 已有一个待执行任务：加大追平预算，让它在执行时适配最新高度
+            settleBudget = 5
+            return
         }
+        settlePending = true
+        settleBudget = 5
+        settleLastMaximum = -1
+        SwingUtilities.invokeLater { settleOnce() }
+    }
 
-        settleAtBottom(5)
+    private fun settleOnce() {
+        settlePending = false
+        if (!autoScrollController.followsBottom) return
+        messagesPanel.revalidate()
+        messagesScrollPane.validate()
+        val vsb = messagesScrollPane.verticalScrollBar
+        // 用户正在拖动滚动条：让用户赢，跳过本次定位；松手后 mouseReleased 会恢复跟随
+        if (vsb.valueIsAdjusting) return
+        programmaticScrollInProgress = true
+        try {
+            vsb.value = (vsb.maximum - vsb.visibleAmount).coerceAtLeast(vsb.minimum)
+        } finally {
+            programmaticScrollInProgress = false
+        }
+        // Markdown JEditorPane performs asynchronous HTML layout: its height can
+        // keep changing for several EDT passes. Keep settling until the maximum
+        // stabilizes (or the retry budget is exhausted) so the final answer
+        // is never left partially below the viewport.
+        val maxChanged = vsb.maximum != settleLastMaximum
+        settleLastMaximum = vsb.maximum
+        // 流式进行中：下一次冲刷会再次调用 scrollToBottom，无需自行追平；
+        // 仅在流式结束后继续追平到高度稳定。
+        if (chatState.get() !is ChatState.Streaming && maxChanged && settleBudget > 0) {
+            settleBudget--
+            settlePending = true
+            SwingUtilities.invokeLater { settleOnce() }
+        }
     }
 
 
@@ -5701,15 +5747,6 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
         return label
 
     }
-
-    internal fun addTokenUsageLabel(usage: Usage, scrollAfter: Boolean = true) {
-        addMessageLabel(
-            "── Token: ${usage.totalTokens} (P:${usage.promptTokens} C:${usage.completionTokens})",
-            scrollAfter
-        ).putClientProperty("chat.token.usage", usage)
-    }
-
-
 
     /**
 
@@ -6170,7 +6207,7 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
             wrapStyleWord = true
 
-            font = JBUI.Fonts.create("Monospaced", 12)
+            font = JBUI.Fonts.create("Monospaced", 14)
 
             foreground = PluginTheme.textPrimary()
 
@@ -6303,7 +6340,6 @@ class ChatPanel(private val project: Project) : JPanel(CardLayout()), Disposable
 
                 usage?.let {
                     currentSession().totalTokens += it.totalTokens
-                    addTokenUsageLabel(it, scrollAfter = false)
                 }
 
                 revalidateAndScroll()
